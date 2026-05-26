@@ -211,3 +211,59 @@ export type AiUsageSummary = {
     insertedAt?: string;
   }[];
 };
+
+export type DashboardSummary = {
+  counts: {
+    papers: number;
+    templates: number;
+    generationRuns: number;
+    completedRuns: number;
+    ncertQuestions: number;
+    pyqQuestions: number;
+    questionBankItems: number;
+    chapters: number;
+  };
+  recentPapers: {
+    id: string;
+    title: string;
+    board: string;
+    classLevel: string;
+    subject: string;
+    status: string;
+    versionCount: number;
+    marksTotal: number;
+    updatedAt?: string;
+  }[];
+  recentRuns: {
+    id: string;
+    status: string;
+    request: Record<string, unknown>;
+    insertedAt?: string;
+  }[];
+  templates: {
+    id: string;
+    name: string;
+    description?: string;
+    formatting: Record<string, unknown>;
+    inferredParams: Record<string, unknown>;
+    updatedAt?: string;
+  }[];
+  chapterCoverage: {
+    id: string;
+    name: string;
+    position?: number;
+    ncertCount: number;
+    pyqCount: number;
+    bankCount: number;
+    totalSources: number;
+    coverageScore: number;
+  }[];
+  difficultyDistribution: {
+    difficulty: string;
+    count: number;
+  }[];
+  sourceMix: {
+    source: string;
+    count: number;
+  }[];
+};

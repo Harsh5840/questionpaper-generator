@@ -1,6 +1,7 @@
 import { Socket } from "phoenix";
 import {
   AiUsageSummary,
+  DashboardSummary,
   GenerationStatus,
   Paper,
   PaperQuestion,
@@ -26,6 +27,16 @@ type GenerationRun = {
 type GenerationCallbacks = {
   onStatus?: (status: GenerationStatus) => void;
 };
+
+export async function fetchDashboardViaApi(): Promise<DashboardSummary | null> {
+  try {
+    const response = await fetch(`${API_BASE}/dashboard`);
+    if (!response.ok) throw new Error(await responseErrorMessage(response, "Dashboard failed"));
+    return normalizeDashboard(await response.json());
+  } catch {
+    return null;
+  }
+}
 
 export async function generateViaApi(request: PaperRequest, callbacks: GenerationCallbacks = {}): Promise<Paper[]> {
   try {
@@ -713,6 +724,71 @@ function normalizeNumberRecord(value: unknown): Record<string, number> | undefin
   const entries = Object.entries(record);
   if (entries.length === 0) return undefined;
   return Object.fromEntries(entries.map(([key, item]) => [key, Number(item)]));
+}
+
+function normalizeDashboard(raw: unknown): DashboardSummary {
+  const record = asRecord(raw);
+  const counts = asRecord(record.counts);
+
+  return {
+    counts: {
+      papers: Number(counts.papers ?? 0),
+      templates: Number(counts.templates ?? 0),
+      generationRuns: Number(counts.generation_runs ?? counts.generationRuns ?? 0),
+      completedRuns: Number(counts.completed_runs ?? counts.completedRuns ?? 0),
+      ncertQuestions: Number(counts.ncert_questions ?? counts.ncertQuestions ?? 0),
+      pyqQuestions: Number(counts.pyq_questions ?? counts.pyqQuestions ?? 0),
+      questionBankItems: Number(counts.question_bank_items ?? counts.questionBankItems ?? 0),
+      chapters: Number(counts.chapters ?? 0),
+    },
+    recentPapers: normalizeDashboardArray(record.recent_papers ?? record.recentPapers).map((item) => ({
+      id: String(item.id ?? ""),
+      title: String(item.title ?? "Untitled paper"),
+      board: String(item.board ?? ""),
+      classLevel: String(item.class_level ?? item.classLevel ?? ""),
+      subject: String(item.subject ?? ""),
+      status: String(item.status ?? ""),
+      versionCount: Number(item.version_count ?? item.versionCount ?? 0),
+      marksTotal: Number(item.marks_total ?? item.marksTotal ?? 0),
+      updatedAt: item.updated_at ? String(item.updated_at) : undefined,
+    })),
+    recentRuns: normalizeDashboardArray(record.recent_runs ?? record.recentRuns).map((item) => ({
+      id: String(item.id ?? ""),
+      status: String(item.status ?? ""),
+      request: asRecord(item.request),
+      insertedAt: item.inserted_at ? String(item.inserted_at) : undefined,
+    })),
+    templates: normalizeDashboardArray(record.templates).map((item) => ({
+      id: String(item.id ?? ""),
+      name: String(item.name ?? "Untitled template"),
+      description: item.description ? String(item.description) : undefined,
+      formatting: asRecord(item.formatting),
+      inferredParams: asRecord(item.inferred_params ?? item.inferredParams),
+      updatedAt: item.updated_at ? String(item.updated_at) : undefined,
+    })),
+    chapterCoverage: normalizeDashboardArray(record.chapter_coverage ?? record.chapterCoverage).map((item) => ({
+      id: String(item.id ?? ""),
+      name: String(item.name ?? "Chapter"),
+      position: item.position === undefined || item.position === null ? undefined : Number(item.position),
+      ncertCount: Number(item.ncert_count ?? item.ncertCount ?? 0),
+      pyqCount: Number(item.pyq_count ?? item.pyqCount ?? 0),
+      bankCount: Number(item.bank_count ?? item.bankCount ?? 0),
+      totalSources: Number(item.total_sources ?? item.totalSources ?? 0),
+      coverageScore: Number(item.coverage_score ?? item.coverageScore ?? 0),
+    })),
+    difficultyDistribution: normalizeDashboardArray(record.difficulty_distribution ?? record.difficultyDistribution).map((item) => ({
+      difficulty: String(item.difficulty ?? "Unknown"),
+      count: Number(item.count ?? 0),
+    })),
+    sourceMix: normalizeDashboardArray(record.source_mix ?? record.sourceMix).map((item) => ({
+      source: String(item.source ?? "Source"),
+      count: Number(item.count ?? 0),
+    })),
+  };
+}
+
+function normalizeDashboardArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(asRecord) : [];
 }
 
 function toBackendTemplate(template: NonNullable<PaperRequest["template"]>) {

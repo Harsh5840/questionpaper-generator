@@ -10,7 +10,9 @@ import {
   FileText,
   FileUp,
   HelpCircle,
+  LayoutDashboard,
   LoaderCircle,
+  School,
   RefreshCcw,
   Save,
   Send,
@@ -18,11 +20,15 @@ import {
   Settings,
   Sparkles,
   Square,
+  Archive,
+  BarChart3,
+  BookOpen,
 } from "lucide-react";
 import { PaperEditor } from "@/components/paper-editor";
 import {
   exportToClassroomViaApi,
   fetchChaptersViaApi,
+  fetchDashboardViaApi,
   fetchQuestionBankViaApi,
   fetchRetrievalPreviewViaApi,
   fetchUsageViaApi,
@@ -37,6 +43,7 @@ import {
 import { defaultRequest, requestFromPrompt } from "@/lib/request-defaults";
 import {
   AiUsageSummary,
+  DashboardSummary,
   DocumentStyle,
   GenerationStatus,
   Paper,
@@ -51,6 +58,7 @@ import {
 
 type Mode = "structured" | "prompt";
 type RightPanel = "chat" | "retrieval" | "bank" | "versions";
+type AppView = "studio" | "library" | "analytics" | "templates" | "department";
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -74,6 +82,7 @@ const defaultDocumentStyle: DocumentStyle = {
 };
 
 export default function Home() {
+  const [appView, setAppView] = useState<AppView>("studio");
   const [mode, setMode] = useState<Mode>("structured");
   const [rightPanel, setRightPanel] = useState<RightPanel>("chat");
   const [request, setRequest] = useState<PaperRequest>({
@@ -94,6 +103,7 @@ export default function Home() {
   const [versions, setVersions] = useState<PaperVersion[]>([]);
   const [retrievalPreview, setRetrievalPreview] = useState<RetrievalPreview | null>(null);
   const [questionBank, setQuestionBank] = useState<QuestionBankItem[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [usage, setUsage] = useState<AiUsageSummary | null>(null);
   const [lastRunId, setLastRunId] = useState<string | undefined>();
   const [status, setStatus] = useState<GenerationStatus>(emptyStatus);
@@ -130,6 +140,7 @@ export default function Home() {
   useEffect(() => {
     void refreshQuestionBank();
     void refreshRetrievalPreview();
+    void refreshDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request.board, request.classLevel, request.subject, request.chapter, request.topic, request.chapterScope, request.chapters.join("|")]);
 
@@ -145,6 +156,10 @@ export default function Home() {
   async function refreshQuestionBank() {
     const items = await fetchQuestionBankViaApi(request);
     setQuestionBank(items);
+  }
+
+  async function refreshDashboard() {
+    setDashboard(await fetchDashboardViaApi());
   }
 
   async function loadTemplate(file: File) {
@@ -221,6 +236,23 @@ export default function Home() {
 
     const paper = await getPaperViaApi(paperId);
     setVersions(paper?.versions ?? []);
+  }
+
+  async function loadPaperFromLibrary(paperId: string) {
+    const paper = await getPaperViaApi(paperId);
+    const latestVersion = paper?.versions?.[0];
+
+    if (!latestVersion) {
+      addAssistantMessage("I could not load that paper. It has no saved version payload yet.");
+      return;
+    }
+
+    const restored = normalizeVersionPayload(latestVersion.payload, paperId);
+    const mergedStyle = { ...documentStyle, ...restored.documentStyle };
+    setSelectedPaper(applyDocumentStyle(restored, mergedStyle));
+    setDocumentStyle(mergedStyle);
+    await refreshVersions(paperId);
+    addAssistantMessage(`Loaded ${restored.title} from the library.`);
   }
 
   function stopGeneration() {
@@ -448,6 +480,19 @@ export default function Home() {
             <div className="font-display text-2xl font-semibold text-[var(--primary)]">Academic Command Center</div>
             <div className="font-mono text-[11px] text-[var(--on-surface-variant)]">Question Paper Studio · owned corpus workflow</div>
           </div>
+          <nav className="hidden h-16 items-center gap-1 xl:flex">
+            {[
+              ["studio", "Studio"],
+              ["library", "Library"],
+              ["analytics", "Analytics"],
+              ["templates", "Templates"],
+              ["department", "Department"],
+            ].map(([view, label]) => (
+              <button key={view} className={topNavClass(appView === view)} onClick={() => setAppView(view as AppView)} type="button">
+                {label}
+              </button>
+            ))}
+          </nav>
         </div>
 
         <div className="flex items-center gap-2">
@@ -479,6 +524,25 @@ export default function Home() {
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <div className="space-y-1">
+            {[
+              { view: "studio" as AppView, label: "Generation Studio", icon: LayoutDashboard },
+              { view: "library" as AppView, label: "Paper Library", icon: Archive },
+              { view: "analytics" as AppView, label: "Syllabus Coverage", icon: BarChart3 },
+              { view: "templates" as AppView, label: "Template Suite", icon: BookOpen },
+              { view: "department" as AppView, label: "Department Hub", icon: School },
+            ].map((item) => (
+              <button key={item.view} className={sideNavClass(appView === item.view)} onClick={() => setAppView(item.view)} type="button">
+                <item.icon size={16} />
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="border-t border-[var(--outline-variant)]" />
+
+          {appView === "studio" && (
+            <>
           <div className="grid grid-cols-2 rounded-lg bg-[var(--surface-container-high)] p-1">
             <button className={tabClass(mode === "structured")} onClick={() => setMode("structured")} type="button">
               Parameters
@@ -625,9 +689,11 @@ export default function Home() {
               </div>
             </div>
           )}
+            </>
+          )}
         </div>
 
-        <div className="space-y-2 border-t border-[var(--outline-variant)] p-4">
+        {appView === "studio" && <div className="space-y-2 border-t border-[var(--outline-variant)] p-4">
           <button className="primary-button" disabled={isGenerating} onClick={() => void runGeneration()} type="button">
             {isGenerating ? <LoaderCircle className="animate-spin" size={16} /> : <Sparkles size={16} />}
             {isGenerating ? "Generating" : "Generate paper"}
@@ -638,52 +704,86 @@ export default function Home() {
               Stop
             </button>
           )}
-        </div>
+        </div>}
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-4">
           <div>
-            <div className="text-sm font-bold">{selectedPaper?.title ?? "Untitled paper"}</div>
-            <div className="text-xs text-[var(--on-surface-variant)]">{status.message}</div>
+            <div className="text-sm font-bold">{appView === "studio" ? selectedPaper?.title ?? "Untitled paper" : viewTitle(appView)}</div>
+            <div className="text-xs text-[var(--on-surface-variant)]">{appView === "studio" ? status.message : viewSubtitle(appView)}</div>
           </div>
           <div className="flex items-center gap-2">
-            <ProgressBadge status={status} />
-            <button className="icon-button" onClick={() => void saveCurrentVersion()} title="Save version" type="button">
-              <Save size={16} />
-            </button>
-            <button className="icon-button" onClick={() => exportCurrent("pdf")} title="Export PDF" type="button">
-              <Download size={16} />
-            </button>
-            <button className="hidden rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] md:inline-flex" onClick={() => exportCurrent("docx")} type="button">
-              DOCX
-            </button>
-            <button className="hidden rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] md:inline-flex" onClick={() => void exportToClassroom()} type="button">
-              Classroom
-            </button>
+            {appView === "studio" ? (
+              <>
+                <ProgressBadge status={status} />
+                <button className="icon-button" onClick={() => void saveCurrentVersion()} title="Save version" type="button">
+                  <Save size={16} />
+                </button>
+                <button className="icon-button" onClick={() => exportCurrent("pdf")} title="Export PDF" type="button">
+                  <Download size={16} />
+                </button>
+                <button className="hidden rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] md:inline-flex" onClick={() => exportCurrent("docx")} type="button">
+                  DOCX
+                </button>
+                <button className="hidden rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] md:inline-flex" onClick={() => void exportToClassroom()} type="button">
+                  Classroom
+                </button>
+              </>
+            ) : (
+              <button className="secondary-button !min-h-9 !w-auto px-4" onClick={() => void refreshDashboard()} type="button">
+                <RefreshCcw size={15} />
+                Refresh
+              </button>
+            )}
           </div>
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-8">
-          {lastError && (
+          {appView === "studio" && lastError && (
             <div className="mx-auto mb-4 max-w-[980px] rounded-lg border border-[var(--error)] bg-[var(--error-container)] px-4 py-3 text-sm font-semibold text-[var(--on-error-container)]">
               <div className="font-black">Last error</div>
               <div className="mt-1 whitespace-pre-wrap break-words text-xs font-medium">{lastError}</div>
             </div>
           )}
-          <PaperEditor
-            documentStyle={documentStyle}
-            isGenerating={isGenerating}
-            paper={selectedPaper}
-            onImportImage={(sectionId) => void importQuestionImage(sectionId)}
-            onPaperChange={updateSelectedPaper}
-            onReplaceQuestion={(sectionId, questionId, questionNumber) => void replaceQuestionWithAi(sectionId, questionId, questionNumber)}
-            onSaveQuestionToBank={(question) => void saveQuestionToBank(question)}
-          />
+          {appView === "studio" ? (
+            <PaperEditor
+              documentStyle={documentStyle}
+              isGenerating={isGenerating}
+              paper={selectedPaper}
+              onImportImage={(sectionId) => void importQuestionImage(sectionId)}
+              onPaperChange={updateSelectedPaper}
+              onReplaceQuestion={(sectionId, questionId, questionNumber) => void replaceQuestionWithAi(sectionId, questionId, questionNumber)}
+              onSaveQuestionToBank={(question) => void saveQuestionToBank(question)}
+            />
+          ) : (
+            <WorkspaceView
+              dashboard={dashboard}
+              view={appView}
+              onSelectPaper={(paper) => {
+                setAppView("studio");
+                void loadPaperFromLibrary(paper.id);
+              }}
+              onUseTemplate={(template) => {
+                setAppView("studio");
+                const formatting = dashboardFormattingToDocumentStyle(template.formatting);
+                setRequest((current) => ({
+                  ...current,
+                  template: {
+                    name: template.name,
+                    description: template.description,
+                    formatting,
+                    inferredParams: normalizeTemplateParams(template.inferredParams),
+                  },
+                }));
+                setDocumentStyle((current) => ({ ...current, ...formatting }));
+              }}
+            />
+          )}
         </div>
       </section>
 
-      <aside className="hidden w-[380px] shrink-0 border-l border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] lg:flex lg:flex-col">
+      {appView === "studio" && <aside className="hidden w-[380px] shrink-0 border-l border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] lg:flex lg:flex-col">
         <div className="border-b border-[var(--outline-variant)] px-5 py-4">
           <div className="flex items-center gap-2 text-sm font-bold">
             <Bot size={18} />
@@ -750,7 +850,7 @@ export default function Home() {
             </button>
           </div>
         </div>
-      </aside>
+      </aside>}
       </div>
     </main>
   );
@@ -876,6 +976,271 @@ function VersionPanel({ versions, onRestore }: { versions: PaperVersion[]; onRes
   );
 }
 
+function WorkspaceView({
+  dashboard,
+  view,
+  onSelectPaper,
+  onUseTemplate,
+}: {
+  dashboard: DashboardSummary | null;
+  view: AppView;
+  onSelectPaper: (paper: DashboardSummary["recentPapers"][number]) => void;
+  onUseTemplate: (template: DashboardSummary["templates"][number]) => void;
+}) {
+  if (!dashboard) {
+    return (
+      <div className="mx-auto grid max-w-[980px] gap-4">
+        <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-8 text-center">
+          <LoaderCircle className="mx-auto animate-spin text-[var(--primary)]" size={24} />
+          <div className="mt-3 text-sm font-bold text-[var(--on-surface)]">Loading workspace data</div>
+          <p className="mt-1 text-xs text-[var(--on-surface-variant)]">Phoenix dashboard data will appear here once the API responds.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "library") {
+    return (
+      <div className="mx-auto grid max-w-[1100px] gap-5">
+        <DashboardMetricGrid dashboard={dashboard} />
+        <WorkspacePanel title="Recent papers" eyebrow="Saved work">
+          {dashboard.recentPapers.length === 0 ? (
+            <EmptyWorkspaceState title="No saved papers yet" description="Generated or imported papers will appear here after a version is saved." />
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {dashboard.recentPapers.map((paper) => (
+                <button key={paper.id} className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-4 text-left hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onSelectPaper(paper)} type="button">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-display text-lg font-semibold text-[var(--on-surface)]">{paper.title}</div>
+                      <div className="mt-1 font-mono text-[11px] text-[var(--on-surface-variant)]">
+                        {paper.board} Class {paper.classLevel} · {paper.subject}
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-[var(--surface-container-lowest)] px-2 py-1 text-[10px] font-black uppercase text-[var(--primary)]">{paper.status || "saved"}</span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+                    <MiniStat label="Marks" value={paper.marksTotal} />
+                    <MiniStat label="Versions" value={paper.versionCount} />
+                    <MiniStat label="Updated" value={formatShortDate(paper.updatedAt)} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </WorkspacePanel>
+        <WorkspacePanel title="Recent generation runs" eyebrow="AI activity">
+          <RunList runs={dashboard.recentRuns} />
+        </WorkspacePanel>
+      </div>
+    );
+  }
+
+  if (view === "analytics") {
+    return (
+      <div className="mx-auto grid max-w-[1100px] gap-5">
+        <DashboardMetricGrid dashboard={dashboard} />
+        <div className="grid gap-5 xl:grid-cols-[1.4fr_0.9fr]">
+          <WorkspacePanel title="Syllabus coverage" eyebrow="Corpus readiness">
+            {dashboard.chapterCoverage.length === 0 ? (
+              <EmptyWorkspaceState title="No chapters indexed" description="Ingest NCERT/PYQ files to build the chapter coverage map." />
+            ) : (
+              <div className="space-y-3">
+                {dashboard.chapterCoverage.map((chapter) => (
+                  <div key={chapter.id} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-[var(--on-surface)]">{chapter.name}</div>
+                        <div className="mt-0.5 font-mono text-[11px] text-[var(--on-surface-variant)]">
+                          NCERT {chapter.ncertCount} · PYQ {chapter.pyqCount} · Bank {chapter.bankCount}
+                        </div>
+                      </div>
+                      <span className="font-mono text-xs font-black text-[var(--primary)]">{chapter.coverageScore}%</span>
+                    </div>
+                    <ProgressLine value={chapter.coverageScore} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </WorkspacePanel>
+          <div className="grid gap-5">
+            <WorkspacePanel title="Difficulty tags" eyebrow="Question quality">
+              <DistributionRows rows={dashboard.difficultyDistribution.map((row) => ({ label: row.difficulty, value: row.count }))} />
+            </WorkspacePanel>
+            <WorkspacePanel title="Source mix" eyebrow="Retrieval base">
+              <DistributionRows rows={dashboard.sourceMix.map((row) => ({ label: row.source, value: row.count }))} />
+            </WorkspacePanel>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "templates") {
+    return (
+      <div className="mx-auto grid max-w-[1100px] gap-5">
+        <WorkspacePanel title="Template suite" eyebrow="Formatting presets">
+          {dashboard.templates.length === 0 ? (
+            <EmptyWorkspaceState title="No templates saved" description="Upload templates from the Studio panel to reuse formatting and missing-parameter hints." />
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {dashboard.templates.map((template) => (
+                <button key={template.id} className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-4 text-left hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onUseTemplate(template)} type="button">
+                  <div className="font-display text-lg font-semibold text-[var(--on-surface)]">{template.name}</div>
+                  <p className="mt-2 line-clamp-3 text-xs text-[var(--on-surface-variant)]">{template.description || "Reusable paper template with formatting and request hints."}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {Object.keys(template.formatting).slice(0, 4).map((key) => (
+                      <span key={key} className="rounded-full bg-[var(--surface-container-lowest)] px-2 py-1 text-[10px] font-black uppercase text-[var(--primary)]">{key}</span>
+                    ))}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </WorkspacePanel>
+      </div>
+    );
+  }
+
+  if (view === "department") {
+    const completedRate = dashboard.counts.generationRuns > 0 ? Math.round((dashboard.counts.completedRuns / dashboard.counts.generationRuns) * 100) : 0;
+
+    return (
+      <div className="mx-auto grid max-w-[1100px] gap-5">
+        <DashboardMetricGrid dashboard={dashboard} />
+        <div className="grid gap-5 lg:grid-cols-3">
+          <WorkspacePanel title="Generation health" eyebrow="Operations">
+            <div className="text-4xl font-black text-[var(--primary)]">{completedRate}%</div>
+            <p className="mt-2 text-xs text-[var(--on-surface-variant)]">Completed runs out of all tracked generation attempts.</p>
+            <ProgressLine value={completedRate} />
+          </WorkspacePanel>
+          <WorkspacePanel title="Corpus inventory" eyebrow="Retrieval">
+            <div className="space-y-3">
+              <MiniStat label="NCERT questions" value={dashboard.counts.ncertQuestions} />
+              <MiniStat label="PYQ questions" value={dashboard.counts.pyqQuestions} />
+              <MiniStat label="Question bank" value={dashboard.counts.questionBankItems} />
+            </div>
+          </WorkspacePanel>
+          <WorkspacePanel title="Version discipline" eyebrow="Saved papers">
+            <div className="text-4xl font-black text-[var(--primary)]">{dashboard.counts.papers}</div>
+            <p className="mt-2 text-xs text-[var(--on-surface-variant)]">Saved papers are versioned through Phoenix so teachers can revert after AI or manual edits.</p>
+          </WorkspacePanel>
+        </div>
+        <WorkspacePanel title="Recent runs" eyebrow="Backend trace">
+          <RunList runs={dashboard.recentRuns} />
+        </WorkspacePanel>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function DashboardMetricGrid({ dashboard }: { dashboard: DashboardSummary }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <MetricCard label="Saved papers" value={dashboard.counts.papers} detail={`${dashboard.counts.completedRuns}/${dashboard.counts.generationRuns} runs completed`} />
+      <MetricCard label="Indexed chapters" value={dashboard.counts.chapters} detail={`${dashboard.counts.ncertQuestions} NCERT items`} />
+      <MetricCard label="PYQ questions" value={dashboard.counts.pyqQuestions} detail="Tagged by marks, type, difficulty" />
+      <MetricCard label="Question bank" value={dashboard.counts.questionBankItems} detail={`${dashboard.counts.templates} templates ready`} />
+    </div>
+  );
+}
+
+function WorkspacePanel({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)]">
+      <div className="border-b border-[var(--outline-variant)] px-5 py-4">
+        <div className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--primary)]">{eyebrow}</div>
+        <h2 className="mt-1 font-display text-xl font-semibold text-[var(--on-surface)]">{title}</h2>
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
+  );
+}
+
+function MetricCard({ label, value, detail }: { label: string; value: number | string; detail: string }) {
+  return (
+    <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-4">
+      <div className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--on-surface-variant)]">{label}</div>
+      <div className="mt-2 text-3xl font-black text-[var(--primary)]">{value}</div>
+      <div className="mt-1 text-xs text-[var(--on-surface-variant)]">{detail}</div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-3 py-2">
+      <div className="font-mono text-[10px] font-black uppercase text-[var(--on-surface-variant)]">{label}</div>
+      <div className="mt-1 text-sm font-black text-[var(--on-surface)]">{value}</div>
+    </div>
+  );
+}
+
+function DistributionRows({ rows }: { rows: { label: string; value: number }[] }) {
+  const max = Math.max(1, ...rows.map((row) => row.value));
+
+  if (rows.length === 0) return <EmptyWorkspaceState title="No tags yet" description="Tagged imported questions will appear here." />;
+
+  return (
+    <div className="space-y-3">
+      {rows.map((row) => (
+        <div key={row.label}>
+          <div className="mb-1 flex items-center justify-between text-xs">
+            <span className="font-bold text-[var(--on-surface)]">{row.label}</span>
+            <span className="font-mono font-black text-[var(--primary)]">{row.value}</span>
+          </div>
+          <ProgressLine value={(row.value / max) * 100} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProgressLine({ value }: { value: number }) {
+  return (
+    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--surface-container-high)]">
+      <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    </div>
+  );
+}
+
+function RunList({ runs }: { runs: DashboardSummary["recentRuns"] }) {
+  if (runs.length === 0) return <EmptyWorkspaceState title="No runs yet" description="Generation attempts will appear here with their current status." />;
+
+  return (
+    <div className="space-y-2">
+      {runs.map((run) => {
+        const request = run.request;
+        const subject = String(request.subject ?? "Unknown subject");
+        const marks = String(request.total_marks ?? request.totalMarks ?? "?");
+
+        return (
+          <div key={run.id} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-mono text-[11px] font-black uppercase text-[var(--primary)]">{run.status}</span>
+              <span className="font-mono text-[10px] text-[var(--on-surface-variant)]">{formatShortDate(run.insertedAt)}</span>
+            </div>
+            <div className="mt-1 text-xs font-semibold text-[var(--on-surface)]">
+              {subject} · {marks} marks
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EmptyWorkspaceState({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="rounded border border-dashed border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-5 text-center">
+      <div className="text-sm font-black text-[var(--on-surface)]">{title}</div>
+      <p className="mx-auto mt-1 max-w-md text-xs text-[var(--on-surface-variant)]">{description}</p>
+    </div>
+  );
+}
+
 function ProgressBadge({ status }: { status: GenerationStatus }) {
   const done = status.status === "completed";
   const failed = status.status === "failed";
@@ -982,6 +1347,48 @@ function StyleNumber({
 
 function tabClass(active: boolean) {
   return `rounded-md px-2 py-2 text-[11px] font-bold capitalize ${active ? "bg-[var(--surface-container-lowest)] text-[var(--primary)] " : "text-[var(--on-surface-variant)] hover:text-[var(--on-surface)]"}`;
+}
+
+function topNavClass(active: boolean) {
+  return `h-9 rounded-md px-3 text-xs font-black uppercase tracking-[0.05em] ${
+    active ? "bg-[var(--primary-fixed)] text-[var(--primary)]" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] hover:text-[var(--on-surface)]"
+  }`;
+}
+
+function sideNavClass(active: boolean) {
+  return `flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs font-black uppercase tracking-[0.04em] ${
+    active ? "bg-[var(--primary-fixed)] text-[var(--primary)]" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] hover:text-[var(--on-surface)]"
+  }`;
+}
+
+function viewTitle(view: AppView) {
+  switch (view) {
+    case "library":
+      return "Paper Library";
+    case "analytics":
+      return "Syllabus Coverage";
+    case "templates":
+      return "Template Suite";
+    case "department":
+      return "Department Hub";
+    default:
+      return "Question Paper Studio";
+  }
+}
+
+function viewSubtitle(view: AppView) {
+  switch (view) {
+    case "library":
+      return "Saved papers, versions, and recent AI runs";
+    case "analytics":
+      return "Real corpus coverage by chapter, source, and difficulty";
+    case "templates":
+      return "Reusable formatting and request presets";
+    case "department":
+      return "Operational view of generation health and corpus readiness";
+    default:
+      return "Structured generation workspace";
+  }
 }
 
 function describeRequest(request: PaperRequest) {
@@ -1191,6 +1598,17 @@ function normalizeTemplateParams(raw: Record<string, unknown>): Partial<PaperReq
   return params;
 }
 
+function dashboardFormattingToDocumentStyle(raw: Record<string, unknown>): Partial<DocumentStyle> {
+  return {
+    margin: numberOrUndefined(raw.margin),
+    lineHeight: numberOrUndefined(raw.lineHeight ?? raw.line_height),
+    fontSize: numberOrUndefined(raw.fontSize ?? raw.font_size),
+    textColor: stringOrUndefined(raw.textColor ?? raw.text_color),
+    accentColor: stringOrUndefined(raw.accentColor ?? raw.accent_color),
+    pageColor: stringOrUndefined(raw.pageColor ?? raw.page_color),
+  };
+}
+
 function normalizeVersionPayload(payload: Record<string, unknown>, paperId?: string): Paper {
   const metadata = asRecord(payload.metadata);
   const summary = asRecord(payload.summary);
@@ -1285,6 +1703,13 @@ function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
   return hours > 0 ? `${hours} hour${hours === 1 ? "" : "s"} ${remainder} minutes` : `${minutes} minutes`;
+}
+
+function formatShortDate(value?: string) {
+  if (!value) return "n/a";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "n/a";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function numberOrUndefined(value: unknown) {

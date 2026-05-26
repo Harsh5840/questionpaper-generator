@@ -9,6 +9,7 @@ defmodule QpgWeb.Router do
     pipe_through(:api)
 
     get("/health", HealthController, :show)
+    get("/dashboard", DashboardController, :show)
     get("/catalog/chapters", CatalogController, :chapters)
     get("/retrieval/preview", RetrievalController, :preview)
     get("/question-bank", QuestionBankController, :index)
