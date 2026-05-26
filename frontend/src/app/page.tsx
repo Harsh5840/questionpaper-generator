@@ -12,7 +12,6 @@ import {
   HelpCircle,
   LayoutDashboard,
   LoaderCircle,
-  School,
   RefreshCcw,
   Save,
   Send,
@@ -58,7 +57,7 @@ import {
 
 type Mode = "structured" | "prompt";
 type RightPanel = "chat" | "retrieval" | "bank" | "versions";
-type AppView = "studio" | "library" | "analytics" | "templates" | "department";
+type AppView = "studio" | "library" | "analytics" | "templates";
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -486,7 +485,6 @@ export default function Home() {
               ["library", "Library"],
               ["analytics", "Analytics"],
               ["templates", "Templates"],
-              ["department", "Department"],
             ].map(([view, label]) => (
               <button key={view} className={topNavClass(appView === view)} onClick={() => setAppView(view as AppView)} type="button">
                 {label}
@@ -530,7 +528,6 @@ export default function Home() {
               { view: "library" as AppView, label: "Paper Library", icon: Archive },
               { view: "analytics" as AppView, label: "Syllabus Coverage", icon: BarChart3 },
               { view: "templates" as AppView, label: "Template Suite", icon: BookOpen },
-              { view: "department" as AppView, label: "Department Hub", icon: School },
             ].map((item) => (
               <button key={item.view} className={sideNavClass(appView === item.view)} onClick={() => setAppView(item.view)} type="button">
                 <item.icon size={16} />
@@ -1102,37 +1099,6 @@ function WorkspaceView({
     );
   }
 
-  if (view === "department") {
-    const completedRate = dashboard.counts.generationRuns > 0 ? Math.round((dashboard.counts.completedRuns / dashboard.counts.generationRuns) * 100) : 0;
-
-    return (
-      <div className="mx-auto grid max-w-[1100px] gap-5">
-        <DashboardMetricGrid dashboard={dashboard} />
-        <div className="grid gap-5 lg:grid-cols-3">
-          <WorkspacePanel title="Generation health" eyebrow="Operations">
-            <div className="text-4xl font-black text-[var(--primary)]">{completedRate}%</div>
-            <p className="mt-2 text-xs text-[var(--on-surface-variant)]">Completed runs out of all tracked generation attempts.</p>
-            <ProgressLine value={completedRate} />
-          </WorkspacePanel>
-          <WorkspacePanel title="Corpus inventory" eyebrow="Retrieval">
-            <div className="space-y-3">
-              <MiniStat label="NCERT questions" value={dashboard.counts.ncertQuestions} />
-              <MiniStat label="PYQ questions" value={dashboard.counts.pyqQuestions} />
-              <MiniStat label="Question bank" value={dashboard.counts.questionBankItems} />
-            </div>
-          </WorkspacePanel>
-          <WorkspacePanel title="Version discipline" eyebrow="Saved papers">
-            <div className="text-4xl font-black text-[var(--primary)]">{dashboard.counts.papers}</div>
-            <p className="mt-2 text-xs text-[var(--on-surface-variant)]">Saved papers are versioned through Phoenix so teachers can revert after AI or manual edits.</p>
-          </WorkspacePanel>
-        </div>
-        <WorkspacePanel title="Recent runs" eyebrow="Backend trace">
-          <RunList runs={dashboard.recentRuns} />
-        </WorkspacePanel>
-      </div>
-    );
-  }
-
   return null;
 }
 
@@ -1369,8 +1335,6 @@ function viewTitle(view: AppView) {
       return "Syllabus Coverage";
     case "templates":
       return "Template Suite";
-    case "department":
-      return "Department Hub";
     default:
       return "Question Paper Studio";
   }
@@ -1384,8 +1348,6 @@ function viewSubtitle(view: AppView) {
       return "Real corpus coverage by chapter, source, and difficulty";
     case "templates":
       return "Reusable formatting and request presets";
-    case "department":
-      return "Operational view of generation health and corpus readiness";
     default:
       return "Structured generation workspace";
   }
