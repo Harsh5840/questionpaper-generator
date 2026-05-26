@@ -1,4 +1,5 @@
 alias Qpg.Repo
+alias Qpg.Templates
 
 Repo.insert_all("source_documents", [
   %{
@@ -14,3 +15,5 @@ Repo.insert_all("source_documents", [
     updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
   }
 ])
+
+Templates.ensure_builtin_templates()

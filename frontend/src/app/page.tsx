@@ -147,6 +147,19 @@ export default function Home() {
     setRequest((current) => ({ ...current, [key]: value }));
   };
 
+  function applyDashboardTemplate(template: DashboardSummary["templates"][number]) {
+    const paperTemplate = dashboardTemplateToPaperTemplate(template);
+    const formatting = paperTemplate.formatting ?? {};
+
+    setRequest((current) => ({
+      ...current,
+      ...paperTemplate.inferredParams,
+      template: paperTemplate,
+    }));
+    setDocumentStyle((current) => ({ ...current, ...formatting }));
+    addAssistantMessage(`Template selected: ${template.name}`);
+  }
+
   async function refreshRetrievalPreview(nextRequest = requestPreview) {
     const preview = await fetchRetrievalPreviewViaApi(nextRequest);
     setRetrievalPreview(preview);
@@ -574,6 +587,26 @@ export default function Home() {
               </div>
 
               <Field label="Template (optional)">
+                <Select
+                  value={request.template?.name ?? ""}
+                  onChange={(event) => {
+                    const template = dashboard?.templates.find((item) => item.name === event.target.value);
+
+                    if (!template) {
+                      setRequest((current) => ({ ...current, template: null }));
+                      return;
+                    }
+
+                    applyDashboardTemplate(template);
+                  }}
+                >
+                  <option value="">Default editor style</option>
+                  {(dashboard?.templates ?? []).map((template) => (
+                    <option key={template.id} value={template.name}>
+                      {template.name}
+                    </option>
+                  ))}
+                </Select>
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]">
                   <FileUp size={15} />
                   <span>{request.template?.name ?? "Upload TXT / MD / JSON"}</span>
@@ -763,17 +796,7 @@ export default function Home() {
               }}
               onUseTemplate={(template) => {
                 setAppView("studio");
-                const formatting = dashboardFormattingToDocumentStyle(template.formatting);
-                setRequest((current) => ({
-                  ...current,
-                  template: {
-                    name: template.name,
-                    description: template.description,
-                    formatting,
-                    inferredParams: normalizeTemplateParams(template.inferredParams),
-                  },
-                }));
-                setDocumentStyle((current) => ({ ...current, ...formatting }));
+                applyDashboardTemplate(template);
               }}
             />
           )}
@@ -1568,6 +1591,15 @@ function dashboardFormattingToDocumentStyle(raw: Record<string, unknown>): Parti
     textColor: stringOrUndefined(raw.textColor ?? raw.text_color),
     accentColor: stringOrUndefined(raw.accentColor ?? raw.accent_color),
     pageColor: stringOrUndefined(raw.pageColor ?? raw.page_color),
+  };
+}
+
+function dashboardTemplateToPaperTemplate(template: DashboardSummary["templates"][number]): PaperTemplate {
+  return {
+    name: template.name,
+    description: template.description,
+    formatting: dashboardFormattingToDocumentStyle(template.formatting),
+    inferredParams: normalizeTemplateParams(template.inferredParams),
   };
 }
 
