@@ -94,6 +94,7 @@ export default function Home() {
   const [usage, setUsage] = useState<AiUsageSummary | null>(null);
   const [lastRunId, setLastRunId] = useState<string | undefined>();
   const [status, setStatus] = useState<GenerationStatus>(emptyStatus);
+  const [lastError, setLastError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
@@ -167,6 +168,7 @@ export default function Home() {
     setSelectedPaper(null);
     setVariantPapers([]);
     setUsage(null);
+    setLastError(null);
     setIsGenerating(true);
     setStatus({ status: "queued", step: "queued", message: "Starting generation", progress: 3 });
     addUserMessage(mode === "prompt" ? prompt : describeRequest(nextRequest));
@@ -192,9 +194,11 @@ export default function Home() {
       setUsage(await fetchUsageViaApi(activeRunId ?? lastRunId));
       setStatus({ status: "completed", step: "completed", message: "Paper ready", progress: 100 });
       addAssistantMessage(`Done. ${normalizedPapers.length} set${normalizedPapers.length === 1 ? "" : "s"} generated with editable questions.`);
-    } catch {
-      setStatus({ status: "failed", step: "failed", message: "Generation failed", progress: 100 });
-      addAssistantMessage("Generation failed.");
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setLastError(message);
+      setStatus({ status: "failed", step: "failed", message, progress: 100 });
+      addAssistantMessage(`Generation failed: ${message}`);
     } finally {
       setIsGenerating(false);
     }
@@ -300,33 +304,30 @@ export default function Home() {
   }
 
   async function importSourceQuestion(result: RetrievalResult) {
-    if (!selectedPaper) {
-      addAssistantMessage("Generate or create a paper before importing a question.");
-      return;
+    try {
+      const importRequest = mode === "prompt" ? requestPreview : request;
+      const imported = await importQuestionFromSourceViaApi({
+        sourceType: result.sourceType,
+        id: result.id,
+        request: importRequest,
+      });
+
+      const basePaper = selectedPaper ?? createDraftPaper(importRequest, documentStyle);
+      updateSelectedPaper(appendQuestionToPaper(basePaper, imported));
+      setLastError(null);
+      addAssistantMessage(selectedPaper ? "Imported source content as an editable question. Please review it before export." : "Created a draft paper and imported the source question.");
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setLastError(message);
+      setStatus({ status: "failed", step: "import_failed", message, progress: 100 });
+      addAssistantMessage(`Import failed: ${message}`);
     }
-
-    const imported = await importQuestionFromSourceViaApi({
-      sourceType: result.sourceType,
-      id: result.id,
-      request,
-    });
-
-    if (!imported) {
-      addAssistantMessage("Could not import that source item as a question.");
-      return;
-    }
-
-    appendQuestion(imported);
-    addAssistantMessage("Imported source content as an editable question. Please review it before export.");
   }
 
   async function importBankQuestion(item: QuestionBankItem) {
-    if (!selectedPaper) {
-      addAssistantMessage("Generate or create a paper before importing a bank question.");
-      return;
-    }
+    const basePaper = selectedPaper ?? createDraftPaper(requestPreview, documentStyle);
 
-    appendQuestion({
+    updateSelectedPaper(appendQuestionToPaper(basePaper, {
       id: crypto.randomUUID(),
       text: item.text,
       richText: item.richText,
@@ -338,8 +339,8 @@ export default function Home() {
       answer: item.answer ?? "",
       answerRichText: item.answerRichText,
       tags: item.tags,
-    });
-    addAssistantMessage("Inserted question from the question bank.");
+    }));
+    addAssistantMessage(selectedPaper ? "Inserted question from the question bank." : "Created a draft paper and inserted the bank question.");
   }
 
   async function importQuestionImage(sectionId: string) {
@@ -353,43 +354,31 @@ export default function Home() {
       if (!file) return;
 
       setStatus({ status: "running", step: "image_import", message: "Extracting question from image", progress: 45 });
-      const imported = await importQuestionFromImageViaApi({
-        fileName: file.name,
-        mimeType: file.type,
-        base64: await fileToBase64(file),
-        request,
-      });
+      try {
+        const imported = await importQuestionFromImageViaApi({
+          fileName: file.name,
+          mimeType: file.type,
+          base64: await fileToBase64(file),
+          request,
+        });
 
-      if (!imported) {
-        setStatus({ status: "failed", step: "image_import_failed", message: "Image import failed", progress: 100 });
-        addAssistantMessage("Image import failed. Check Gemini key and upload a clear question image.");
-        return;
+        appendQuestion(imported, sectionId);
+        setLastError(null);
+        setStatus({ status: "completed", step: "image_imported", message: "Question imported", progress: 100 });
+        addAssistantMessage("Extracted an editable question from the image. Please review it.");
+      } catch (error) {
+        const message = getErrorMessage(error);
+        setLastError(message);
+        setStatus({ status: "failed", step: "image_import_failed", message, progress: 100 });
+        addAssistantMessage(`Image import failed: ${message}`);
       }
-
-      appendQuestion(imported, sectionId);
-      setStatus({ status: "completed", step: "image_imported", message: "Question imported", progress: 100 });
-      addAssistantMessage("Extracted an editable question from the image. Please review it.");
     };
     input.click();
   }
 
   function appendQuestion(question: PaperQuestion, sectionId?: string) {
     if (!selectedPaper) return;
-
-    const targetSectionId = sectionId ?? selectedPaper.sections[0]?.id;
-    if (!targetSectionId) return;
-
-    updateSelectedPaper({
-      ...selectedPaper,
-      sections: selectedPaper.sections.map((section) =>
-        section.id === targetSectionId
-          ? {
-              ...section,
-              questions: [...section.questions, { ...question, id: crypto.randomUUID() }],
-            }
-          : section,
-      ),
-    });
+    updateSelectedPaper(appendQuestionToPaper(selectedPaper, question, sectionId));
   }
 
   function exportCurrent(format: "pdf" | "docx") {
@@ -641,6 +630,12 @@ export default function Home() {
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-8">
+          {lastError && (
+            <div className="mx-auto mb-4 max-w-[980px] rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+              <div className="font-black">Last error</div>
+              <div className="mt-1 whitespace-pre-wrap break-words text-xs font-medium">{lastError}</div>
+            </div>
+          )}
           <PaperEditor
             documentStyle={documentStyle}
             isGenerating={isGenerating}
@@ -984,6 +979,58 @@ function applyDocumentStyle(paper: Paper, documentStyle: DocumentStyle): Paper {
   return { ...paper, documentStyle };
 }
 
+function createDraftPaper(request: PaperRequest, documentStyle: DocumentStyle): Paper {
+  return applyDocumentStyle(
+    recalculatePaper({
+      id: crypto.randomUUID(),
+      title: `${request.subject} Draft Paper`,
+      metadata: {
+        board: request.board,
+        classLevel: request.classLevel,
+        subject: request.subject,
+        chapter: request.chapter || request.chapters[0] || "",
+        topic: request.topic || request.chapter || request.chapters.join(", "),
+        durationMinutes: request.durationMinutes,
+        source: request.source,
+        qpCode: "Draft",
+      },
+      summary: {
+        totalMarks: 0,
+        questionCount: 0,
+        difficulty: request.difficulty,
+        sourceCoverage: "Manual/import draft",
+      },
+      sections: [
+        {
+          id: crypto.randomUUID(),
+          title: "Imported Questions",
+          instructions: "Review imported questions before export.",
+          questions: [],
+        },
+      ],
+      warnings: [],
+    }),
+    documentStyle,
+  );
+}
+
+function appendQuestionToPaper(paper: Paper, question: PaperQuestion, sectionId?: string): Paper {
+  const targetSectionId = sectionId ?? paper.sections[0]?.id;
+  if (!targetSectionId) return paper;
+
+  return {
+    ...paper,
+    sections: paper.sections.map((section) =>
+      section.id === targetSectionId
+        ? {
+            ...section,
+            questions: [...section.questions, { ...question, id: crypto.randomUUID() }],
+          }
+        : section,
+    ),
+  };
+}
+
 function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
   let questionNumber = 1;
   const sectionHtml = paper.sections
@@ -1210,6 +1257,12 @@ function numberOrUndefined(value: unknown) {
 
 function stringOrUndefined(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Unknown error";
 }
 
 function normalizePosition<T extends string>(value: unknown, allowed: T[]): T | undefined {

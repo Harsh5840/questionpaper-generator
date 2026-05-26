@@ -396,11 +396,93 @@ defmodule Qpg.Generation do
 
   defp compact_retrieval_preview(preview) do
     %{
-      ncert: Enum.take(preview.ncert, 4),
-      pyq: Enum.take(preview.pyq, 4),
-      question_bank: Enum.take(preview.question_bank, 4),
-      marking_scheme: preview.marking_scheme,
-      warnings: preview.warnings
+      ncert: preview |> preview_value(:ncert, []) |> Enum.take(8),
+      pyq: preview |> preview_value(:pyq, []) |> Enum.take(8),
+      question_bank: preview |> preview_value(:question_bank, []) |> Enum.take(6),
+      marking_scheme: preview_value(preview, :marking_scheme, %{}),
+      section_sources: preview |> preview_value(:section_sources, %{}) |> compact_section_sources(),
+      warnings: preview_value(preview, :warnings, [])
     }
   end
+
+  defp compact_section_sources(%{chapters: chapters} = section_sources) when is_list(chapters) do
+    %{
+      ncert_count: section_sources[:ncert_count] || 0,
+      pyq_count: section_sources[:pyq_count] || 0,
+      chapters:
+        chapters
+        |> Enum.take(4)
+        |> Enum.map(&compact_section_source_chapter/1)
+    }
+  end
+
+  defp compact_section_sources(%{"chapters" => chapters} = section_sources) when is_list(chapters) do
+    %{
+      ncert_count: section_sources["ncert_count"] || section_sources["ncertCount"] || 0,
+      pyq_count: section_sources["pyq_count"] || section_sources["pyqCount"] || 0,
+      chapters:
+        chapters
+        |> Enum.take(4)
+        |> Enum.map(&compact_section_source_chapter/1)
+    }
+  end
+
+  defp compact_section_sources(_), do: %{chapters: [], ncert_count: 0, pyq_count: 0}
+
+  defp compact_section_source_chapter(chapter) when is_map(chapter) do
+    %{
+      name: chapter[:name] || chapter["name"],
+      position: chapter[:position] || chapter["position"],
+      sections:
+        chapter
+        |> preview_value(:sections, [])
+        |> Enum.filter(fn section ->
+          preview_value(section, :ncert, []) != [] or preview_value(section, :pyq, []) != []
+        end)
+        |> Enum.take(12)
+        |> Enum.map(&compact_section_source_section/1)
+    }
+  end
+
+  defp compact_section_source_section(section) when is_map(section) do
+    %{
+      name: section[:name] || section["name"],
+      section_type: section[:section_type] || section["section_type"] || section["sectionType"],
+      ncert:
+        section
+        |> preview_value(:ncert, [])
+        |> Enum.take(8)
+        |> Enum.map(&compact_source_result/1),
+      pyq:
+        section
+        |> preview_value(:pyq, [])
+        |> Enum.take(6)
+        |> Enum.map(&compact_source_result/1)
+    }
+  end
+
+  defp compact_source_result(result) when is_map(result) do
+    %{
+      title: result[:title] || result["title"],
+      citation: result[:citation] || result["citation"],
+      excerpt:
+        (result[:excerpt] || result["excerpt"] || "")
+        |> to_string()
+        |> String.slice(0, 700),
+      marks: result[:marks] || result["marks"],
+      difficulty: result[:difficulty] || result["difficulty"],
+      question_type: result[:question_type] || result["question_type"] || result["questionType"],
+      section_label:
+        get_in(result, [:metadata, :section_label]) ||
+          get_in(result, ["metadata", "section_label"]) ||
+          get_in(result, [:signals, :section_label]) ||
+          get_in(result, ["signals", "section_label"])
+    }
+  end
+
+  defp preview_value(map, key, default) when is_map(map) do
+    Map.get(map, key) || Map.get(map, to_string(key)) || default
+  end
+
+  defp preview_value(_map, _key, default), do: default
 end

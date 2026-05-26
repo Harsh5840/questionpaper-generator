@@ -86,6 +86,10 @@ defmodule Qpg.AI.Prompts do
       question-bank items, and PYQ pattern_hints. Treat context_blocks as
       grounding evidence and PYQ pattern_hints as style inspiration, not as text
       to copy verbatim.
+    - If retrieval_preview.section_sources is present, treat it as the strongest
+      grounding signal. Use its NCERT examples/exercises and PYQ rows to create
+      fresh exam-ready questions for the selected chapter. Do not return an empty
+      variants array when section_sources has NCERT or PYQ rows.
     - Include a warning when requested source coverage cannot be retrieved from
       owned corpus tools.
     - If template_context exists, follow its section labels, instructions, marks

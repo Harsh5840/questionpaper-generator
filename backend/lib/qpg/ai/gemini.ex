@@ -69,6 +69,73 @@ defmodule Qpg.AI.Gemini do
   end
 
   defp do_generate_bundle(request) do
+    target_variants = int_value(request["variant_count"], 1)
+
+    if target_variants > 1 do
+      generate_variant_bundles(request, target_variants)
+    else
+      do_generate_single_bundle(request, 1)
+    end
+  end
+
+  defp generate_variant_bundles(request, target_variants) do
+    parent_run_id = Process.get(:qpg_generation_run_id)
+    parent_operation = Process.get(:qpg_ai_operation)
+
+    results =
+      1..target_variants
+      |> Task.async_stream(
+        fn index ->
+          try do
+            if parent_run_id, do: Process.put(:qpg_generation_run_id, parent_run_id)
+            if parent_operation, do: Process.put(:qpg_ai_operation, parent_operation)
+
+            request
+            |> Map.put("variant_count", 1)
+            |> Map.put("variant_index", index)
+            |> Map.put("variant_instruction", "Generate Set #{set_label(index)}. Use the same blueprint and constraints, but create different fresh questions.")
+            |> do_generate_single_bundle_with_retry(index)
+          after
+            Process.delete(:qpg_generation_run_id)
+            Process.delete(:qpg_ai_operation)
+          end
+        end,
+        max_concurrency: min(target_variants, 3),
+        timeout: 180_000
+      )
+      |> Enum.to_list()
+
+    with {:ok, variants} <- collect_variant_results(results),
+         normalized <- %{
+           "variants" => variants,
+           "warnings" => [],
+           "tool_trace" => []
+         },
+         :ok <- validate_generation(normalized, request) do
+      {:ok, normalized}
+    end
+  end
+
+  defp do_generate_single_bundle_with_retry(request, variant_index, attempts_left \\ 2) do
+    case do_generate_single_bundle(request, variant_index) do
+      {:ok, bundle} ->
+        {:ok, bundle}
+
+      {:error, reason} when attempts_left > 0 and reason in [:missing_gemini_text, :invalid_generation_response, :generation_returned_no_variants] ->
+        Logging.warning("ai.gemini.generate_bundle.retrying_variant", %{
+          variant_index: variant_index,
+          reason: inspect(reason),
+          attempts_left: attempts_left
+        })
+
+        do_generate_single_bundle_with_retry(request, variant_index, attempts_left - 1)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp do_generate_single_bundle(request, variant_index) do
     contents = [
       user_content("""
       #{Prompts.system_prompt()}
@@ -100,6 +167,8 @@ defmodule Qpg.AI.Gemini do
          {:ok, json} <- extract_json(response),
          {:ok, normalized} <- normalize_generation_json(json, request),
          :ok <- validate_generation(normalized, request) do
+      normalized = normalize_single_variant_identity(normalized, variant_index)
+
       Logging.info("ai.gemini.generate_bundle.completed", %{
         variant_count: normalized |> Map.get("variants", []) |> length(),
         warning_count: normalized |> Map.get("warnings", []) |> length()
@@ -108,6 +177,44 @@ defmodule Qpg.AI.Gemini do
       {:ok, normalized}
     end
   end
+
+  defp collect_variant_results(results) do
+    results
+    |> Enum.reduce_while({:ok, []}, fn
+      {:ok, {:ok, %{"variants" => [variant | _]}}}, {:ok, variants} ->
+        {:cont, {:ok, variants ++ [variant]}}
+
+      {:ok, {:error, reason}}, _acc ->
+        {:halt, {:error, reason}}
+
+      {:exit, reason}, _acc ->
+        {:halt, {:error, {:variant_task_failed, reason}}}
+
+      other, _acc ->
+        {:halt, {:error, {:unexpected_variant_result, other}}}
+    end)
+  end
+
+  defp normalize_single_variant_identity(%{"variants" => [variant | rest]} = normalized, index) do
+    variant =
+      variant
+      |> Map.put("id", "variant-#{index}")
+      |> Map.update("title", "Set #{set_label(index)}", fn title ->
+        title = safe_text(title, "Question Paper")
+
+        if String.contains?(String.downcase(title), "set #{String.downcase(set_label(index))}") do
+          title
+        else
+          "#{title} - Set #{set_label(index)}"
+        end
+      end)
+
+    %{normalized | "variants" => [variant | rest]}
+  end
+
+  defp normalize_single_variant_identity(normalized, _index), do: normalized
+
+  defp set_label(index), do: <<?A + index - 1::utf8>>
 
   defp do_refine_bundle(paper, instruction) do
     contents = [
@@ -519,9 +626,9 @@ defmodule Qpg.AI.Gemini do
       questions = section |> Map.get("questions", []) |> normalize_questions()
 
       %{
-        "id" => to_string(section["id"] || "section-#{index}"),
-        "title" => to_string(section["title"] || section["section"] || "Section #{index}"),
-        "instructions" => to_string(section["instructions"] || ""),
+        "id" => safe_text(section["id"], "section-#{index}"),
+        "title" => safe_text(section["title"] || section["section"], "Section #{index}"),
+        "instructions" => safe_text(section["instructions"], ""),
         "questions" => questions
       }
     end)
@@ -539,13 +646,13 @@ defmodule Qpg.AI.Gemini do
       stem = question["text"] || question["question"]
 
       %{
-        "id" => to_string(question["id"] || "q#{index}"),
+        "id" => safe_text(question["id"], "q#{index}"),
         "text" => question_text(stem, options),
         "marks" => int_value(question["marks"], 1),
-        "type" => to_string(question["type"] || question["question_type"] || ""),
-        "difficulty" => to_string(question["difficulty"] || ""),
-        "source" => to_string(question["source"] || "AI generated from retrieved context"),
-        "answer" => to_string(question["answer"] || "")
+        "type" => safe_text(question["type"] || question["question_type"], ""),
+        "difficulty" => safe_text(question["difficulty"], ""),
+        "source" => safe_text(question["source"], "AI generated from retrieved context"),
+        "answer" => safe_text(question["answer"], "")
       }
     end)
     |> Enum.reject(&blank_question?/1)
@@ -555,17 +662,17 @@ defmodule Qpg.AI.Gemini do
 
   defp normalize_imported_question(question, request) when is_map(question) do
     %{
-      "id" => to_string(question["id"] || Ecto.UUID.generate()),
-      "text" => to_string(question["text"] || question["question"] || ""),
-      "richText" => to_string(question["richText"] || question["rich_text"] || ""),
+      "id" => safe_text(question["id"], Ecto.UUID.generate()),
+      "text" => safe_text(question["text"] || question["question"], ""),
+      "richText" => safe_text(question["richText"] || question["rich_text"], ""),
       "marks" => int_value(question["marks"], 1),
-      "type" => to_string(question["type"] || question["question_type"] || "SA"),
-      "difficulty" => to_string(question["difficulty"] || "Medium"),
-      "source" => to_string(question["source"] || "Image import"),
-      "topic" => to_string(question["topic"] || request["topic"] || request["chapter"] || ""),
-      "answer" => to_string(question["answer"] || ""),
+      "type" => safe_text(question["type"] || question["question_type"], "SA"),
+      "difficulty" => safe_text(question["difficulty"], "Medium"),
+      "source" => safe_text(question["source"], "Image import"),
+      "topic" => safe_text(question["topic"] || request["topic"] || request["chapter"], ""),
+      "answer" => safe_text(question["answer"], ""),
       "answerRichText" =>
-        to_string(question["answerRichText"] || question["answer_rich_text"] || ""),
+        safe_text(question["answerRichText"] || question["answer_rich_text"], ""),
       "tags" => List.wrap(question["tags"])
     }
   end
@@ -583,9 +690,9 @@ defmodule Qpg.AI.Gemini do
     end
   end
 
-  defp question_text(text, []), do: to_string(text || "")
+  defp question_text(text, []), do: safe_text(text, "")
 
-  defp question_text(text, options), do: append_options(to_string(text || ""), options)
+  defp question_text(text, options), do: append_options(safe_text(text, ""), options)
 
   defp append_options(text, options) do
     option_lines =
@@ -606,22 +713,22 @@ defmodule Qpg.AI.Gemini do
     %{
       "total_marks" => int_value(summary["total_marks"], total_marks),
       "question_count" => int_value(summary["question_count"], length(questions)),
-      "difficulty" => to_string(summary["difficulty"] || ""),
+      "difficulty" => safe_text(summary["difficulty"], ""),
       "source_coverage" =>
-        to_string(summary["source_coverage"] || summary["sourceCoverage"] || "")
+        safe_text(summary["source_coverage"] || summary["sourceCoverage"], "")
     }
   end
 
   defp normalize_metadata(metadata) when is_map(metadata) do
     %{
-      "board" => to_string(metadata["board"] || ""),
-      "class_level" => to_string(metadata["class_level"] || metadata["classLevel"] || ""),
-      "subject" => to_string(metadata["subject"] || ""),
+      "board" => safe_text(metadata["board"], ""),
+      "class_level" => safe_text(metadata["class_level"] || metadata["classLevel"], ""),
+      "subject" => safe_text(metadata["subject"], ""),
       "chapter" => metadata["chapter"],
       "topic" => metadata["topic"],
       "duration_minutes" =>
         int_value(metadata["duration_minutes"] || metadata["durationMinutes"], 180),
-      "source" => to_string(metadata["source"] || "")
+      "source" => safe_text(metadata["source"], "")
     }
   end
 
@@ -663,7 +770,7 @@ defmodule Qpg.AI.Gemini do
 
   defp strip_option_label(value) do
     value
-    |> to_string()
+    |> safe_text("")
     |> String.replace(~r/^\s*\(?[A-D]\)?[.)]?\s*/i, "")
   end
 
@@ -692,8 +799,39 @@ defmodule Qpg.AI.Gemini do
   defp validate_generation(_normalized, _request), do: {:error, :invalid_generation_response}
 
   defp blank_question?(question) do
-    text = question["text"] |> to_string() |> String.trim()
+    text = question["text"] |> safe_text("") |> String.trim()
     String.length(text) < 12 or Regex.match?(~r/^[A-D]\.\s+/i, text)
+  end
+
+  defp safe_text(nil, default), do: default
+  defp safe_text(value, _default) when is_binary(value), do: value
+  defp safe_text(value, _default) when is_atom(value), do: to_string(value)
+  defp safe_text(value, _default) when is_integer(value), do: Integer.to_string(value)
+  defp safe_text(value, _default) when is_float(value), do: Float.to_string(value)
+
+  defp safe_text(value, default) when is_list(value) do
+    value
+    |> Enum.map(&safe_text(&1, ""))
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+    |> case do
+      "" -> default
+      text -> text
+    end
+  end
+
+  defp safe_text(value, default) when is_map(value) do
+    value["citation"] || value[:citation] || value["text"] || value[:text] || value["title"] ||
+      value[:title] || encode_text(value, default)
+  end
+
+  defp safe_text(value, _default), do: inspect(value)
+
+  defp encode_text(value, default) do
+    case Jason.encode(value) do
+      {:ok, encoded} -> encoded
+      {:error, _error} -> default
+    end
   end
 
   defp request_summary(request) do

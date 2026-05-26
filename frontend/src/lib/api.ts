@@ -35,7 +35,7 @@ export async function generateViaApi(request: PaperRequest, callbacks: Generatio
       body: JSON.stringify(toGenerationPayload(request)),
     });
 
-    if (!response.ok) throw new Error(`Generation failed with ${response.status}`);
+    if (!response.ok) throw new Error(await responseErrorMessage(response, "Generation failed"));
 
     const data = (await response.json()) as GenerationRun;
     callbacks.onStatus?.({
@@ -50,7 +50,7 @@ export async function generateViaApi(request: PaperRequest, callbacks: Generatio
     const variants = Array.isArray(completed.variants) ? completed.variants : [];
     const paperIds = Array.isArray(completed.paper_ids) ? completed.paper_ids : [];
 
-    if (variants.length === 0) throw new Error("No variants returned");
+    if (variants.length === 0) throw new Error(completed.warnings?.[0] ?? "No variants returned from the AI provider.");
 
     return variants.map((variant: Record<string, unknown>, index: number) => normalizePaper(variant, paperIds[index]));
   } catch (error) {
@@ -230,7 +230,7 @@ export async function importQuestionFromSourceViaApi(attrs: {
   sourceType: string;
   id: string;
   request: PaperRequest;
-}): Promise<PaperQuestion | null> {
+}): Promise<PaperQuestion> {
   try {
     const response = await fetch(`${API_BASE}/questions/import-from-source`, {
       method: "POST",
@@ -242,11 +242,11 @@ export async function importQuestionFromSourceViaApi(attrs: {
       }),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) throw new Error(await responseErrorMessage(response, "Source import failed"));
     const data = await response.json();
     return normalizeQuestion(asRecord(data.question));
-  } catch {
-    return null;
+  } catch (error) {
+    throw error instanceof TypeError ? new Error("Backend unavailable. Start Phoenix and retry import.") : error;
   }
 }
 
@@ -255,7 +255,7 @@ export async function importQuestionFromImageViaApi(attrs: {
   mimeType: string;
   base64: string;
   request: PaperRequest;
-}): Promise<PaperQuestion | null> {
+}): Promise<PaperQuestion> {
   try {
     const response = await fetch(`${API_BASE}/questions/import-from-image`, {
       method: "POST",
@@ -268,11 +268,11 @@ export async function importQuestionFromImageViaApi(attrs: {
       }),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) throw new Error(await responseErrorMessage(response, "Image import failed"));
     const data = await response.json();
     return normalizeQuestion(asRecord(data.question));
-  } catch {
-    return null;
+  } catch (error) {
+    throw error instanceof TypeError ? new Error("Backend unavailable. Start Phoenix and retry image import.") : error;
   }
 }
 
@@ -388,7 +388,7 @@ async function waitForGeneration(runId: string, callbacks: GenerationCallbacks):
 
       if ((event === "completed" || run.status === "completed") && run.id) finish(run);
       if (event === "failed" || run.status === "failed") {
-        finishWithError(new Error(String(payload.message ?? "Generation failed")));
+        finishWithError(new Error(run.warnings?.[0] ?? String(payload.message ?? "Generation failed")));
       }
     };
 
@@ -415,7 +415,11 @@ async function waitForGeneration(runId: string, callbacks: GenerationCallbacks):
           if (run.status === "completed") finish(run);
           else if (run.status === "failed") finishWithError(new Error(run.warnings?.[0] ?? "Generation failed"));
           else pollTimer = setTimeout(poll, 1200);
-        } catch {
+        } catch (error) {
+          if (pollCount > 6) {
+            finishWithError(error instanceof Error ? error : new Error("Could not poll generation status"));
+            return;
+          }
           pollTimer = setTimeout(poll, 1500);
         }
       };
@@ -728,4 +732,20 @@ function toBackendTemplate(template: NonNullable<PaperRequest["template"]>) {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+async function responseErrorMessage(response: Response, fallback: string) {
+  try {
+    const body = await response.json();
+    const record = asRecord(body);
+    const detail = record.error ?? record.message ?? record.reason;
+    return detail ? `${fallback}: ${String(detail)}` : `${fallback} with ${response.status}`;
+  } catch {
+    try {
+      const text = await response.text();
+      return text ? `${fallback}: ${text}` : `${fallback} with ${response.status}`;
+    } catch {
+      return `${fallback} with ${response.status}`;
+    }
+  }
 }
