@@ -9,10 +9,13 @@ import {
   Download,
   FileText,
   FileUp,
+  HelpCircle,
   LoaderCircle,
   RefreshCcw,
   Save,
   Send,
+  Search,
+  Settings,
   Sparkles,
   Square,
 } from "lucide-react";
@@ -66,7 +69,7 @@ const defaultDocumentStyle: DocumentStyle = {
   lineHeight: 1.55,
   fontSize: 16,
   textColor: "#111827",
-  accentColor: "#1d4ed8",
+  accentColor: "#895100",
   pageColor: "#ffffff",
 };
 
@@ -433,18 +436,50 @@ export default function Home() {
   }
 
   return (
-    <main className="flex h-screen overflow-hidden bg-[#eef1f7] text-slate-950">
-      <aside className="hidden w-[320px] shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col">
-        <div className="border-b border-slate-200 px-5 py-4">
-          <div className="flex items-center gap-2 text-sm font-bold text-blue-700">
-            <FileText size={18} />
-            Question Paper Studio
+    <main className="flex h-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--on-surface)]">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--outline-variant)] bg-[var(--surface)] px-6">
+        <div className="flex min-w-0 items-center gap-6">
+          <div className="hidden items-center gap-2 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-2 py-1.5 lg:flex">
+            <Search size={15} className="text-[var(--on-surface-variant)]" />
+            <input className="w-56 bg-transparent font-mono text-[12px] outline-none placeholder:text-[var(--outline)]" placeholder="Command..." />
+            <span className="rounded-sm border border-[var(--outline-variant)] bg-[var(--surface-variant)] px-1 font-mono text-[10px] text-[var(--on-surface-variant)]">Ctrl K</span>
           </div>
-          <p className="mt-1 text-xs font-medium text-slate-500">Structured editor · owned source retrieval</p>
+          <div>
+            <div className="font-display text-2xl font-semibold text-[var(--primary)]">Academic Command Center</div>
+            <div className="font-mono text-[11px] text-[var(--on-surface-variant)]">Question Paper Studio · owned corpus workflow</div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button className="hidden rounded border border-[var(--outline-variant)] bg-[var(--on-surface)] px-4 py-2 text-xs font-black uppercase tracking-[0.05em] text-[var(--surface)] hover:bg-[var(--primary)] md:inline-flex" onClick={() => void runGeneration()} type="button">
+            Create New Paper
+          </button>
+          <button className="icon-button" title="Help" type="button">
+            <HelpCircle size={16} />
+          </button>
+          <button className="icon-button" title="Settings" type="button">
+            <Settings size={16} />
+          </button>
+          <div className="ml-1 flex h-8 w-8 items-center justify-center rounded border border-[var(--outline-variant)] bg-[var(--surface-container-high)] font-mono text-[11px] font-bold text-[var(--primary)]">TP</div>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <aside className="hidden w-[320px] shrink-0 border-r border-[var(--outline-variant)] bg-[var(--surface-container-low)] lg:flex lg:flex-col">
+        <div className="border-b border-[var(--outline-variant)] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded border border-[var(--outline-variant)] bg-[var(--surface-container-high)] text-[var(--primary)]">
+              <FileText size={18} />
+            </div>
+            <div>
+              <div className="font-display text-xl font-semibold text-[var(--on-surface)]">Paper Lab</div>
+              <p className="font-mono text-[11px] text-[var(--on-surface-variant)]">Senior Faculty Portal</p>
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1">
+          <div className="grid grid-cols-2 rounded-lg bg-[var(--surface-container-high)] p-1">
             <button className={tabClass(mode === "structured")} onClick={() => setMode("structured")} type="button">
               Parameters
             </button>
@@ -478,7 +513,7 @@ export default function Home() {
               </div>
 
               <Field label="Template (optional)">
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-blue-300 hover:bg-blue-50">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]">
                   <FileUp size={15} />
                   <span>{request.template?.name ?? "Upload TXT / MD / JSON"}</span>
                   <input
@@ -493,13 +528,13 @@ export default function Home() {
                 </label>
               </Field>
 
-              <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
                 <StyleNumber label="Font" value={documentStyle.fontSize} min={12} max={22} onChange={(fontSize) => setDocumentStyle((current) => ({ ...current, fontSize }))} />
                 <StyleNumber label="Spacing" value={documentStyle.lineHeight} min={1.1} max={2.2} step={0.05} onChange={(lineHeight) => setDocumentStyle((current) => ({ ...current, lineHeight }))} />
                 <StyleNumber label="Margin" value={documentStyle.margin} min={24} max={96} onChange={(margin) => setDocumentStyle((current) => ({ ...current, margin }))} />
-                <label className="grid gap-1 text-[11px] font-bold text-slate-600">
+                <label className="grid gap-1 text-[11px] font-bold text-[var(--on-surface-variant)]">
                   <span>Text color</span>
-                  <input className="h-8 w-full rounded border border-slate-300 bg-white p-1" type="color" value={documentStyle.textColor} onChange={(event) => setDocumentStyle((current) => ({ ...current, textColor: event.target.value }))} />
+                  <input className="h-8 w-full rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-1" type="color" value={documentStyle.textColor} onChange={(event) => setDocumentStyle((current) => ({ ...current, textColor: event.target.value }))} />
                 </label>
               </div>
 
@@ -562,8 +597,8 @@ export default function Home() {
             </>
           )}
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            <div className="font-bold text-slate-900">Request</div>
+          <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">
+            <div className="font-bold text-[var(--on-surface)]">Request</div>
             <div className="mt-1">
               {requestPreview.board} Class {requestPreview.classLevel} {requestPreview.subject}, {requestPreview.totalMarks} marks
             </div>
@@ -571,14 +606,14 @@ export default function Home() {
           </div>
 
           {variantPapers.length > 0 && (
-            <div className="rounded-lg border border-slate-200 bg-white p-3">
-              <div className="mb-2 text-xs font-bold text-slate-900">Generated sets</div>
+            <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3">
+              <div className="mb-2 text-xs font-bold text-[var(--on-surface)]">Generated sets</div>
               <div className="space-y-2">
                 {variantPapers.map((paper, index) => (
                   <button
                     key={paper.id}
                     className={`w-full rounded-md border px-3 py-2 text-left text-xs font-semibold ${
-                      selectedPaper?.id === paper.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-50 text-slate-600"
+                      selectedPaper?.id === paper.id ? "border-[var(--primary)] bg-[var(--primary-fixed)] text-[var(--primary)]" : "border-[var(--outline-variant)] bg-[var(--surface-container-low)] text-[var(--on-surface-variant)]"
                     }`}
                     onClick={() => void selectVariant(paper)}
                     type="button"
@@ -592,7 +627,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="space-y-2 border-t border-slate-200 p-4">
+        <div className="space-y-2 border-t border-[var(--outline-variant)] p-4">
           <button className="primary-button" disabled={isGenerating} onClick={() => void runGeneration()} type="button">
             {isGenerating ? <LoaderCircle className="animate-spin" size={16} /> : <Sparkles size={16} />}
             {isGenerating ? "Generating" : "Generate paper"}
@@ -607,10 +642,10 @@ export default function Home() {
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4">
+        <header className="flex h-14 items-center justify-between border-b border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-4">
           <div>
             <div className="text-sm font-bold">{selectedPaper?.title ?? "Untitled paper"}</div>
-            <div className="text-xs text-slate-500">{status.message}</div>
+            <div className="text-xs text-[var(--on-surface-variant)]">{status.message}</div>
           </div>
           <div className="flex items-center gap-2">
             <ProgressBadge status={status} />
@@ -620,10 +655,10 @@ export default function Home() {
             <button className="icon-button" onClick={() => exportCurrent("pdf")} title="Export PDF" type="button">
               <Download size={16} />
             </button>
-            <button className="hidden rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 md:inline-flex" onClick={() => exportCurrent("docx")} type="button">
+            <button className="hidden rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] md:inline-flex" onClick={() => exportCurrent("docx")} type="button">
               DOCX
             </button>
-            <button className="hidden rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 md:inline-flex" onClick={() => void exportToClassroom()} type="button">
+            <button className="hidden rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] md:inline-flex" onClick={() => void exportToClassroom()} type="button">
               Classroom
             </button>
           </div>
@@ -631,7 +666,7 @@ export default function Home() {
 
         <div className="flex-1 overflow-y-auto px-4 py-8">
           {lastError && (
-            <div className="mx-auto mb-4 max-w-[980px] rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+            <div className="mx-auto mb-4 max-w-[980px] rounded-lg border border-[var(--error)] bg-[var(--error-container)] px-4 py-3 text-sm font-semibold text-[var(--on-error-container)]">
               <div className="font-black">Last error</div>
               <div className="mt-1 whitespace-pre-wrap break-words text-xs font-medium">{lastError}</div>
             </div>
@@ -648,13 +683,13 @@ export default function Home() {
         </div>
       </section>
 
-      <aside className="hidden w-[380px] shrink-0 border-l border-slate-200 bg-white lg:flex lg:flex-col">
-        <div className="border-b border-slate-200 px-5 py-4">
+      <aside className="hidden w-[380px] shrink-0 border-l border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] lg:flex lg:flex-col">
+        <div className="border-b border-[var(--outline-variant)] px-5 py-4">
           <div className="flex items-center gap-2 text-sm font-bold">
             <Bot size={18} />
             V2 controls
           </div>
-          <div className="mt-3 grid grid-cols-4 gap-1 rounded-lg bg-slate-100 p-1">
+          <div className="mt-3 grid grid-cols-4 gap-1 rounded-lg bg-[var(--surface-container-high)] p-1">
             {(["chat", "retrieval", "bank", "versions"] as RightPanel[]).map((panel) => (
               <button key={panel} className={tabClass(rightPanel === panel)} onClick={() => setRightPanel(panel)} type="button">
                 {panel}
@@ -667,18 +702,18 @@ export default function Home() {
           {rightPanel === "chat" && (
             <>
               {usage && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                  <div className="font-bold text-slate-900">API usage</div>
+                <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">
+                  <div className="font-bold text-[var(--on-surface)]">API usage</div>
                   <div className="mt-1">{usage.totalTokens} tokens · ${usage.estimatedCostUsd.toFixed(6)}</div>
                 </div>
               )}
               {chatMessages.map((message) => (
-                <div key={message.id} className={message.role === "user" ? "ml-8 rounded-2xl bg-blue-600 px-3 py-2 text-xs font-medium text-white" : "mr-8 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"}>
+                <div key={message.id} className={message.role === "user" ? "ml-8 rounded bg-[var(--primary)] px-3 py-2 text-xs font-medium text-[var(--on-primary)]" : "mr-8 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs text-[var(--on-surface)]"}>
                   {message.text}
                 </div>
               ))}
               {(isGenerating || isChatting) && (
-                <div className="mr-8 flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <div className="mr-8 flex items-center gap-2 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs text-[var(--on-surface-variant)]">
                   <LoaderCircle className="animate-spin" size={14} />
                   {isChatting ? "Editing paper..." : "Generating paper..."}
                 </div>
@@ -699,7 +734,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="border-t border-slate-200 p-4">
+        <div className="border-t border-[var(--outline-variant)] p-4">
           <div className="relative">
             <input
               className="input pr-11"
@@ -710,12 +745,13 @@ export default function Home() {
                 if (event.key === "Enter") void askAi();
               }}
             />
-            <button className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-blue-600 text-white" onClick={() => void askAi()} type="button">
+            <button className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--on-primary)]" onClick={() => void askAi()} type="button">
               <Send size={14} />
             </button>
           </div>
         </div>
       </aside>
+      </div>
     </main>
   );
 }
@@ -739,27 +775,27 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
       {hasSectionSources ? (
         <div className="space-y-4">
           {sectionChapters.map((chapter) => (
-            <div key={chapter.name} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div key={chapter.name} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs font-black uppercase tracking-wide text-slate-900">{chapter.name}</div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-slate-500">NCERT exercises/examples and matching PYQs</div>
+                  <div className="text-xs font-black uppercase tracking-wide text-[var(--on-surface)]">{chapter.name}</div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-[var(--on-surface-variant)]">NCERT exercises/examples and matching PYQs</div>
                 </div>
-                {chapter.position !== undefined && <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-slate-500">Ch {chapter.position}</span>}
+                {chapter.position !== undefined && <span className="rounded-full bg-[var(--surface-container-lowest)] px-2 py-1 text-[10px] font-black text-[var(--on-surface-variant)]">Ch {chapter.position}</span>}
               </div>
 
               <div className="mt-3 space-y-2">
                 {chapter.sections
                   .filter((section) => section.ncert.length > 0 || section.pyq.length > 0)
                   .map((section) => (
-                    <details key={`${chapter.name}-${section.name}`} className="rounded-lg border border-slate-200 bg-white" open={section.sectionType === "exercise"}>
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-bold text-slate-800">
+                    <details key={`${chapter.name}-${section.name}`} className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)]" open={section.sectionType === "exercise"}>
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-bold text-[var(--on-surface)]">
                         <span>{section.name}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-500">
+                        <span className="rounded-full bg-[var(--surface-container-high)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--on-surface-variant)]">
                           {section.ncert.length + section.pyq.length}
                         </span>
                       </summary>
-                      <div className="space-y-2 border-t border-slate-100 p-2">
+                      <div className="space-y-2 border-t border-[var(--outline-variant)] p-2">
                         {section.ncert.map((result) => (
                           <SourceResultButton key={`section-ncert-${result.id}`} result={result} onImport={onImport} />
                         ))}
@@ -774,7 +810,7 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
           ))}
         </div>
       ) : results.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">No retrieval results yet. Add NCERT/PYQ data or generate a preview.</div>
+        <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No retrieval results yet. Add NCERT/PYQ data or generate a preview.</div>
       ) : (
         results.map((result) => <SourceResultButton key={`${result.sourceType}-${result.id}`} result={result} onImport={onImport} />)
       )}
@@ -786,14 +822,14 @@ function SourceResultButton({ result, onImport }: { result: RetrievalResult; onI
   const sourceLabel = result.sourceType.replaceAll("_", " ").toUpperCase();
 
   return (
-    <button className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left text-xs hover:border-blue-300 hover:bg-blue-50" onClick={() => onImport(result)} type="button">
+    <button className="w-full rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3 text-left text-xs hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onImport(result)} type="button">
       <span className="flex items-center justify-between gap-2">
-        <span className="font-bold text-slate-900">{sourceLabel}</span>
-        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700">Import</span>
+        <span className="font-bold text-[var(--on-surface)]">{sourceLabel}</span>
+        <span className="rounded-full bg-[var(--primary-fixed)] px-2 py-0.5 text-[10px] font-black text-[var(--primary)]">Import</span>
       </span>
-      <span className="mt-1 block font-semibold text-slate-700">{result.title}</span>
-      <span className="mt-1 line-clamp-4 block text-slate-600">{result.excerpt}</span>
-      <span className="mt-2 block text-[11px] font-bold text-blue-700">
+      <span className="mt-1 block font-semibold text-[var(--on-surface)]">{result.title}</span>
+      <span className="mt-1 line-clamp-4 block text-[var(--on-surface-variant)]">{result.excerpt}</span>
+      <span className="mt-2 block text-[11px] font-bold text-[var(--primary)]">
         {result.sectionLabel ?? result.questionType ?? "source"} · {result.marks ?? "?"} marks
       </span>
     </button>
@@ -808,13 +844,13 @@ function QuestionBankPanel({ items, onImport, onRefresh }: { items: QuestionBank
         Refresh bank
       </button>
       {items.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">No saved questions yet. Use the save icon on any question card.</div>
+        <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No saved questions yet. Use the save icon on any question card.</div>
       ) : (
         items.map((item) => (
-          <button key={item.id} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left text-xs hover:border-blue-300 hover:bg-blue-50" onClick={() => onImport(item)} type="button">
-            <span className="font-bold text-slate-900">{item.questionType ?? "Question"} · {item.marks ?? "?"} marks</span>
-            <span className="mt-1 line-clamp-4 block text-slate-600">{item.text}</span>
-            <span className="mt-2 block text-[11px] font-bold text-slate-500">{item.chapter ?? "No chapter"} · {item.difficulty ?? "Mixed"}</span>
+          <button key={item.id} className="w-full rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3 text-left text-xs hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onImport(item)} type="button">
+            <span className="font-bold text-[var(--on-surface)]">{item.questionType ?? "Question"} · {item.marks ?? "?"} marks</span>
+            <span className="mt-1 line-clamp-4 block text-[var(--on-surface-variant)]">{item.text}</span>
+            <span className="mt-2 block text-[11px] font-bold text-[var(--on-surface-variant)]">{item.chapter ?? "No chapter"} · {item.difficulty ?? "Mixed"}</span>
           </button>
         ))
       )}
@@ -824,14 +860,14 @@ function QuestionBankPanel({ items, onImport, onRefresh }: { items: QuestionBank
 
 function VersionPanel({ versions, onRestore }: { versions: PaperVersion[]; onRestore: (version: PaperVersion) => void }) {
   if (versions.length === 0) {
-    return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">No versions saved yet.</div>;
+    return <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No versions saved yet.</div>;
   }
 
   return (
     <div className="space-y-2">
       {versions.map((version) => (
-        <button key={version.id} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-600 hover:border-blue-300 hover:bg-blue-50" onClick={() => onRestore(version)} type="button">
-          <span className="font-bold text-slate-900">Version {version.versionNumber}</span>
+        <button key={version.id} className="w-full rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-3 py-2 text-left text-xs text-[var(--on-surface-variant)] hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onRestore(version)} type="button">
+          <span className="font-bold text-[var(--on-surface)]">Version {version.versionNumber}</span>
           <span className="block">{version.changeSource.replaceAll("_", " ")}</span>
           {version.marksTotal !== undefined && <span className="block text-[11px]">{version.marksTotal} marks</span>}
         </button>
@@ -844,8 +880,8 @@ function ProgressBadge({ status }: { status: GenerationStatus }) {
   const done = status.status === "completed";
   const failed = status.status === "failed";
   return (
-    <div className="hidden min-w-36 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 sm:flex">
-      {done ? <CheckCircle2 className="text-emerald-600" size={14} /> : failed ? <RefreshCcw className="text-red-600" size={14} /> : <LoaderCircle className={status.status === "running" || status.status === "queued" ? "animate-spin text-blue-600" : "text-slate-400"} size={14} />}
+    <div className="hidden min-w-36 items-center gap-2 rounded-full border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-1.5 text-xs font-semibold text-[var(--on-surface-variant)] sm:flex">
+      {done ? <CheckCircle2 className="text-emerald-600" size={14} /> : failed ? <RefreshCcw className="text-red-600" size={14} /> : <LoaderCircle className={status.status === "running" || status.status === "queued" ? "animate-spin text-[var(--primary)]" : "text-[var(--outline)]"} size={14} />}
       <span>{Math.round(status.progress)}%</span>
     </div>
   );
@@ -853,7 +889,7 @@ function ProgressBadge({ status }: { status: GenerationStatus }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="grid gap-1.5 text-xs font-bold text-slate-600">
+    <label className="grid gap-1.5 text-xs font-bold text-[var(--on-surface-variant)]">
       <span>{label}</span>
       {children}
     </label>
@@ -889,7 +925,7 @@ function ChapterPicker({
   }
 
   return (
-    <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2">
+    <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-2">
       {chapters.map((chapter) => {
         const selected = selectedChapters.includes(chapter);
 
@@ -897,7 +933,7 @@ function ChapterPicker({
           <button
             key={chapter}
             className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-semibold ${
-              selected ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"
+              selected ? "bg-[var(--primary-fixed)] text-[var(--primary)]" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)]"
             }`}
             onClick={() => {
               if (mode === "single") {
@@ -934,18 +970,18 @@ function StyleNumber({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="grid gap-1 text-[11px] font-bold text-slate-600">
+    <label className="grid gap-1 text-[11px] font-bold text-[var(--on-surface-variant)]">
       <span className="flex items-center justify-between">
         {label}
-        <span className="font-semibold text-slate-400">{value}</span>
+        <span className="font-semibold text-[var(--outline)]">{value}</span>
       </span>
-      <input className="accent-blue-600" type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input className="accent-[var(--primary)]" type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
   );
 }
 
 function tabClass(active: boolean) {
-  return `rounded-md px-2 py-2 text-[11px] font-bold capitalize ${active ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-900"}`;
+  return `rounded-md px-2 py-2 text-[11px] font-bold capitalize ${active ? "bg-[var(--surface-container-lowest)] text-[var(--primary)] " : "text-[var(--on-surface-variant)] hover:text-[var(--on-surface)]"}`;
 }
 
 function describeRequest(request: PaperRequest) {

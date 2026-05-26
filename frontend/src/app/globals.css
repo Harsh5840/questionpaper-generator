@@ -1,36 +1,41 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9f9ff;
-  --foreground: #141b2b;
-  --surface: #f9f9ff;
+  --background: #fff8f4;
+  --foreground: #211a14;
+  --surface: #fff8f4;
   --surface-container-lowest: #ffffff;
-  --surface-container-low: #f1f3ff;
-  --surface-container: #e9edff;
-  --surface-container-high: #e1e8fd;
-  --surface-container-highest: #dce2f7;
-  --surface-dim: #d3daef;
-  --on-surface: #141b2b;
-  --on-surface-variant: #434655;
-  --outline: #737686;
-  --outline-variant: #c3c6d7;
-  --primary: #004ac6;
-  --primary-container: #2563eb;
+  --surface-container-low: #fff1e7;
+  --surface-container: #faebe0;
+  --surface-container-high: #f4e6da;
+  --surface-container-highest: #efe0d5;
+  --surface-dim: #e6d7cc;
+  --on-surface: #211a14;
+  --on-surface-variant: #534436;
+  --outline: #857464;
+  --outline-variant: #d8c3b1;
+  --primary: #895100;
+  --primary-container: #d98b2c;
+  --primary-fixed: #ffdcbd;
+  --primary-fixed-dim: #ffb86d;
   --on-primary: #ffffff;
-  --on-primary-container: #eeefff;
-  --secondary: #006a61;
-  --secondary-container: #86f2e4;
+  --on-primary-container: #4e2c00;
+  --secondary: #5f5e60;
+  --secondary-container: #e2dfe1;
   --on-secondary: #ffffff;
-  --on-secondary-container: #006f66;
-  --tertiary: #943700;
-  --tertiary-fixed: #ffdbcd;
+  --on-secondary-container: #636264;
+  --tertiary: #006685;
+  --tertiary-fixed: #bfe9ff;
+  --surface-variant: #efe0d5;
   --error: #ba1a1a;
   --error-container: #ffdad6;
   --on-error-container: #93000a;
-  --focus: #004ac6;
-  --shadow: 0 4px 18px rgba(17, 24, 39, 0.06);
-  --font-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-display: Georgia, "Times New Roman", serif;
+  --focus: #895100;
+  --shadow: 0 8px 24px rgba(26, 26, 28, 0.08);
+  --font-sans: var(--font-geist), "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  --font-paper: var(--font-libre-caslon), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-jetbrains-mono), "SFMono-Regular", Consolas, monospace;
 }
 
 @theme inline {
@@ -84,7 +89,7 @@ button:disabled {
 }
 
 .focus-ring:focus-visible {
-  box-shadow: 0 0 0 3px rgba(0, 74, 198, 0.22), 0 0 0 1px var(--focus);
+  box-shadow: 0 0 0 3px rgba(217, 139, 44, 0.24), 0 0 0 1px var(--focus);
 }
 
 .nav-link {
@@ -152,22 +157,23 @@ button:disabled {
 }
 
 .input {
-  min-height: 2.5rem;
+  min-height: 2.35rem;
   width: 100%;
-  border-radius: 0.5rem;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
+  border-radius: 0.25rem;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-lowest);
   padding: 0.5rem 0.75rem;
-  color: #0f172a;
-  font-size: 0.875rem;
+  color: var(--on-surface);
+  font-size: 0.8125rem;
   font-weight: 500;
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
 .input:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  border-color: var(--on-surface);
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(217, 139, 44, 0.16);
 }
 
 .primary-button,
@@ -178,19 +184,21 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 0.625rem;
-  font-size: 0.875rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
   font-weight: 800;
-  transition: opacity 150ms ease, background-color 150ms ease;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: opacity 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
 .primary-button {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--on-surface);
+  color: var(--surface);
 }
 
 .primary-button:hover {
-  background: #1d4ed8;
+  background: var(--primary);
 }
 
 .primary-button:disabled {
@@ -198,9 +206,14 @@ button:disabled {
 }
 
 .secondary-button {
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #475569;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-lowest);
+  color: var(--on-surface-variant);
+}
+
+.secondary-button:hover {
+  background: var(--surface-container-low);
+  color: var(--on-surface);
 }
 
 .icon-button {
@@ -209,14 +222,14 @@ button:disabled {
   min-width: 2rem;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
-  color: #475569;
+  border-radius: 0.25rem;
+  color: var(--on-surface-variant);
   transition: background-color 150ms ease, color 150ms ease;
 }
 
 .icon-button:hover {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--surface-container-low);
+  color: var(--primary);
 }
 
 .editor-mini-button {
@@ -261,7 +274,7 @@ button:disabled {
 
 .qpg-canvas {
   min-height: 980px;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-paper), Georgia, "Times New Roman", serif;
   color: #111827;
   line-height: 1.62;
   outline: none;
@@ -270,7 +283,7 @@ button:disabled {
 .qpg-canvas h1 {
   margin: 0 0 0.75rem;
   text-align: center;
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-display), Georgia, serif;
   font-size: 1.55rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -278,7 +291,7 @@ button:disabled {
 
 .qpg-canvas h2 {
   margin: 1.75rem 0 0.45rem;
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
   font-size: 0.95rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -293,7 +306,7 @@ button:disabled {
 .qpg-canvas .paper-meta {
   margin-bottom: 1.25rem;
   text-align: center;
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
   font-size: 0.88rem;
   color: #475569;
 }
@@ -303,7 +316,7 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-mono), Consolas, monospace;
   font-size: 0.82rem;
   font-weight: 700;
   color: #334155;
@@ -385,7 +398,7 @@ button:disabled {
 .rich-text-surface {
   width: 100%;
   padding: 0.25rem 0.5rem;
-  font-family: Georgia, var(--font-display), serif;
+  font-family: var(--font-paper), Georgia, serif;
   font-size: 1.02rem;
   font-weight: 500;
   line-height: 1.6;
