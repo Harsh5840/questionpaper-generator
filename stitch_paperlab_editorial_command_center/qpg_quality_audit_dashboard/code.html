@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Quality Audit Dashboard - Academic Command Center</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=JetBrains+Mono:wght@400&amp;family=Libre+Caslon+Text:wght@400&amp;family=Newsreader:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "error-container": "#ffdad6",
+                        "tertiary": "#006685",
+                        "outline-variant": "#d8c3b1",
+                        "on-surface": "#211a14",
+                        "surface-container-highest": "#efe0d5",
+                        "secondary-container": "#e2dfe1",
+                        "on-surface-variant": "#534436",
+                        "on-background": "#211a14",
+                        "tertiary-fixed": "#bfe9ff",
+                        "surface-dim": "#e6d7cc",
+                        "primary": "#895100",
+                        "on-primary-container": "#4e2c00",
+                        "surface": "#fff8f4",
+                        "on-tertiary-container": "#00394b",
+                        "on-tertiary-fixed": "#001f2a",
+                        "inverse-surface": "#372f27",
+                        "error": "#ba1a1a",
+                        "inverse-on-surface": "#fdeee3",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "on-primary-fixed": "#2c1600",
+                        "outline": "#857464",
+                        "on-secondary": "#ffffff",
+                        "background": "#fff8f4",
+                        "tertiary-container": "#26a8d6",
+                        "secondary": "#5f5e60",
+                        "primary-fixed-dim": "#ffb86d",
+                        "tertiary-fixed-dim": "#6dd2ff",
+                        "on-error-container": "#93000a",
+                        "surface-container-high": "#f4e6da",
+                        "on-tertiary-fixed-variant": "#004d65",
+                        "primary-fixed": "#ffdcbd",
+                        "surface-tint": "#895100",
+                        "primary-container": "#d98b2c",
+                        "on-error": "#ffffff",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "on-primary-fixed-variant": "#683c00",
+                        "on-secondary-fixed-variant": "#474649",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-container": "#636264",
+                        "on-primary": "#ffffff",
+                        "surface-variant": "#efe0d5",
+                        "secondary-fixed": "#e4e2e4",
+                        "inverse-primary": "#ffb86d",
+                        "surface-container-low": "#fff1e7",
+                        "surface-bright": "#fff8f4",
+                        "surface-container": "#faebe0"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    spacing: {
+                        "gutter": "1px",
+                        "panel-padding": "16px",
+                        "margin-page": "32px",
+                        "unit": "4px",
+                        "density-dense": "8px",
+                        "density-comfy": "24px"
+                    },
+                    fontFamily: {
+                        "headline-md": ["Newsreader"],
+                        "ui-label-md": ["Geist"],
+                        "mono-data": ["JetBrains Mono"],
+                        "display-lg": ["Newsreader"],
+                        "paper-preview-body": ["Libre Caslon Text"],
+                        "ui-label-bold": ["Geist"],
+                        "headline-sm-mobile": ["Newsreader"]
+                    },
+                    fontSize: {
+                        "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "500" }],
+                        "ui-label-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "mono-data": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "paper-preview-body": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "ui-label-bold": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-sm-mobile": ["20px", { "lineHeight": "1.2", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #F9F8F6; /* Fallback to theme token */
+        }
+        /* Custom scrollbar for dense lists */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #e2dfe1;
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #d8c3b1;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col font-ui-label-md">
+<!-- TopNavBar -->
+<nav class="bg-surface dark:bg-on-surface border-b border-outline-variant dark:border-outline flex justify-between items-center w-full px-margin-page h-16 max-w-full mx-auto relative z-20">
+<div class="flex items-center gap-density-comfy">
+<span class="text-headline-md font-headline-md text-primary dark:text-primary-fixed">Academic Command Center</span>
+<!-- Search Bar (on left per JSON) -->
+<div class="hidden md:flex relative ml-4">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant" style="font-size: 18px;">search</span>
+<input class="bg-surface-container-low border-b border-outline-variant focus:border-on-surface focus:outline-none pl-8 pr-4 py-1 font-mono-data text-mono-data text-on-surface w-64 transition-colors" placeholder="Search archive..." type="text"/>
+</div>
+</div>
+<div class="hidden md:flex items-center gap-density-comfy h-full">
+<a class="text-on-surface-variant hover:text-primary transition-colors h-full flex items-center font-ui-label-bold text-ui-label-bold" href="#">Library</a>
+<a class="text-primary border-b-2 border-primary h-full flex items-center font-ui-label-bold text-ui-label-bold" href="#">Analytics</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors h-full flex items-center font-ui-label-bold text-ui-label-bold" href="#">Templates</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors h-full flex items-center font-ui-label-bold text-ui-label-bold" href="#">Department</a>
+</div>
+<div class="flex items-center gap-density-dense">
+<button class="hidden md:flex bg-on-surface text-surface px-4 py-1.5 font-ui-label-bold text-ui-label-bold rounded-DEFAULT hover:bg-on-surface-variant transition-colors">Create New Paper</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors"><span class="material-symbols-outlined">help</span></button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors"><span class="material-symbols-outlined">settings</span></button>
+<img alt="Teacher profile avatar" class="w-8 h-8 rounded-full border border-outline-variant ml-2 object-cover" data-alt="A close-up studio portrait of a female academic professional. The lighting is soft and flattering, creating a warm, approachable mood. She has a subtle smile and is wearing glasses. The background is a muted, abstract ivory tone that blends seamlessly with the warm academic UI style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCP31S689Vih4ho3cm0dlMZW2xORgKNmrNrhJOX8yk721VPZbIPeYg4wysobdyljIk6lDO7yLpo0rgyivprkXj5EE8mPAM5KY1Q-WcJlStohSe4JO2fRgps6556Jjktkk_OF3NdpuuCnpYJm3rW8y5NPyR50DXcJlBzKZsYl99N-jZKe_0kAC0r5yN8YDxouA0u8IXZSiIeYckY-cyFp3NV0m7erH8anP4Wo76B61kFNBe13fmfAuyMrcoEkx6QP0sHyQQ4P81dYmk"/>
+</div>
+</nav>
+<div class="flex flex-1 overflow-hidden relative z-10">
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col w-64 bg-surface-container-low dark:bg-surface-dim border-r border-outline-variant h-[calc(100vh-64px)] justify-between py-panel-padding overflow-y-auto shrink-0">
+<div>
+<div class="px-panel-padding mb-margin-page flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-container-high rounded-full flex items-center justify-center border border-outline-variant shrink-0">
+<span class="material-symbols-outlined text-primary">account_balance</span>
+</div>
+<div>
+<h2 class="font-ui-label-bold text-ui-label-bold text-on-surface">Department of Education</h2>
+<p class="font-mono-data text-mono-data text-on-surface-variant">Senior Faculty Portal</p>
+</div>
+</div>
+<div class="px-panel-padding mb-6">
+<button class="w-full border border-outline-variant text-on-surface px-4 py-2 font-ui-label-bold text-ui-label-bold rounded-DEFAULT hover:bg-surface-container-high transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" style="font-size: 18px;">add</span> New Template
+                    </button>
+</div>
+<nav class="flex flex-col gap-gutter">
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant hover:bg-surface-container transition-all duration-200 ease-out font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">book_4</span> My Library
+                    </a>
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant hover:bg-surface-container transition-all duration-200 ease-out font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">grid_view</span> Syllabus Coverage
+                    </a>
+<a class="flex items-center gap-3 px-panel-padding py-2 bg-surface border-l-4 border-primary text-primary font-bold transition-all duration-200 ease-out font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">analytics</span> Difficulty Analytics
+                    </a>
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant hover:bg-surface-container transition-all duration-200 ease-out font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">rule</span> Grading Schemes
+                    </a>
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant hover:bg-surface-container transition-all duration-200 ease-out font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">archive</span> Archived
+                    </a>
+</nav>
+</div>
+<div class="mt-auto pt-6 px-panel-padding flex flex-col gap-gutter">
+<a class="flex items-center gap-3 py-2 text-on-surface-variant hover:bg-surface-container transition-colors font-mono-data text-mono-data" href="#">
+<span class="material-symbols-outlined" style="font-size: 16px;">dns</span> System Status
+                </a>
+<a class="flex items-center gap-3 py-2 text-on-surface-variant hover:bg-surface-container transition-colors font-mono-data text-mono-data" href="#">
+<span class="material-symbols-outlined" style="font-size: 16px;">menu_book</span> Documentation
+                </a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto bg-background p-margin-page">
+<header class="mb-margin-page">
+<h1 class="font-display-lg text-display-lg text-on-surface mb-2">Quality Audit Dashboard</h1>
+<p class="font-paper-preview-body text-paper-preview-body text-on-surface-variant max-w-2xl">A comprehensive overview of recent assessments, departmental difficulty curves, and standardized template usage.</p>
+</header>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-density-comfy items-start">
+<!-- Column 1: Recent Papers -->
+<section class="bg-surface-container-lowest border border-outline-variant p-panel-padding rounded-DEFAULT flex flex-col gap-density-dense shadow-[0_8px_24px_rgba(26,26,28,0.02)] h-full">
+<div class="flex justify-between items-center mb-2 pb-2 border-b border-outline-variant">
+<h2 class="font-headline-md text-headline-md text-on-surface">Recent Papers</h2>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">filter_list</span></button>
+</div>
+<div class="flex flex-col gap-gutter">
+<!-- Paper Item 1 -->
+<div class="group p-3 hover:bg-surface-container-low border border-transparent hover:border-outline-variant transition-colors cursor-pointer rounded-DEFAULT flex flex-col gap-2">
+<div class="flex justify-between items-start">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface">Introductory Calculus Midterm</h3>
+<span class="bg-surface-container-high px-2 py-0.5 font-mono-data text-mono-data text-on-surface-variant rounded-DEFAULT border border-outline-variant">Draft</span>
+</div>
+<div class="flex items-center gap-3 font-mono-data text-mono-data text-on-surface-variant">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined" style="font-size: 14px;">format_list_numbered</span> 24 Qs</span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined" style="font-size: 14px;">sell</span> MATH-101</span>
+</div>
+</div>
+<!-- Paper Item 2 -->
+<div class="group p-3 hover:bg-surface-container-low border border-transparent hover:border-outline-variant transition-colors cursor-pointer rounded-DEFAULT flex flex-col gap-2 bg-surface-container-lowest">
+<div class="flex justify-between items-start">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface">European History Quiz II</h3>
+<span class="bg-surface-container-highest px-2 py-0.5 font-mono-data text-mono-data text-on-surface-variant rounded-DEFAULT border border-outline-variant">Finalized</span>
+</div>
+<div class="flex items-center gap-3 font-mono-data text-mono-data text-on-surface-variant">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined" style="font-size: 14px;">format_list_numbered</span> 10 Qs</span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined" style="font-size: 14px;">sell</span> HIST-204</span>
+</div>
+</div>
+<!-- Paper Item 3 -->
+<div class="group p-3 hover:bg-surface-container-low border border-transparent hover:border-outline-variant transition-colors cursor-pointer rounded-DEFAULT flex flex-col gap-2">
+<div class="flex justify-between items-start">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface">Quantum Physics Final</h3>
+<span class="bg-primary-container/20 px-2 py-0.5 font-mono-data text-mono-data text-primary rounded-DEFAULT border border-primary-container">Reviewing</span>
+</div>
+<div class="flex items-center gap-3 font-mono-data text-mono-data text-on-surface-variant">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined" style="font-size: 14px;">format_list_numbered</span> 50 Qs</span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined" style="font-size: 14px;">sell</span> PHYS-401</span>
+</div>
+</div>
+</div>
+<button class="mt-auto pt-4 text-primary hover:text-on-surface transition-colors font-ui-label-bold text-ui-label-bold text-left flex items-center gap-1">View All Papers <span class="material-symbols-outlined" style="font-size: 16px;">arrow_forward</span></button>
+</section>
+<!-- Column 2: Departmental Insights -->
+<section class="bg-surface-container-lowest border border-outline-variant p-panel-padding rounded-DEFAULT flex flex-col gap-density-comfy shadow-[0_8px_24px_rgba(26,26,28,0.02)] h-full">
+<div class="flex justify-between items-center pb-2 border-b border-outline-variant">
+<h2 class="font-headline-md text-headline-md text-on-surface">Departmental Insights</h2>
+<span class="material-symbols-outlined text-on-surface-variant">insights</span>
+</div>
+<!-- Bar Chart Area (Conceptual) -->
+<div class="flex flex-col gap-2">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface mb-1">Difficulty Distribution (Current Term)</h3>
+<div class="flex items-end h-32 gap-unit border-b border-outline-variant pb-2 relative">
+<!-- Y-axis markers -->
+<div class="absolute left-0 top-0 h-full flex flex-col justify-between text-mono-data font-mono-data text-on-surface-variant opacity-50 text-[10px]">
+<span>100%</span>
+<span>50%</span>
+<span>0%</span>
+</div>
+<div class="flex-1 flex items-end justify-center group ml-8">
+<div class="w-full max-w-[40px] bg-surface-container-high border border-outline-variant rounded-t-sm h-[30%] group-hover:bg-surface-dim transition-colors relative">
+<span class="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 font-mono-data text-mono-data bg-on-surface text-surface px-1 py-0.5 rounded-DEFAULT transition-opacity text-[10px]">30%</span>
+</div>
+</div>
+<div class="flex-1 flex items-end justify-center group">
+<div class="w-full max-w-[40px] bg-primary border border-primary-container rounded-t-sm h-[55%] group-hover:bg-primary-fixed-dim transition-colors relative">
+<span class="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 font-mono-data text-mono-data bg-on-surface text-surface px-1 py-0.5 rounded-DEFAULT transition-opacity text-[10px]">55%</span>
+</div>
+</div>
+<div class="flex-1 flex items-end justify-center group">
+<div class="w-full max-w-[40px] bg-tertiary border border-tertiary-container rounded-t-sm h-[15%] group-hover:bg-tertiary-fixed transition-colors relative">
+<span class="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 font-mono-data text-mono-data bg-on-surface text-surface px-1 py-0.5 rounded-DEFAULT transition-opacity text-[10px]">15%</span>
+</div>
+</div>
+</div>
+<div class="flex justify-between px-8 text-mono-data font-mono-data text-on-surface-variant mt-1">
+<span class="flex-1 text-center">Easy</span>
+<span class="flex-1 text-center font-bold text-primary">Medium</span>
+<span class="flex-1 text-center">Hard</span>
+</div>
+</div>
+<!-- Circular Progress -->
+<div class="mt-auto pt-4 flex items-center justify-between border-t border-outline-variant border-dashed">
+<div>
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface">Annual Syllabus Coverage</h3>
+<p class="font-mono-data text-mono-data text-on-surface-variant mt-1">Target: 85% by Q3</p>
+</div>
+<div class="relative w-16 h-16 flex items-center justify-center">
+<!-- SVG Circle placeholder using Tailwind border -->
+<div class="absolute inset-0 rounded-full border-4 border-surface-container-high"></div>
+<!-- Simulated progress -->
+<div class="absolute inset-0 rounded-full border-4 border-primary border-t-transparent border-l-transparent transform rotate-45"></div>
+<span class="font-headline-md text-headline-md text-on-surface text-sm">62%</span>
+</div>
+</div>
+</section>
+<!-- Column 3: Automated Templates -->
+<section class="bg-surface-container-lowest border border-outline-variant p-panel-padding rounded-DEFAULT flex flex-col gap-density-dense shadow-[0_8px_24px_rgba(26,26,28,0.02)] h-full">
+<div class="flex justify-between items-center mb-2 pb-2 border-b border-outline-variant">
+<h2 class="font-headline-md text-headline-md text-on-surface">Automated Templates</h2>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">add_circle</span></button>
+</div>
+<p class="font-paper-preview-body text-paper-preview-body text-sm text-on-surface-variant mb-2">Standardized formats to maintain grading consistency across the department.</p>
+<div class="grid grid-cols-1 gap-density-dense">
+<!-- Template 1 -->
+<div class="border border-outline-variant p-3 rounded-DEFAULT hover:border-primary cursor-pointer transition-colors group flex items-start gap-3 bg-surface">
+<div class="w-10 h-10 bg-surface-container-high rounded flex items-center justify-center shrink-0 border border-outline-variant group-hover:bg-primary-container/10 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">timer</span>
+</div>
+<div>
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface">Short Form Quiz</h3>
+<p class="font-mono-data text-mono-data text-on-surface-variant mt-1">10-15 min • Multiple Choice &amp; Fill-in</p>
+</div>
+</div>
+<!-- Template 2 -->
+<div class="border border-outline-variant p-3 rounded-DEFAULT hover:border-primary cursor-pointer transition-colors group flex items-start gap-3 bg-surface">
+<div class="w-10 h-10 bg-surface-container-high rounded flex items-center justify-center shrink-0 border border-outline-variant group-hover:bg-primary-container/10 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">import_contacts</span>
+</div>
+<div>
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface">Standard Midterm</h3>
+<p class="font-mono-data text-mono-data text-on-surface-variant mt-1">60 min • Mixed Format + 1 Essay</p>
+</div>
+</div>
+<!-- Template 3 -->
+<div class="border border-outline-variant p-3 rounded-DEFAULT hover:border-primary cursor-pointer transition-colors group flex items-start gap-3 bg-surface">
+<div class="w-10 h-10 bg-surface-container-high rounded flex items-center justify-center shrink-0 border border-outline-variant group-hover:bg-primary-container/10 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary">school</span>
+</div>
+<div>
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface">Comprehensive Final</h3>
+<p class="font-mono-data text-mono-data text-on-surface-variant mt-1">120 min • Heavy Essay Weighting</p>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</body></html>

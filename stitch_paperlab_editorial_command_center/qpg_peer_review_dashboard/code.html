@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Academic Command Center - Faculty Collaboration &amp; Review</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=JetBrains+Mono:wght@400&amp;family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                            "surface-variant": "#efe0d5",
+                            "inverse-on-surface": "#fdeee3",
+                            "surface-dim": "#e6d7cc",
+                            "secondary-fixed-dim": "#c8c6c8",
+                            "on-primary-container": "#4e2c00",
+                            "error": "#ba1a1a",
+                            "secondary-container": "#e2dfe1",
+                            "surface": "#fff8f4",
+                            "inverse-primary": "#ffb86d",
+                            "surface-container-highest": "#efe0d5",
+                            "on-error": "#ffffff",
+                            "on-tertiary-container": "#00394b",
+                            "on-primary-fixed-variant": "#683c00",
+                            "tertiary": "#006685",
+                            "secondary-fixed": "#e4e2e4",
+                            "surface-container-lowest": "#ffffff",
+                            "on-secondary-container": "#636264",
+                            "surface-container-low": "#fff1e7",
+                            "secondary": "#5f5e60",
+                            "primary-fixed": "#ffdcbd",
+                            "outline-variant": "#d8c3b1",
+                            "on-tertiary": "#ffffff",
+                            "surface-container-high": "#f4e6da",
+                            "on-primary-fixed": "#2c1600",
+                            "on-secondary-fixed-variant": "#474649",
+                            "surface-container": "#faebe0",
+                            "primary-container": "#d98b2c",
+                            "tertiary-container": "#26a8d6",
+                            "on-secondary-fixed": "#1b1b1d",
+                            "on-tertiary-fixed-variant": "#004d65",
+                            "on-secondary": "#ffffff",
+                            "background": "#fff8f4",
+                            "on-background": "#211a14",
+                            "error-container": "#ffdad6",
+                            "primary": "#895100",
+                            "primary-fixed-dim": "#ffb86d",
+                            "surface-bright": "#fff8f4",
+                            "outline": "#857464",
+                            "on-primary": "#ffffff",
+                            "on-surface": "#211a14",
+                            "tertiary-fixed": "#bfe9ff",
+                            "inverse-surface": "#372f27",
+                            "on-tertiary-fixed": "#001f2a",
+                            "surface-tint": "#895100",
+                            "on-error-container": "#93000a",
+                            "tertiary-fixed-dim": "#6dd2ff",
+                            "on-surface-variant": "#534436"
+                    },
+                    "borderRadius": {
+                            "DEFAULT": "0.125rem",
+                            "lg": "0.25rem",
+                            "xl": "0.5rem",
+                            "full": "0.75rem"
+                    },
+                    "spacing": {
+                            "gutter": "1px",
+                            "density-comfy": "24px",
+                            "panel-padding": "16px",
+                            "density-dense": "8px",
+                            "unit": "4px",
+                            "margin-page": "32px"
+                    },
+                    "fontFamily": {
+                            "mono-data": ["JetBrains Mono", "monospace"],
+                            "headline-md": ["Newsreader", "serif"],
+                            "headline-sm-mobile": ["Newsreader", "serif"],
+                            "display-lg": ["Newsreader", "serif"],
+                            "ui-label-bold": ["Geist", "sans-serif"],
+                            "ui-label-md": ["Geist", "sans-serif"],
+                            "paper-preview-body": ["Libre Caslon Text", "serif"]
+                    },
+                    "fontSize": {
+                            "mono-data": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                            "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "500" }],
+                            "headline-sm-mobile": ["20px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                            "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                            "ui-label-bold": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                            "ui-label-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                            "paper-preview-body": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-filled {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom Scrollbar for Studio feel */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #d8c3b1; /* outline-variant */
+            border-radius: 4px;
+            border: 2px solid #fff8f4; /* background */
+        }
+        /* Grid background pattern for empty states/canvas */
+        .bg-grid-pattern {
+            background-image: linear-gradient(to right, #efe0d5 1px, transparent 1px), linear-gradient(to bottom, #efe0d5 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background h-screen flex flex-col overflow-hidden antialiased">
+<!-- TopNavBar (Shared Component) -->
+<header class="bg-surface border-b border-outline-variant w-full h-16 flex justify-between items-center px-margin-page mx-auto z-50 shrink-0">
+<!-- Brand -->
+<div class="flex items-center gap-density-comfy">
+<h1 class="font-headline-md text-headline-md text-primary tracking-tight">Academic Command Center</h1>
+<!-- Navigation Links -->
+<nav class="hidden md:flex items-center gap-density-dense ml-8 h-full">
+<a class="text-on-surface-variant hover:text-primary transition-colors font-ui-label-bold text-ui-label-bold px-3 py-2 flex items-center h-full border-b-2 border-transparent" href="#">Library</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-ui-label-bold text-ui-label-bold px-3 py-2 flex items-center h-full border-b-2 border-transparent" href="#">Analytics</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-ui-label-bold text-ui-label-bold px-3 py-2 flex items-center h-full border-b-2 border-transparent" href="#">Templates</a>
+<!-- Active Navigation Item: Department (Inferred for Collaboration/Review) -->
+<a class="text-primary border-b-2 border-primary font-ui-label-bold text-ui-label-bold px-3 py-2 flex items-center h-full mt-[2px]" href="#">Department</a>
+</nav>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-density-comfy">
+<!-- Search Command Bar placeholder -->
+<div class="hidden lg:flex items-center bg-surface-container-lowest border border-outline-variant rounded px-3 py-1.5 w-64 group focus-within:border-primary-container focus-within:ring-1 focus-within:ring-primary-container transition-all">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px] mr-2">search</span>
+<input class="bg-transparent border-none outline-none font-mono-data text-mono-data w-full text-on-surface placeholder:text-on-surface-variant/50 p-0 focus:ring-0" placeholder="Command / Search..." type="text"/>
+<div class="flex items-center gap-1 ml-2">
+<span class="font-mono-data text-mono-data text-on-surface-variant bg-surface-container px-1 rounded border border-outline-variant">⌘</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant bg-surface-container px-1 rounded border border-outline-variant">K</span>
+</div>
+</div>
+<!-- Trailing Icon Actions -->
+<div class="flex items-center gap-unit">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low hover:text-primary transition-colors rounded-full flex items-center justify-center group relative">
+<span class="material-symbols-outlined text-[20px] group-active:scale-[0.99] duration-150 ease-in-out">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low hover:text-primary transition-colors rounded-full flex items-center justify-center group">
+<span class="material-symbols-outlined text-[20px] group-active:scale-[0.99] duration-150 ease-in-out">help</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low hover:text-primary transition-colors rounded-full flex items-center justify-center group">
+<span class="material-symbols-outlined text-[20px] group-active:scale-[0.99] duration-150 ease-in-out">settings</span>
+</button>
+</div>
+<!-- Primary Action -->
+<button class="bg-on-background text-background px-4 py-2 rounded font-ui-label-bold text-ui-label-bold hover:bg-on-surface active:scale-[0.99] transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">add</span>
+                Create New Paper
+            </button>
+<!-- Profile Avatar -->
+<div class="w-8 h-8 rounded-full border border-outline-variant overflow-hidden ml-2 shrink-0">
+<img alt="Teacher profile avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCLaTYkWKAR-hMcUSITld3BszxqdamOwdQN0vE1mPUQSyaW3KrWWyq_f7tD9a7His2wAWyQWvpGKYWhVofJWQnm4JpMnAe7NEn23NwkRkyCmqP12OfksAq-mr5-AmWQzfnZqo4k_UUFhT18Lscvq6EBdal4SfnRp4v0Nzorm3C1Y-hExWezw_2MxN96Cu0IKRzjutz2iLbZAwurZmu_tj5aZzvIa82JFnlsLObec8HpKZalqIeW6bymHw-Q8-jPTwHCv_780uKPsPA"/>
+</div>
+</div>
+</header>
+<!-- Main Application Canvas -->
+<div class="flex flex-1 overflow-hidden relative w-full h-[calc(100vh-64px)]">
+<!-- SideNavBar (Shared Component) -->
+<aside class="w-64 h-full bg-surface-container-low border-r border-outline-variant flex flex-col shrink-0 z-40">
+<!-- Header -->
+<div class="p-panel-padding border-b border-outline-variant/50">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-10 h-10 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">account_balance</span>
+</div>
+<div>
+<h2 class="font-ui-label-bold text-ui-label-bold text-on-surface">Department of Education</h2>
+<p class="font-mono-data text-mono-data text-on-surface-variant">Senior Faculty Portal</p>
+</div>
+</div>
+<button class="w-full border border-outline-variant bg-surface text-on-surface px-4 py-2 rounded font-ui-label-bold text-ui-label-bold hover:bg-surface-container-high transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">post_add</span>
+                    New Template
+                </button>
+</div>
+<!-- Navigation Tabs -->
+<nav class="flex-1 overflow-y-auto py-2">
+<ul class="flex flex-col gap-1 px-2">
+<!-- Active Tab -->
+<li>
+<a class="flex items-center gap-3 px-3 py-2 bg-surface border-l-4 border-primary text-primary font-ui-label-bold text-ui-label-bold rounded-r transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined text-[20px]">book_4</span>
+                            My Library
+                        </a>
+</li>
+<!-- Inactive Tabs -->
+<li>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-ui-label-md text-ui-label-md rounded border-l-4 border-transparent transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined text-[20px]">grid_view</span>
+                            Syllabus Coverage
+                        </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-ui-label-md text-ui-label-md rounded border-l-4 border-transparent transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined text-[20px]">analytics</span>
+                            Difficulty Analytics
+                        </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-ui-label-md text-ui-label-md rounded border-l-4 border-transparent transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined text-[20px]">rule</span>
+                            Grading Schemes
+                        </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-ui-label-md text-ui-label-md rounded border-l-4 border-transparent transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined text-[20px]">archive</span>
+                            Archived
+                        </a>
+</li>
+</ul>
+</nav>
+<!-- Footer Tabs -->
+<div class="p-2 border-t border-outline-variant/50 mt-auto">
+<ul class="flex flex-col gap-1">
+<li>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-ui-label-md text-ui-label-md rounded transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined text-[18px]">dns</span>
+                            System Status
+                        </a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-ui-label-md text-ui-label-md rounded transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined text-[18px]">menu_book</span>
+                            Documentation
+                        </a>
+</li>
+</ul>
+</div>
+</aside>
+<!-- Main Content Area: Split View Dashboard -->
+<main class="flex-1 flex flex-col bg-surface-container-highest overflow-hidden relative">
+<!-- Toolbar / Context Header -->
+<div class="h-14 bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between px-panel-padding shrink-0 z-10 shadow-[0_4px_12px_rgba(33,26,20,0.02)]">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-1 font-ui-label-bold text-ui-label-bold">
+<span class="material-symbols-outlined text-[18px]">arrow_back</span>
+                        Queue
+                    </button>
+<div class="w-[1px] h-4 bg-outline-variant"></div>
+<div class="flex items-center gap-2">
+<span class="font-mono-data text-mono-data px-2 py-0.5 bg-error-container text-on-error-container rounded-sm border border-error-container">AWAITING REVIEW</span>
+<h2 class="font-headline-sm-mobile text-headline-sm-mobile text-on-surface">PHY-301 Midterm Examination (Draft v2)</h2>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<span class="font-mono-data text-mono-data text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+                        Due in 2 days
+                    </span>
+<div class="w-[1px] h-4 bg-outline-variant"></div>
+<div class="flex -space-x-2">
+<img alt="Author avatar" class="w-6 h-6 rounded-full border-2 border-surface-container-lowest z-20" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJ0Q2UUQTnjCNeoRCV8SxWrcRmZnSjjCVfZuqcqUAOy8TicvSCMH1jJId_33HAJLib8Cg8X_veZFxglV7KGPML-v6kiiSIll60TUJPMC3Dwx04lWSsd11gv7CGGt1Nc5gBDM6e3eRxevhQo2fs0pcPl99vt3t1fiwOWdzEeRaXC9nsac5KMloRN8GIP_0vABKmDJFX5qgrwczg0M5TTDEFIKNUjraEl0MD1kLBD9IqpEJ7Y7FdzKgi45bE3itGLNWn36OCQL_BaZc"/>
+<img alt="Reviewer avatar" class="w-6 h-6 rounded-full border-2 border-surface-container-lowest z-10" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDahC5qdnB1kh9m-BcSR3DRQks6Zhyo-bCS1HEzZ2ysJAILFxH_R-cpBnvnRsckg6l5s5wpx2zGxrpJUyQTGhnNA9tlUGQEn-SDiHmk9EZDHLPTN30pAkizSqLNzzZVDUtenAbOP6agN5tHiWRuyEDUzG9jsRgXCtmsbky1op_k3CNUb-YiQ-iVsc8Ijuk3JsYevSRVUP9mO1ugXZg4pWW5RnjaxA051rhlKiadToAvpBigUagJx0S5KC2D5-NGNiHWrbOtF6puKMg"/>
+</div>
+</div>
+</div>
+<!-- Workspace Split Container -->
+<div class="flex-1 flex overflow-hidden">
+<!-- Left Pane: The Paper (Canvas) -->
+<div class="flex-1 flex justify-center overflow-y-auto bg-grid-pattern p-margin-page relative">
+<!-- Physical Paper Representation -->
+<article class="bg-surface-container-lowest w-full max-w-[720px] min-h-[1056px] border border-outline-variant shadow-[0_8px_32px_rgba(33,26,20,0.04)] my-auto relative">
+<!-- Paper Content Padding -->
+<div class="py-[64px] px-[80px]">
+<!-- Header Metadata -->
+<div class="border-b-2 border-on-surface pb-4 mb-8 flex justify-between items-end">
+<div>
+<h1 class="font-display-lg text-display-lg text-on-surface mb-2">Advanced Physics</h1>
+<p class="font-headline-md text-headline-md text-on-surface-variant">Midterm Examination</p>
+</div>
+<div class="text-right font-mono-data text-mono-data text-on-surface-variant space-y-1">
+<p>Course Code: PHY-301</p>
+<p>Duration: 120 Minutes</p>
+<p>Total Marks: 100</p>
+</div>
+</div>
+<!-- Question Section -->
+<div class="space-y-12">
+<!-- Question 1 (Clean) -->
+<div class="flex gap-4">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface pt-1">Q1.</span>
+<div class="flex-1">
+<p class="font-paper-preview-body text-paper-preview-body text-on-surface mb-4 leading-relaxed">
+                                            Derive the Schrödinger wave equation for a free particle in one dimension. Explain the physical significance of the wave function $\Psi(x,t)$ and outline the conditions it must satisfy to represent a physically realizable state.
+                                        </p>
+<div class="flex justify-end font-mono-data text-mono-data text-on-surface-variant">
+                                            [15 marks]
+                                        </div>
+</div>
+</div>
+<!-- Question 2 (With Editorial Bracket indicating a comment) -->
+<div class="flex gap-4 relative group">
+<!-- Editorial Bracket / Active Focus -->
+<div class="absolute -left-[40px] top-0 bottom-0 w-[4px] bg-primary-container rounded-r opacity-100 transition-opacity"></div>
+<div class="absolute -inset-x-4 -inset-y-2 bg-surface-container-low/50 border border-primary-container/20 rounded z-0 pointer-events-none"></div>
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface pt-1 relative z-10">Q2.</span>
+<div class="flex-1 relative z-10">
+<p class="font-paper-preview-body text-paper-preview-body text-on-surface mb-4 leading-relaxed">
+                                            Consider a quantum harmonic oscillator. Calculate the expectation value of the potential energy $<v>$ for the first excited state. <span class="bg-primary-container/20 border-b border-primary-container">Is it necessary to include the zero-point energy in this specific calculation?</span> Discuss briefly.
+                                        </v></p>
+<div class="flex justify-end font-mono-data text-mono-data text-on-surface-variant">
+                                            [20 marks]
+                                        </div>
+</div>
+<!-- Contextual Action (appears on hover) -->
+<div class="absolute -right-[60px] top-0 hidden group-hover:flex items-center gap-1 z-20">
+<button class="w-8 h-8 rounded-full bg-surface-container-lowest border border-outline-variant flex items-center justify-center text-on-surface-variant hover:text-primary shadow-sm">
+<span class="material-symbols-outlined text-[16px]">add_comment</span>
+</button>
+</div>
+</div>
+<!-- Question 3 -->
+<div class="flex gap-4">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface pt-1">Q3.</span>
+<div class="flex-1">
+<p class="font-paper-preview-body text-paper-preview-body text-on-surface mb-4 leading-relaxed">
+                                            An electron is confined to a one-dimensional box of length $L$. If the length of the box is suddenly doubled to $2L$, what is the probability that the electron, initially in the ground state of the original box, will be found in the ground state of the new box?
+                                        </p>
+<div class="flex justify-end font-mono-data text-mono-data text-on-surface-variant">
+                                            [25 marks]
+                                        </div>
+</div>
+</div>
+</div>
+<!-- End of paper indicator -->
+<div class="mt-24 text-center">
+<span class="font-mono-data text-mono-data text-on-surface-variant">*** END OF PAPER ***</span>
+</div>
+</div>
+</article>
+</div>
+<!-- Right Pane: Review Inspector (The Studio Tool) -->
+<aside class="w-[360px] bg-surface-container-lowest border-l border-outline-variant flex flex-col shrink-0 z-20 shadow-[-4px_0_24px_rgba(33,26,20,0.02)]">
+<!-- Inspector Header Tabs -->
+<div class="flex border-b border-outline-variant bg-surface-container-low px-2 pt-2 gap-1">
+<button class="px-4 py-2 font-ui-label-bold text-ui-label-bold bg-surface-container-lowest text-primary border-t-2 border-primary rounded-t border-x border-outline-variant translate-y-[1px] z-10 flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] icon-filled">chat</span>
+                            Review (3)
+                        </button>
+<button class="px-4 py-2 font-ui-label-bold text-ui-label-bold text-on-surface-variant hover:bg-surface-container-lowest/50 rounded-t border-t-2 border-transparent transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">fact_check</span>
+                            Criteria
+                        </button>
+<button class="px-4 py-2 font-ui-label-bold text-ui-label-bold text-on-surface-variant hover:bg-surface-container-lowest/50 rounded-t border-t-2 border-transparent transition-colors flex items-center gap-2 ml-auto">
+<span class="material-symbols-outlined text-[16px]">info</span>
+</button>
+</div>
+<!-- Inspector Content: Threads List -->
+<div class="flex-1 overflow-y-auto bg-surface-container-lowest">
+<div class="flex flex-col divide-y divide-outline-variant">
+<!-- Resolved Thread -->
+<div class="p-panel-padding hover:bg-surface-container-low transition-colors cursor-pointer opacity-70">
+<div class="flex items-start justify-between mb-2">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-surface-container-highest border border-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-[12px] text-primary">check</span>
+</span>
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant">Q1. Notation</span>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant">Yesterday</span>
+</div>
+<p class="font-ui-label-md text-ui-label-md text-on-surface-variant line-clamp-2">Resolved: Updated the wave function notation to standard convention as requested.</p>
+</div>
+<!-- Active Thread (Linked to Q2) -->
+<div class="p-panel-padding bg-surface-container border-l-2 border-primary-container relative">
+<div class="flex items-start justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full overflow-hidden border border-outline-variant shrink-0">
+<img alt="Reviewer Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXjIvG7R7Bm8rL-9QGyFrv4bjDlpjmNxMBoo4G7HMcrW1dceypC8-Vu_mhLaUaz_62VlzAS4ok52Xj8gI4TM9tK4Xp-iucJ_1nSUlXs80SC-_EHLn4PWZWu-0bmMHNSGC9hKy6r6HDjJcihX8iR5jD4TJlwFuCKXWi-QluhKhk8TDerY5C6ZpA98XkNHyMu8UtQvaCIwB637HsKvmgAX4oxT-6rNWHDqEqZLhSfVSCPcWXSRdyMFF8nhPr9sPi3q9vr3MVlg7_DSE"/>
+</div>
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface">Dr. E. Hayes</span>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant">2 hours ago</span>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-3 mb-3">
+<p class="font-mono-data text-mono-data text-on-surface-variant mb-2">Referencing Q2:</p>
+<blockquote class="border-l-2 border-primary-container pl-2 font-ui-label-md text-ui-label-md text-on-surface-variant italic mb-2">
+                                        "Is it necessary to include the zero-point energy in this specific calculation?"
+                                    </blockquote>
+<p class="font-ui-label-md text-ui-label-md text-on-surface">
+                                        I think phrasing it this way gives away part of the answer. We are testing if they *know* to include it. Consider revising the wording to be less leading.
+                                    </p>
+</div>
+<div class="flex gap-2">
+<button class="px-3 py-1.5 border border-outline-variant rounded font-ui-label-bold text-ui-label-bold text-on-surface bg-surface-container-lowest hover:bg-surface transition-colors flex-1 text-center">Reply</button>
+<button class="px-3 py-1.5 border border-outline-variant rounded font-ui-label-bold text-ui-label-bold text-on-surface bg-surface-container-lowest hover:bg-surface transition-colors flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+                                        Suggest
+                                    </button>
+</div>
+</div>
+<!-- Open Thread -->
+<div class="p-panel-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="flex items-start justify-between mb-2">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full overflow-hidden border border-outline-variant shrink-0 bg-secondary-container flex items-center justify-center text-on-secondary-container">
+<span class="font-ui-label-bold text-[10px]">JD</span>
+</div>
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface">Prof. J. Doe</span>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant">Just now</span>
+</div>
+<p class="font-ui-label-md text-ui-label-md text-on-surface mb-2">
+                                    The mark distribution seems slightly skewed. Q3 is significantly more involved computationally than Q2, but only carries 5 more marks. Recommend adjusting to 15/15/30.
+                                </p>
+</div>
+</div>
+</div>
+<!-- Inspector Footer: Final Actions -->
+<div class="p-panel-padding border-t border-outline-variant bg-surface-container-highest flex flex-col gap-3">
+<div class="flex justify-between items-center px-1 mb-1">
+<span class="font-mono-data text-mono-data text-on-surface-variant">Review Status</span>
+<span class="font-ui-label-bold text-ui-label-bold text-primary-container flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+                                2 Open Issues
+                            </span>
+</div>
+<button class="w-full py-2.5 border border-outline-variant bg-surface-container-lowest text-on-surface font-ui-label-bold text-ui-label-bold rounded hover:bg-surface-container-low transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">edit_note</span>
+                            Request Changes
+                        </button>
+<!-- Primary Action -->
+<button class="w-full py-2.5 bg-on-background text-background font-ui-label-bold text-ui-label-bold rounded hover:bg-on-surface active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+<span class="material-symbols-outlined text-[18px]">verified</span>
+                            Final Approval
+                        </button>
+</div>
+</aside>
+</div>
+</main>
+</div>
+</body></html>

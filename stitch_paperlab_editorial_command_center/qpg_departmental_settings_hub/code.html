@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Departmental Settings - Academic Command Center</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&amp;family=Geist:wght@400;600&amp;family=Libre+Caslon+Text&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-variant": "#efe0d5",
+                        "inverse-on-surface": "#fdeee3",
+                        "surface-dim": "#e6d7cc",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "on-primary-container": "#4e2c00",
+                        "error": "#ba1a1a",
+                        "secondary-container": "#e2dfe1",
+                        "surface": "#fff8f4",
+                        "inverse-primary": "#ffb86d",
+                        "surface-container-highest": "#efe0d5",
+                        "on-error": "#ffffff",
+                        "on-tertiary-container": "#00394b",
+                        "on-primary-fixed-variant": "#683c00",
+                        "tertiary": "#006685",
+                        "secondary-fixed": "#e4e2e4",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-container": "#636264",
+                        "surface-container-low": "#fff1e7",
+                        "secondary": "#5f5e60",
+                        "primary-fixed": "#ffdcbd",
+                        "outline-variant": "#d8c3b1",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#f4e6da",
+                        "on-primary-fixed": "#2c1600",
+                        "on-secondary-fixed-variant": "#474649",
+                        "surface-container": "#faebe0",
+                        "primary-container": "#d98b2c",
+                        "tertiary-container": "#26a8d6",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "on-tertiary-fixed-variant": "#004d65",
+                        "on-secondary": "#ffffff",
+                        "background": "#fff8f4",
+                        "on-background": "#211a14",
+                        "error-container": "#ffdad6",
+                        "primary": "#895100",
+                        "primary-fixed-dim": "#ffb86d",
+                        "surface-bright": "#fff8f4",
+                        "outline": "#857464",
+                        "on-primary": "#ffffff",
+                        "on-surface": "#211a14",
+                        "tertiary-fixed": "#bfe9ff",
+                        "inverse-surface": "#372f27",
+                        "on-tertiary-fixed": "#001f2a",
+                        "surface-tint": "#895100",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#6dd2ff",
+                        "on-surface-variant": "#534436"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "1px",
+                        "density-comfy": "24px",
+                        "panel-padding": "16px",
+                        "density-dense": "8px",
+                        "unit": "4px",
+                        "margin-page": "32px"
+                    },
+                    "fontFamily": {
+                        "mono-data": ["JetBrains Mono"],
+                        "headline-md": ["Newsreader"],
+                        "headline-sm-mobile": ["Newsreader"],
+                        "display-lg": ["Newsreader"],
+                        "ui-label-bold": ["Geist"],
+                        "ui-label-md": ["Geist"],
+                        "paper-preview-body": ["Libre Caslon Text"]
+                    },
+                    "fontSize": {
+                        "mono-data": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "500" }],
+                        "headline-sm-mobile": ["20px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "ui-label-bold": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "ui-label-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "paper-preview-body": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col md:flex-row overflow-hidden font-ui-label-md">
+<!-- SideNavBar (Desktop) -->
+<nav aria-label="Sidebar Navigation" class="hidden md:flex bg-surface-container-low dark:bg-surface-dim border-r border-outline-variant dark:border-outline h-screen left-0 w-64 fixed top-16 flex-col justify-between py-panel-padding transition-all duration-200 ease-out z-10">
+<div>
+<div class="px-panel-padding mb-density-comfy flex items-center gap-density-dense">
+<div class="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden shrink-0 flex items-center justify-center border border-outline-variant">
+<span class="material-symbols-outlined text-primary" data-icon="account_balance">account_balance</span>
+</div>
+<div>
+<h2 class="font-headline-sm-mobile text-headline-sm-mobile text-on-surface dark:text-surface-bright">Department of Education</h2>
+<p class="font-mono-data text-mono-data text-on-surface-variant">Senior Faculty Portal</p>
+</div>
+</div>
+<ul class="space-y-unit">
+<li>
+<a class="flex items-center gap-density-dense px-panel-padding py-density-dense text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 transition-colors font-ui-label-md text-ui-label-md hover:bg-surface-container-high dark:hover:bg-surface-variant" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="book_4">book_4</span>
+                        My Library
+                    </a>
+</li>
+<li>
+<a class="flex items-center gap-density-dense px-panel-padding py-density-dense text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 transition-colors font-ui-label-md text-ui-label-md hover:bg-surface-container-high dark:hover:bg-surface-variant" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="grid_view">grid_view</span>
+                        Syllabus Coverage
+                    </a>
+</li>
+<li>
+<a class="flex items-center gap-density-dense px-panel-padding py-density-dense text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 transition-colors font-ui-label-md text-ui-label-md hover:bg-surface-container-high dark:hover:bg-surface-variant" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="analytics">analytics</span>
+                        Difficulty Analytics
+                    </a>
+</li>
+<li>
+<a class="flex items-center gap-density-dense px-panel-padding py-density-dense bg-surface dark:bg-inverse-surface border-l-4 border-primary dark:border-primary-fixed text-primary dark:text-primary-fixed font-bold transition-colors font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="rule" data-weight="fill" style="font-variation-settings: 'FILL' 1;">rule</span>
+                        Grading Schemes
+                    </a>
+</li>
+<li>
+<a class="flex items-center gap-density-dense px-panel-padding py-density-dense text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 transition-colors font-ui-label-md text-ui-label-md hover:bg-surface-container-high dark:hover:bg-surface-variant" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="archive">archive</span>
+                        Archived
+                    </a>
+</li>
+</ul>
+</div>
+<div class="px-panel-padding">
+<button class="w-full bg-[#1A1A1C] text-[#F9F8F6] py-density-dense rounded flex items-center justify-center gap-unit font-ui-label-bold text-ui-label-bold hover:bg-on-surface transition-colors mb-density-comfy">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
+                New Template
+            </button>
+<ul class="space-y-unit border-t border-outline-variant pt-density-dense">
+<li>
+<a class="flex items-center gap-density-dense py-unit text-on-surface-variant hover:text-primary transition-colors font-mono-data text-mono-data" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="dns">dns</span>
+                        System Status
+                    </a>
+</li>
+<li>
+<a class="flex items-center gap-density-dense py-unit text-on-surface-variant hover:text-primary transition-colors font-mono-data text-mono-data" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="menu_book">menu_book</span>
+                        Documentation
+                    </a>
+</li>
+</ul>
+</div>
+</nav>
+<div class="flex-1 flex flex-col min-w-0 md:ml-64">
+<!-- TopNavBar -->
+<header aria-label="Top Global Navigation" class="bg-surface dark:bg-on-surface border-b border-outline-variant dark:border-outline full-width top-0 z-20 sticky flex justify-between items-center w-full px-margin-page h-16 max-w-full mx-auto">
+<div class="flex items-center gap-density-comfy">
+<h1 class="text-headline-md font-headline-md text-primary dark:text-primary-fixed tracking-tight">Academic Command Center</h1>
+<!-- Desktop Nav Links -->
+<nav aria-label="Main Sections" class="hidden lg:flex items-center gap-density-comfy ml-density-comfy h-full">
+<a class="h-full flex items-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-container-low dark:hover:bg-secondary-fixed-dim/10 font-ui-label-bold text-ui-label-bold px-unit" href="#">Library</a>
+<a class="h-full flex items-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-container-low dark:hover:bg-secondary-fixed-dim/10 font-ui-label-bold text-ui-label-bold px-unit" href="#">Analytics</a>
+<a class="h-full flex items-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-container-low dark:hover:bg-secondary-fixed-dim/10 font-ui-label-bold text-ui-label-bold px-unit" href="#">Templates</a>
+<a class="h-full flex items-center text-primary dark:text-primary-fixed border-b-2 border-primary dark:border-primary-fixed pb-2 font-ui-label-bold text-ui-label-bold px-unit hover:bg-surface-container-low dark:hover:bg-secondary-fixed-dim/10" href="#">Department</a>
+</nav>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="relative hidden md:block">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm" data-icon="search">search</span>
+<input class="bg-surface border-b border-outline-variant focus:border-on-surface focus:ring-0 focus:outline-none pl-8 pr-2 py-1 font-mono-data text-mono-data w-48 transition-colors bg-transparent" placeholder="Search..." type="text"/>
+</div>
+<div class="flex items-center gap-unit border-l border-outline-variant pl-density-dense ml-density-dense">
+<button aria-label="notifications" class="p-1 rounded text-on-surface-variant hover:text-primary hover:bg-surface-container-low transition-colors active:scale-[0.99] duration-150 ease-in-out">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button aria-label="help" class="p-1 rounded text-on-surface-variant hover:text-primary hover:bg-surface-container-low transition-colors active:scale-[0.99] duration-150 ease-in-out">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+<button aria-label="settings" class="p-1 rounded text-on-surface-variant hover:text-primary hover:bg-surface-container-low transition-colors active:scale-[0.99] duration-150 ease-in-out">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+<button class="hidden sm:flex bg-[#1A1A1C] text-[#F9F8F6] px-3 py-1.5 rounded items-center gap-unit font-ui-label-bold text-ui-label-bold hover:bg-on-surface transition-colors ml-density-dense active:scale-[0.99] duration-150 ease-in-out">
+                    Create New Paper
+                </button>
+<img alt="Teacher profile avatar" class="w-8 h-8 rounded-full border border-outline-variant ml-density-dense object-cover" data-alt="A small circular avatar showing a professional headshot of a teacher with glasses, soft neutral lighting, academic aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDF7QhhAQeP04ETD0-hEaidGZ3Mcl6T6VcIkCDVBbVBbwAB8nlaFcnJoCDcJW9MEMFARr4rIpyyanDd8l3yb00zL9iyItBEAFVcGaRsipb4dTRoez8F0wzP9WtCUeZUgqCRTmL02K3oZ2-K_SZlWadPXoVnKfGT9iCVqernwGmrnpwYoVTxx7hUearuSfZ1s0txejYYahy0BuCurMu3TAIt5SKGVcKQhkYYZkOEa7eNoFyVQEp7bpChfdlaWgN2U2nksPevVe30qIg"/>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto p-panel-padding md:p-margin-page bg-[#F9F8F6] relative">
+<div class="max-w-[1024px] mx-auto space-y-density-comfy">
+<header class="mb-margin-page">
+<h2 class="font-headline-md text-headline-md text-on-surface mb-unit">Department Settings</h2>
+<p class="text-on-surface-variant font-ui-label-md text-ui-label-md">Configure global parameters, rubrics, and workflows for the Department of Education.</p>
+</header>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-panel-padding">
+<!-- Left Column (Wider) -->
+<div class="lg:col-span-2 space-y-panel-padding">
+<!-- Grading Schemes & Rubrics -->
+<section class="bg-[#FFFFFF] border border-[#E5E2DA] rounded p-panel-padding shadow-[0_4px_12px_rgba(26,26,28,0.03)] relative overflow-hidden group hover:border-outline-variant transition-colors">
+<div class="flex items-center justify-between mb-density-comfy border-b border-outline-variant pb-density-dense">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface flex items-center gap-unit">
+<span class="material-symbols-outlined text-primary" data-icon="rule">rule</span>
+                                    Global Grading Rubrics
+                                </h3>
+<button class="text-primary hover:text-primary-fixed-dim font-ui-label-bold text-ui-label-bold flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[16px]" data-icon="edit">edit</span> Edit Defaults
+                                </button>
+</div>
+<div class="space-y-density-comfy">
+<div class="grid grid-cols-2 gap-density-dense">
+<div class="bg-surface-container-low p-density-dense border border-outline-variant rounded">
+<div class="font-mono-data text-mono-data text-on-surface-variant mb-1">Standard Undergraduate</div>
+<div class="font-ui-label-bold text-ui-label-bold text-on-surface">100-Point Scale (A-F)</div>
+</div>
+<div class="bg-surface-container-low p-density-dense border border-outline-variant rounded">
+<div class="font-mono-data text-mono-data text-on-surface-variant mb-1">Postgraduate Seminars</div>
+<div class="font-ui-label-bold text-ui-label-bold text-on-surface">Pass/Fail with Honors</div>
+</div>
+</div>
+<div>
+<label class="block font-ui-label-bold text-ui-label-bold text-on-surface mb-density-dense">Default Assessment Distribution Target</label>
+<div class="flex items-center gap-density-dense mb-2">
+<div class="h-2 rounded-full bg-surface-container w-full overflow-hidden flex">
+<div class="h-full bg-primary" style="width: 20%" title="Knowledge"></div>
+<div class="h-full bg-tertiary" style="width: 30%" title="Comprehension"></div>
+<div class="h-full bg-tertiary-container" style="width: 25%" title="Application"></div>
+<div class="h-full bg-primary-container" style="width: 15%" title="Analysis"></div>
+<div class="h-full bg-outline" style="width: 10%" title="Synthesis"></div>
+</div>
+</div>
+<div class="flex justify-between font-mono-data text-mono-data text-on-surface-variant text-[10px]">
+<span>Knowledge (20%)</span>
+<span>Comp. (30%)</span>
+<span>App. (25%)</span>
+<span>Analysis (15%)</span>
+<span>Synth. (10%)</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Workflow & Approvals -->
+<section class="bg-[#FFFFFF] border border-[#E5E2DA] rounded p-panel-padding shadow-[0_4px_12px_rgba(26,26,28,0.03)] hover:border-outline-variant transition-colors">
+<div class="flex items-center justify-between mb-density-comfy border-b border-outline-variant pb-density-dense">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface flex items-center gap-unit">
+<span class="material-symbols-outlined text-primary" data-icon="account_tree">account_tree</span>
+                                    Paper Approval Workflow
+                                </h3>
+</div>
+<div class="space-y-density-dense">
+<label class="flex items-start gap-density-dense p-density-dense border border-outline-variant rounded hover:bg-surface-container-low transition-colors cursor-pointer group">
+<div class="mt-0.5">
+<input checked="" class="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4 bg-transparent" type="checkbox"/>
+</div>
+<div>
+<div class="font-ui-label-bold text-ui-label-bold text-on-surface group-hover:text-primary transition-colors">Requires Head of Dept Sign-off</div>
+<div class="font-ui-label-md text-ui-label-md text-on-surface-variant mt-1">Final exams and high-stakes assessments must be approved before publishing.</div>
+</div>
+</label>
+<label class="flex items-start gap-density-dense p-density-dense border border-outline-variant rounded hover:bg-surface-container-low transition-colors cursor-pointer group">
+<div class="mt-0.5">
+<input class="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4 bg-transparent" type="checkbox"/>
+</div>
+<div>
+<div class="font-ui-label-bold text-ui-label-bold text-on-surface group-hover:text-primary transition-colors">Peer Review Mandatory</div>
+<div class="font-ui-label-md text-ui-label-md text-on-surface-variant mt-1">Require at least one faculty peer review prior to finalization.</div>
+</div>
+</label>
+<label class="flex items-start gap-density-dense p-density-dense border border-outline-variant rounded hover:bg-surface-container-low transition-colors cursor-pointer group">
+<div class="mt-0.5">
+<input checked="" class="rounded border-outline-variant text-primary focus:ring-primary w-4 h-4 bg-transparent" type="checkbox"/>
+</div>
+<div>
+<div class="font-ui-label-bold text-ui-label-bold text-on-surface group-hover:text-primary transition-colors">Automated Plagiarism Check</div>
+<div class="font-ui-label-md text-ui-label-md text-on-surface-variant mt-1">Route all submitted answers through the integrated integrity scanner.</div>
+</div>
+</label>
+</div>
+</section>
+</div>
+<!-- Right Column (Narrower) -->
+<div class="space-y-panel-padding">
+<!-- Faculty Access -->
+<section class="bg-[#FFFFFF] border border-[#E5E2DA] rounded p-panel-padding shadow-[0_4px_12px_rgba(26,26,28,0.03)] hover:border-outline-variant transition-colors">
+<div class="flex items-center justify-between mb-density-dense border-b border-outline-variant pb-density-dense">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface flex items-center gap-unit">
+<span class="material-symbols-outlined text-primary" data-icon="group">group</span>
+                                    Faculty Access
+                                </h3>
+<button aria-label="Add Faculty" class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="person_add">person_add</span>
+</button>
+</div>
+<ul class="divide-y divide-outline-variant border-b border-outline-variant mb-density-dense">
+<li class="py-2 flex items-center justify-between group">
+<div class="flex items-center gap-unit">
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center font-ui-label-bold text-[10px] text-primary border border-outline-variant">DR</div>
+<span class="font-ui-label-md text-ui-label-md text-on-surface">Dr. Robert Vance</span>
+</div>
+<span class="font-mono-data text-[10px] bg-[#F2F0E9] px-1.5 py-0.5 border border-outline-variant text-on-surface-variant rounded">Admin</span>
+</li>
+<li class="py-2 flex items-center justify-between group">
+<div class="flex items-center gap-unit">
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center font-ui-label-bold text-[10px] text-tertiary border border-outline-variant">JL</div>
+<span class="font-ui-label-md text-ui-label-md text-on-surface">Prof. Jane Lin</span>
+</div>
+<span class="font-mono-data text-[10px] bg-[#F2F0E9] px-1.5 py-0.5 border border-outline-variant text-on-surface-variant rounded">Editor</span>
+</li>
+<li class="py-2 flex items-center justify-between group">
+<div class="flex items-center gap-unit">
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center font-ui-label-bold text-[10px] text-secondary border border-outline-variant">MS</div>
+<span class="font-ui-label-md text-ui-label-md text-on-surface">M. Smith (TA)</span>
+</div>
+<span class="font-mono-data text-[10px] bg-surface px-1.5 py-0.5 border border-outline-variant text-on-surface-variant rounded">Viewer</span>
+</li>
+</ul>
+<a class="font-ui-label-bold text-ui-label-bold text-primary hover:underline text-[11px]" href="#">Manage all roles →</a>
+</section>
+<!-- Branding & Export -->
+<section class="bg-[#FFFFFF] border border-[#E5E2DA] rounded p-panel-padding shadow-[0_4px_12px_rgba(26,26,28,0.03)] hover:border-outline-variant transition-colors">
+<div class="flex items-center justify-between mb-density-dense border-b border-outline-variant pb-density-dense">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface flex items-center gap-unit">
+<span class="material-symbols-outlined text-primary" data-icon="print">print</span>
+                                    Export Branding
+                                </h3>
+</div>
+<div class="space-y-density-dense">
+<div>
+<label class="block font-ui-label-bold text-[11px] text-on-surface-variant mb-1">Header Logo</label>
+<div class="border border-dashed border-outline-variant p-density-comfy flex flex-col items-center justify-center rounded bg-surface hover:bg-surface-container-low transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-outline mb-1" data-icon="upload_file">upload_file</span>
+<span class="font-mono-data text-[10px] text-on-surface-variant">dept_logo_hires.png</span>
+</div>
+</div>
+<div>
+<label class="block font-ui-label-bold text-[11px] text-on-surface-variant mb-1">Footer Text</label>
+<input class="w-full bg-transparent border-b border-outline-variant focus:border-on-surface focus:ring-0 focus:outline-none py-1 font-mono-data text-mono-data text-on-surface transition-colors" readonly="" type="text" value="Department of Education, Confidential Assessment Material"/>
+</div>
+</div>
+</section>
+</div>
+</div>
+<!-- Action Footer -->
+<div class="flex justify-end gap-density-dense pt-panel-padding border-t border-outline-variant mt-margin-page">
+<button class="px-4 py-2 border border-[#E5E2DA] text-on-surface bg-[#FFFFFF] rounded font-ui-label-bold text-ui-label-bold hover:bg-[#F2F0E9] transition-colors">
+                        Cancel Changes
+                    </button>
+<button class="px-4 py-2 bg-[#1A1A1C] text-[#F9F8F6] rounded font-ui-label-bold text-ui-label-bold hover:bg-on-surface transition-colors shadow-sm">
+                        Save Configuration
+                    </button>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-lowest dark:bg-on-surface border-t border-outline-variant dark:border-outline full-width bottom-0 flex justify-between items-center px-margin-page py-4 w-full">
+<div class="font-ui-label-md text-ui-label-md text-secondary dark:text-secondary-fixed">
+                © 2024 Editorial Oversight Systems. All rights reserved.
+            </div>
+<nav class="flex gap-panel-padding font-ui-label-md text-ui-label-md font-ui-label-bold text-ui-label-bold">
+<a class="text-on-surface-variant hover:text-primary dark:hover:text-primary-fixed underline transition-colors" href="#">Privacy Policy</a>
+<a class="text-on-surface-variant hover:text-primary dark:hover:text-primary-fixed underline transition-colors" href="#">Terms of Service</a>
+<a class="text-on-surface-variant hover:text-primary dark:hover:text-primary-fixed underline transition-colors" href="#">Faculty Handbook</a>
+</nav>
+</footer>
+</div>
+</body></html>

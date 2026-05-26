@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Syllabus Coverage - Academic Command Center</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=JetBrains+Mono:wght@400&amp;family=Libre+Caslon+Text&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-variant": "#efe0d5",
+                    "inverse-on-surface": "#fdeee3",
+                    "surface-dim": "#e6d7cc",
+                    "secondary-fixed-dim": "#c8c6c8",
+                    "on-primary-container": "#4e2c00",
+                    "error": "#ba1a1a",
+                    "secondary-container": "#e2dfe1",
+                    "surface": "#fff8f4",
+                    "inverse-primary": "#ffb86d",
+                    "surface-container-highest": "#efe0d5",
+                    "on-error": "#ffffff",
+                    "on-tertiary-container": "#00394b",
+                    "on-primary-fixed-variant": "#683c00",
+                    "tertiary": "#006685",
+                    "secondary-fixed": "#e4e2e4",
+                    "surface-container-lowest": "#ffffff",
+                    "on-secondary-container": "#636264",
+                    "surface-container-low": "#fff1e7",
+                    "secondary": "#5f5e60",
+                    "primary-fixed": "#ffdcbd",
+                    "outline-variant": "#d8c3b1",
+                    "on-tertiary": "#ffffff",
+                    "surface-container-high": "#f4e6da",
+                    "on-primary-fixed": "#2c1600",
+                    "on-secondary-fixed-variant": "#474649",
+                    "surface-container": "#faebe0",
+                    "primary-container": "#d98b2c",
+                    "tertiary-container": "#26a8d6",
+                    "on-secondary-fixed": "#1b1b1d",
+                    "on-tertiary-fixed-variant": "#004d65",
+                    "on-secondary": "#ffffff",
+                    "background": "#fff8f4",
+                    "on-background": "#211a14",
+                    "error-container": "#ffdad6",
+                    "primary": "#895100",
+                    "primary-fixed-dim": "#ffb86d",
+                    "surface-bright": "#fff8f4",
+                    "outline": "#857464",
+                    "on-primary": "#ffffff",
+                    "on-surface": "#211a14",
+                    "tertiary-fixed": "#bfe9ff",
+                    "inverse-surface": "#372f27",
+                    "on-tertiary-fixed": "#001f2a",
+                    "surface-tint": "#895100",
+                    "on-error-container": "#93000a",
+                    "tertiary-fixed-dim": "#6dd2ff",
+                    "on-surface-variant": "#534436"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "gutter": "1px",
+                    "density-comfy": "24px",
+                    "panel-padding": "16px",
+                    "density-dense": "8px",
+                    "unit": "4px",
+                    "margin-page": "32px"
+            },
+            "fontFamily": {
+                    "mono-data": [
+                            "JetBrains Mono"
+                    ],
+                    "headline-md": [
+                            "Newsreader"
+                    ],
+                    "headline-sm-mobile": [
+                            "Newsreader"
+                    ],
+                    "display-lg": [
+                            "Newsreader"
+                    ],
+                    "ui-label-bold": [
+                            "Geist"
+                    ],
+                    "ui-label-md": [
+                            "Geist"
+                    ],
+                    "paper-preview-body": [
+                            "Libre Caslon Text"
+                    ]
+            },
+            "fontSize": {
+                    "mono-data": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "1.3",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "headline-sm-mobile": [
+                            "20px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "display-lg": [
+                            "48px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "ui-label-bold": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "ui-label-md": [
+                            "13px",
+                            {
+                                    "lineHeight": "18px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "paper-preview-body": [
+                            "18px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "fontWeight": "400"
+                            }
+                    ]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        /* Base styles for material symbols */
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Custom scrollbar for dense panels */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #d8c3b1; /* outline-variant */
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-ui-label-md antialiased overflow-hidden">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 bg-surface border-b border-outline-variant flex justify-between items-center px-margin-page h-16 max-w-full mx-auto">
+<div class="flex items-center gap-density-comfy">
+<!-- Search Bar (on_left as per JSON) -->
+<div class="relative hidden md:flex items-center">
+<span class="material-symbols-outlined absolute left-2 text-on-surface-variant text-[18px]">search</span>
+<input class="pl-8 pr-4 py-1.5 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT font-mono-data text-mono-data focus:outline-none focus:border-on-surface focus:ring-0 w-64 transition-colors" placeholder="Command..." type="text"/>
+<div class="absolute right-2 flex items-center gap-1">
+<span class="font-mono-data text-[10px] text-on-surface-variant bg-surface-variant px-1 rounded-sm border border-outline-variant">⌘</span>
+<span class="font-mono-data text-[10px] text-on-surface-variant bg-surface-variant px-1 rounded-sm border border-outline-variant">K</span>
+</div>
+</div>
+<!-- Brand Logo -->
+<div class="font-headline-md text-headline-md text-primary ml-4">
+                Academic Command Center
+            </div>
+</div>
+<!-- Navigation Links -->
+<div class="hidden lg:flex items-center gap-density-comfy">
+<a class="font-ui-label-bold text-ui-label-bold text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low px-2 py-1 rounded-sm" href="#">Library</a>
+<a class="font-ui-label-bold text-ui-label-bold text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low px-2 py-1 rounded-sm" href="#">Analytics</a>
+<a class="font-ui-label-bold text-ui-label-bold text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low px-2 py-1 rounded-sm" href="#">Templates</a>
+<a class="font-ui-label-bold text-ui-label-bold text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low px-2 py-1 rounded-sm" href="#">Department</a>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-density-dense">
+<button class="hidden md:flex items-center gap-2 bg-on-surface text-surface-container-lowest px-4 py-1.5 rounded-DEFAULT font-ui-label-bold text-ui-label-bold hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                Create New Paper
+            </button>
+<div class="flex items-center gap-1 border-l border-outline-variant pl-density-dense ml-density-dense">
+<button class="p-1.5 text-on-surface-variant hover:bg-surface-container-low rounded-DEFAULT transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-1.5 text-on-surface-variant hover:bg-surface-container-low rounded-DEFAULT transition-colors">
+<span class="material-symbols-outlined">help</span>
+</button>
+<button class="p-1.5 text-on-surface-variant hover:bg-surface-container-low rounded-DEFAULT transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="ml-2 w-8 h-8 rounded-full bg-surface-variant border border-outline-variant overflow-hidden cursor-pointer">
+<img alt="Teacher profile avatar" class="w-full h-full object-cover" data-alt="A professional headshot of an academic educator, warm lighting, neutral background, realistic portrait." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD7FD8RSyUmWbDqK23afhlQGjTrv6iHYkNTSfhOeD8ZnTZrc2fut8JhyMmlinVfs4lS8yXC_Anhk2o6yWeJ1XiDKVBvkQAvCIktUm0LRy9t99Ah-j5xDa3VC827AmfkDjMgqepJ53kTdMVIQQlY7BTVuNdJ8Olnyvp1P0gkqXJL2TZz2mSH7sDUd_Mhyea2cg9SA7cbFmfC_zrfCIIyuMg2eCXQXk5rIE9Tsf0fqRLecwK-guNLMSb_gtcqwbhTldlfIXwd-8xVIPk"/>
+</div>
+</div>
+</div>
+</nav>
+<div class="flex flex-1 pt-16 h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] w-64 bg-surface-container-low border-r border-outline-variant flex flex-col justify-between py-panel-padding z-40 hidden md:flex transition-all duration-200 ease-out">
+<div>
+<!-- Header -->
+<div class="px-panel-padding mb-8 flex items-center gap-density-dense">
+<div class="w-10 h-10 rounded-DEFAULT bg-surface-container-highest border border-outline-variant flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary">account_balance</span>
+</div>
+<div>
+<div class="font-ui-label-bold text-ui-label-bold text-on-surface line-clamp-1">Department of Education</div>
+<div class="font-mono-data text-mono-data text-on-surface-variant">Senior Faculty Portal</div>
+</div>
+</div>
+<!-- Nav Tabs -->
+<nav class="flex flex-col gap-1 px-2">
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:bg-surface-container transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary">book_4</span>
+<span class="font-ui-label-md text-ui-label-md">My Library</span>
+</a>
+<!-- ACTIVE TAB -->
+<a class="flex items-center gap-3 px-3 py-2 bg-surface border-l-4 border-primary text-primary font-bold shadow-sm transition-all duration-150 ease-in-out scale-[0.99]" href="#">
+<span class="material-symbols-outlined text-[20px] filled">grid_view</span>
+<span class="font-ui-label-bold text-ui-label-bold">Syllabus Coverage</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:bg-surface-container transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary">analytics</span>
+<span class="font-ui-label-md text-ui-label-md">Difficulty Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:bg-surface-container transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary">rule</span>
+<span class="font-ui-label-md text-ui-label-md">Grading Schemes</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:bg-surface-container transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary">archive</span>
+<span class="font-ui-label-md text-ui-label-md">Archived</span>
+</a>
+</nav>
+</div>
+<!-- Footer / Bottom Actions -->
+<div class="px-panel-padding mt-auto flex flex-col gap-density-dense border-t border-outline-variant pt-4">
+<button class="w-full py-1.5 border border-outline-variant rounded-DEFAULT font-ui-label-bold text-ui-label-bold text-on-surface bg-surface hover:bg-surface-container-high transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add_box</span>
+                    New Template
+                </button>
+<div class="flex flex-col gap-1 mt-2">
+<a class="flex items-center gap-2 text-on-surface-variant hover:text-primary font-mono-data text-mono-data py-1" href="#">
+<span class="material-symbols-outlined text-[16px]">dns</span> System Status
+                    </a>
+<a class="flex items-center gap-2 text-on-surface-variant hover:text-primary font-mono-data text-mono-data py-1" href="#">
+<span class="material-symbols-outlined text-[16px]">menu_book</span> Documentation
+                    </a>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-64 bg-background overflow-y-auto custom-scrollbar flex flex-col">
+<div class="px-margin-page py-margin-page max-w-[1400px] w-full mx-auto flex-1 flex flex-col">
+<!-- Page Header -->
+<header class="mb-8 border-b border-outline-variant pb-6 flex justify-between items-end">
+<div>
+<div class="font-mono-data text-mono-data text-primary mb-2 flex items-center gap-2 tracking-widest uppercase">
+<span class="material-symbols-outlined text-[14px]">my_location</span>
+                            Academic Term 2024 - Q1
+                        </div>
+<h1 class="font-display-lg text-display-lg text-on-background m-0">Syllabus Coverage</h1>
+<p class="font-ui-label-md text-ui-label-md text-on-surface-variant mt-2 max-w-2xl">
+                            Comprehensive mapping of assessed curriculum nodes. Monitor testing distribution and identify under-represented topics to ensure balanced academic evaluation.
+                        </p>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="bg-surface-container-lowest border border-outline-variant px-3 py-1.5 rounded-DEFAULT flex items-center gap-2">
+<span class="font-mono-data text-mono-data text-on-surface-variant">Subject:</span>
+<select class="bg-transparent border-none p-0 m-0 font-ui-label-bold text-ui-label-bold text-on-surface focus:ring-0 cursor-pointer outline-none">
+<option>Advanced Mathematics (MA-401)</option>
+<option>Physics (PH-202)</option>
+<option>Literature (EN-101)</option>
+</select>
+</div>
+<button class="bg-surface-container-lowest border border-outline-variant p-1.5 rounded-DEFAULT hover:bg-surface-container-low text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">filter_list</span>
+</button>
+</div>
+</header>
+<!-- Complex Grid Layout -->
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-density-comfy flex-1 items-start content-start">
+<!-- Left Panel: Hierarchical Tree (Syllabus Node Explorer) -->
+<div class="xl:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-DEFAULT shadow-sm overflow-hidden flex flex-col h-[700px]">
+<!-- Panel Header -->
+<div class="p-panel-padding border-b border-outline-variant bg-surface flex justify-between items-center z-10 sticky top-0">
+<h2 class="font-headline-sm-mobile text-headline-sm-mobile text-on-surface m-0">Curriculum Taxonomy Explorer</h2>
+<div class="flex items-center gap-density-comfy text-mono-data font-mono-data text-on-surface-variant">
+<div class="flex items-center gap-1"><div class="w-2 h-2 rounded-full bg-primary-container"></div> Under-tested (&lt; 30%)</div>
+<div class="flex items-center gap-1"><div class="w-2 h-2 rounded-full bg-tertiary-container"></div> Adequate</div>
+<div class="flex items-center gap-1"><div class="w-2 h-2 rounded-full bg-outline"></div> Over-tested</div>
+</div>
+</div>
+<!-- Column Headers -->
+<div class="flex items-center px-panel-padding py-2 border-b border-outline-variant bg-surface-variant/50 font-mono-data text-[10px] text-on-surface-variant tracking-wider uppercase">
+<div class="flex-1">Topic Node</div>
+<div class="w-32 text-center">Coverage</div>
+<div class="w-24 text-right">Last Assessed</div>
+<div class="w-24 text-right pl-4">Status</div>
+</div>
+<!-- Tree Content (Scrollable) -->
+<div class="flex-1 overflow-y-auto custom-scrollbar bg-outline-variant/30 flex flex-col gap-gutter p-gutter">
+<!-- Level 1 Node (Expanded) -->
+<div class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group flex flex-col">
+<div class="flex items-center justify-between p-density-dense cursor-pointer">
+<div class="flex items-center gap-density-dense flex-1">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">expand_more</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">folder_open</span>
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface">1.0 Calculus</span>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="w-32 h-1.5 bg-surface-variant rounded-full overflow-hidden flex">
+<div class="h-full bg-tertiary-container w-[65%]"></div>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-8 text-right">65%</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-24 text-right">Oct 14, '24</span>
+<div class="w-24 flex justify-end">
+<span class="font-mono-data text-[10px] px-2 py-0.5 rounded-sm bg-surface-variant text-on-surface border border-outline-variant">Adequate</span>
+</div>
+</div>
+</div>
+<!-- Children of 1.0 -->
+<div class="flex flex-col gap-gutter bg-outline-variant/20 pl-6 border-l border-outline-variant ml-3 mb-1">
+<!-- Level 2 Node -->
+<div class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group flex items-center justify-between p-density-dense">
+<div class="flex items-center gap-density-dense flex-1 pl-4">
+<span class="material-symbols-outlined text-outline text-[16px]">subdirectory_arrow_right</span>
+<span class="font-ui-label-md text-ui-label-md text-on-surface">1.1 Limits and Continuity</span>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="w-32 h-1.5 bg-surface-variant rounded-full overflow-hidden flex">
+<div class="h-full bg-outline w-[95%]"></div>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-8 text-right">95%</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-24 text-right">Oct 14, '24</span>
+<div class="w-24 flex justify-end">
+<span class="font-mono-data text-[10px] px-2 py-0.5 rounded-sm bg-surface-variant text-on-surface border border-outline-variant">Saturated</span>
+</div>
+</div>
+</div>
+<!-- Level 2 Node -->
+<div class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group flex items-center justify-between p-density-dense">
+<div class="flex items-center gap-density-dense flex-1 pl-4">
+<span class="material-symbols-outlined text-outline text-[16px]">subdirectory_arrow_right</span>
+<span class="font-ui-label-md text-ui-label-md text-on-surface">1.2 Differentiation</span>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="w-32 h-1.5 bg-surface-variant rounded-full overflow-hidden flex">
+<div class="h-full bg-tertiary-container w-[70%]"></div>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-8 text-right">70%</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-24 text-right">Sep 28, '24</span>
+<div class="w-24 flex justify-end">
+<span class="font-mono-data text-[10px] px-2 py-0.5 rounded-sm bg-surface-variant text-on-surface border border-outline-variant">Adequate</span>
+</div>
+</div>
+</div>
+<!-- Level 2 Node (Under-tested) -->
+<div class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group flex flex-col relative before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-primary-container">
+<div class="flex items-center justify-between p-density-dense cursor-pointer">
+<div class="flex items-center gap-density-dense flex-1 pl-4">
+<span class="material-symbols-outlined text-outline text-[16px]">expand_more</span>
+<span class="font-ui-label-md text-ui-label-md text-on-surface font-semibold">1.3 Integration Techniques</span>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="w-32 h-1.5 bg-surface-variant rounded-full overflow-hidden flex">
+<div class="h-full bg-primary-container w-[20%]"></div>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-8 text-right">20%</span>
+<span class="font-mono-data text-mono-data text-error w-24 text-right">May 10, '24</span>
+<div class="w-24 flex justify-end">
+<span class="font-mono-data text-[10px] px-2 py-0.5 rounded-sm bg-surface-container text-primary-container border border-primary-container/30">Gap Identified</span>
+</div>
+</div>
+</div>
+<!-- Children of 1.3 -->
+<div class="flex flex-col gap-gutter bg-outline-variant/20 pl-10 border-l border-outline-variant ml-7 mb-1">
+<div class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors flex items-center justify-between p-density-dense py-1.5">
+<div class="font-mono-data text-mono-data text-on-surface flex-1">1.3.1 Substitution Rule</div>
+<div class="font-mono-data text-mono-data text-on-surface-variant">Assessed 2x</div>
+</div>
+<div class="bg-error-container/10 hover:bg-error-container/20 transition-colors flex items-center justify-between p-density-dense py-1.5">
+<div class="font-mono-data text-mono-data text-error flex-1 flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+                                                    1.3.2 Integration by Parts
+                                                </div>
+<div class="font-mono-data text-mono-data text-error font-semibold">0 Assessments</div>
+</div>
+<div class="bg-error-container/10 hover:bg-error-container/20 transition-colors flex items-center justify-between p-density-dense py-1.5">
+<div class="font-mono-data text-mono-data text-error flex-1 flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+                                                    1.3.3 Partial Fractions
+                                                </div>
+<div class="font-mono-data text-mono-data text-error font-semibold">0 Assessments</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Level 1 Node (Collapsed) -->
+<div class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group flex flex-col">
+<div class="flex items-center justify-between p-density-dense cursor-pointer">
+<div class="flex items-center gap-density-dense flex-1">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">chevron_right</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">folder</span>
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface">2.0 Linear Algebra</span>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="w-32 h-1.5 bg-surface-variant rounded-full overflow-hidden flex">
+<div class="h-full bg-tertiary-container w-[85%]"></div>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-8 text-right">85%</span>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-24 text-right">Oct 02, '24</span>
+<div class="w-24 flex justify-end">
+<span class="font-mono-data text-[10px] px-2 py-0.5 rounded-sm bg-surface-variant text-on-surface border border-outline-variant">Adequate</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Level 1 Node (Collapsed) -->
+<div class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors group flex flex-col">
+<div class="flex items-center justify-between p-density-dense cursor-pointer relative before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-primary-container">
+<div class="flex items-center gap-density-dense flex-1">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">chevron_right</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">folder</span>
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface">3.0 Probability &amp; Statistics</span>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="w-32 h-1.5 bg-surface-variant rounded-full overflow-hidden flex">
+<div class="h-full bg-primary-container w-[15%]"></div>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant w-8 text-right">15%</span>
+<span class="font-mono-data text-mono-data text-error w-24 text-right">Never</span>
+<div class="w-24 flex justify-end">
+<span class="font-mono-data text-[10px] px-2 py-0.5 rounded-sm bg-surface-container text-primary-container border border-primary-container/30">Critical Gap</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Panel: Gap Analysis & Actions -->
+<div class="xl:col-span-4 flex flex-col gap-density-comfy">
+<!-- Gap Analysis Widget -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-DEFAULT shadow-sm overflow-hidden">
+<div class="p-panel-padding border-b border-outline-variant bg-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container">troubleshoot</span>
+<h2 class="font-headline-sm-mobile text-headline-sm-mobile text-on-surface m-0">Gap Analysis</h2>
+</div>
+<div class="p-panel-padding bg-background">
+<p class="font-ui-label-md text-ui-label-md text-on-surface-variant mb-4">
+                                    The following areas are significantly under-tested relative to their curriculum weight. It is highly recommended to include these in upcoming assessments.
+                                </p>
+<div class="flex flex-col gap-2">
+<!-- Gap Item -->
+<div class="p-3 border border-primary-container/30 bg-surface-container rounded-DEFAULT flex items-start gap-3">
+<div class="mt-0.5 w-2 h-2 rounded-full bg-primary-container shrink-0"></div>
+<div class="flex-1">
+<div class="font-ui-label-bold text-ui-label-bold text-on-surface">3.0 Probability &amp; Statistics</div>
+<div class="font-mono-data text-[10px] text-on-surface-variant mt-1 flex justify-between">
+<span>Weight: 15%</span>
+<span class="text-error font-semibold">Tested: 0%</span>
+</div>
+</div>
+<button class="text-primary hover:bg-surface-container-highest p-1 rounded-sm transition-colors" title="Generate questions for this node">
+<span class="material-symbols-outlined text-[18px]">magic_button</span>
+</button>
+</div>
+<!-- Gap Item -->
+<div class="p-3 border border-outline-variant bg-surface-container-lowest rounded-DEFAULT flex items-start gap-3">
+<div class="mt-0.5 w-2 h-2 rounded-full bg-primary-container shrink-0 opacity-70"></div>
+<div class="flex-1">
+<div class="font-ui-label-bold text-ui-label-bold text-on-surface">1.3 Integration Techniques</div>
+<div class="font-mono-data text-[10px] text-on-surface-variant mt-1 flex justify-between">
+<span>Weight: 20%</span>
+<span class="text-primary-container font-semibold">Tested: 20% (of weight)</span>
+</div>
+</div>
+<button class="text-primary hover:bg-surface-container-highest p-1 rounded-sm transition-colors" title="Generate questions for this node">
+<span class="material-symbols-outlined text-[18px]">magic_button</span>
+</button>
+</div>
+</div>
+<button class="w-full mt-4 bg-on-surface text-surface py-2 rounded-DEFAULT font-ui-label-bold text-ui-label-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                                    Auto-Generate Gap Paper
+                                </button>
+</div>
+</div>
+<!-- Macro Stats -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-DEFAULT shadow-sm p-panel-padding">
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface mb-4 uppercase tracking-wider text-[10px]">Term Macro Metrics</h3>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<div class="font-mono-data text-[10px] text-on-surface-variant mb-1">Total Nodes Tested</div>
+<div class="font-display-lg text-[32px] text-on-surface leading-none">42<span class="text-[16px] text-on-surface-variant">/65</span></div>
+</div>
+<div>
+<div class="font-mono-data text-[10px] text-on-surface-variant mb-1">Overall Coverage</div>
+<div class="font-display-lg text-[32px] text-on-surface leading-none">64<span class="text-[16px] text-on-surface-variant">%</span></div>
+</div>
+</div>
+<div class="mt-6 pt-4 border-t border-outline-variant">
+<div class="flex justify-between items-end mb-2">
+<span class="font-ui-label-bold text-[10px] text-on-surface-variant uppercase">Alignment Health</span>
+<span class="font-mono-data text-[12px] text-on-surface font-semibold">Marginal</span>
+</div>
+<div class="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary-container w-[60%]"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer -->
+<footer class="mt-auto pt-8 border-t border-outline-variant flex justify-between items-center px-margin-page py-4 w-full bg-surface-container-lowest">
+<div class="font-ui-label-md text-ui-label-md text-on-surface-variant">
+                        © 2024 Editorial Oversight Systems. All rights reserved.
+                    </div>
+<div class="flex gap-4">
+<a class="font-ui-label-md text-ui-label-md text-on-surface-variant hover:text-primary underline transition-colors" href="#">Privacy Policy</a>
+<a class="font-ui-label-md text-ui-label-md text-on-surface-variant hover:text-primary underline transition-colors" href="#">Terms of Service</a>
+<a class="font-ui-label-md text-ui-label-md text-on-surface-variant hover:text-primary underline transition-colors" href="#">Faculty Handbook</a>
+</div>
+</footer>
+</div>
+</main>
+</div>
+</body></html>

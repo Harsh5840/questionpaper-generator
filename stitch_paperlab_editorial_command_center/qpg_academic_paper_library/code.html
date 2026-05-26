@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Academic Command Center - Library</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=JetBrains+Mono:wght@400&amp;family=Libre+Caslon+Text&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-variant": "#efe0d5",
+                      "inverse-on-surface": "#fdeee3",
+                      "surface-dim": "#e6d7cc",
+                      "secondary-fixed-dim": "#c8c6c8",
+                      "on-primary-container": "#4e2c00",
+                      "error": "#ba1a1a",
+                      "secondary-container": "#e2dfe1",
+                      "surface": "#fff8f4",
+                      "inverse-primary": "#ffb86d",
+                      "surface-container-highest": "#efe0d5",
+                      "on-error": "#ffffff",
+                      "on-tertiary-container": "#00394b",
+                      "on-primary-fixed-variant": "#683c00",
+                      "tertiary": "#006685",
+                      "secondary-fixed": "#e4e2e4",
+                      "surface-container-lowest": "#ffffff",
+                      "on-secondary-container": "#636264",
+                      "surface-container-low": "#fff1e7",
+                      "secondary": "#5f5e60",
+                      "primary-fixed": "#ffdcbd",
+                      "outline-variant": "#d8c3b1",
+                      "on-tertiary": "#ffffff",
+                      "surface-container-high": "#f4e6da",
+                      "on-primary-fixed": "#2c1600",
+                      "on-secondary-fixed-variant": "#474649",
+                      "surface-container": "#faebe0",
+                      "primary-container": "#d98b2c",
+                      "tertiary-container": "#26a8d6",
+                      "on-secondary-fixed": "#1b1b1d",
+                      "on-tertiary-fixed-variant": "#004d65",
+                      "on-secondary": "#ffffff",
+                      "background": "#fff8f4",
+                      "on-background": "#211a14",
+                      "error-container": "#ffdad6",
+                      "primary": "#895100",
+                      "primary-fixed-dim": "#ffb86d",
+                      "surface-bright": "#fff8f4",
+                      "outline": "#857464",
+                      "on-primary": "#ffffff",
+                      "on-surface": "#211a14",
+                      "tertiary-fixed": "#bfe9ff",
+                      "inverse-surface": "#372f27",
+                      "on-tertiary-fixed": "#001f2a",
+                      "surface-tint": "#895100",
+                      "on-error-container": "#93000a",
+                      "tertiary-fixed-dim": "#6dd2ff",
+                      "on-surface-variant": "#534436"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "gutter": "1px",
+                      "density-comfy": "24px",
+                      "panel-padding": "16px",
+                      "density-dense": "8px",
+                      "unit": "4px",
+                      "margin-page": "32px"
+              },
+              "fontFamily": {
+                      "mono-data": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-md": [
+                              "Newsreader"
+                      ],
+                      "headline-sm-mobile": [
+                              "Newsreader"
+                      ],
+                      "display-lg": [
+                              "Newsreader"
+                      ],
+                      "ui-label-bold": [
+                              "Geist"
+                      ],
+                      "ui-label-md": [
+                              "Geist"
+                      ],
+                      "paper-preview-body": [
+                              "Libre Caslon Text"
+                      ]
+              },
+              "fontSize": {
+                      "mono-data": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-sm-mobile": [
+                              "20px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "ui-label-bold": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "ui-label-md": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "paper-preview-body": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        /* Base styles from style guidance */
+        body {
+            background-color: #f9f8f6; /* Hardcoded fallback for ivory base if theme misses */
+            color: #211a14;
+        }
+        
+        /* Custom scrollbar for academic feel */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #fff8f4; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d8c3b1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #857464; 
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface h-screen overflow-hidden flex flex-col font-ui-label-md antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar -->
+<header class="bg-surface text-primary border-b border-outline-variant flat no shadows flex justify-between items-center w-full px-margin-page h-16 max-w-full mx-auto flex-shrink-0 z-20 relative">
+<div class="flex items-center gap-density-comfy h-full">
+<span class="text-headline-md font-headline-md text-primary">Academic Command Center</span>
+<nav class="hidden md:flex items-center gap-density-dense h-full ml-density-comfy">
+<a class="h-full flex items-center px-2 text-primary border-b-2 border-primary pb-2 scale-[0.99] duration-150 ease-in-out font-ui-label-bold text-ui-label-bold" href="#">Library</a>
+<a class="h-full flex items-center px-2 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low font-ui-label-bold text-ui-label-bold" href="#">Analytics</a>
+<a class="h-full flex items-center px-2 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low font-ui-label-bold text-ui-label-bold" href="#">Templates</a>
+<a class="h-full flex items-center px-2 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-container-low font-ui-label-bold text-ui-label-bold" href="#">Department</a>
+</nav>
+</div>
+<div class="flex items-center gap-density-dense">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="bg-surface-container-lowest border-b border-outline-variant focus:border-on-surface focus:ring-0 pl-8 pr-3 py-1 text-sm font-ui-label-md placeholder-on-surface-variant w-64 transition-colors bg-transparent" placeholder="Search the archives..." type="text"/>
+</div>
+<button class="bg-on-surface text-surface hover:bg-primary transition-colors px-4 py-2 rounded-DEFAULT font-ui-label-bold text-ui-label-bold ml-4">
+                Create New Paper
+            </button>
+<div class="flex items-center gap-1 ml-2 border-l border-outline-variant pl-4">
+<button aria-label="notifications" class="p-1 text-on-surface-variant hover:bg-surface-container-low rounded-DEFAULT transition-colors">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">notifications</span>
+</button>
+<button aria-label="help" class="p-1 text-on-surface-variant hover:bg-surface-container-low rounded-DEFAULT transition-colors">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">help</span>
+</button>
+<button aria-label="settings" class="p-1 text-on-surface-variant hover:bg-surface-container-low rounded-DEFAULT transition-colors">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+</button>
+<div class="h-8 w-8 rounded-full bg-surface-container-high border border-outline-variant ml-2 overflow-hidden flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">person</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Layout Shell -->
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar -->
+<aside class="bg-surface-container-low text-primary border-r border-outline-variant flat no shadows docked h-full left-0 w-64 flex flex-col justify-between py-panel-padding flex-shrink-0 z-10 transition-all duration-200 ease-out">
+<div>
+<div class="px-panel-padding mb-density-comfy pb-panel-padding border-b border-outline-variant">
+<div class="flex items-center gap-3 mb-2">
+<div class="h-10 w-10 rounded-DEFAULT bg-surface-container-highest border border-outline flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">account_balance</span>
+</div>
+<div>
+<h2 class="font-headline-sm-mobile text-headline-sm-mobile text-on-surface">Department of Education</h2>
+<p class="font-ui-label-md text-ui-label-md text-on-surface-variant">Senior Faculty Portal</p>
+</div>
+</div>
+</div>
+<nav class="flex flex-col gap-unit px-unit">
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT bg-surface border-l-4 border-primary text-primary font-bold transition-all" href="#">
+<span class="material-symbols-outlined text-primary">book_4</span>
+<span class="font-ui-label-md text-ui-label-md">My Library</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT border-l-4 border-transparent text-on-surface-variant hover:bg-surface-container hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined">grid_view</span>
+<span class="font-ui-label-md text-ui-label-md">Syllabus Coverage</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT border-l-4 border-transparent text-on-surface-variant hover:bg-surface-container hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-ui-label-md text-ui-label-md">Difficulty Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT border-l-4 border-transparent text-on-surface-variant hover:bg-surface-container hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined">rule</span>
+<span class="font-ui-label-md text-ui-label-md">Grading Schemes</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT border-l-4 border-transparent text-on-surface-variant hover:bg-surface-container hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span class="font-ui-label-md text-ui-label-md">Archived</span>
+</a>
+</nav>
+</div>
+<div class="px-panel-padding">
+<button class="w-full py-2 px-4 border border-outline-variant rounded-DEFAULT text-on-surface hover:bg-surface-container-high transition-colors font-ui-label-bold text-ui-label-bold mb-density-comfy flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">add</span> New Template
+                </button>
+<div class="border-t border-outline-variant pt-panel-padding flex flex-col gap-unit">
+<a class="flex items-center gap-3 px-2 py-1 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-sm">dns</span>
+<span class="font-mono-data text-mono-data">System Status</span>
+</a>
+<a class="flex items-center gap-3 px-2 py-1 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-sm">menu_book</span>
+<span class="font-mono-data text-mono-data">Documentation</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-auto bg-surface relative flex flex-col">
+<!-- Contextual Header & Filters -->
+<div class="bg-surface-container-lowest border-b border-outline-variant sticky top-0 z-10 px-margin-page py-panel-padding shadow-sm">
+<div class="flex justify-between items-end mb-4">
+<div>
+<h1 class="font-headline-md text-headline-md text-on-surface">Library Index</h1>
+<p class="font-mono-data text-mono-data text-on-surface-variant mt-1">Found 1,204 generative documents across all departments.</p>
+</div>
+<div class="flex gap-2">
+<button class="flex items-center gap-2 px-3 py-1.5 border border-outline-variant bg-surface rounded-DEFAULT hover:bg-surface-container-low transition-colors font-ui-label-bold text-ui-label-bold text-on-surface">
+<span class="material-symbols-outlined text-sm">filter_list</span> Filters
+                        </button>
+<button class="flex items-center gap-2 px-3 py-1.5 border border-outline-variant bg-surface rounded-DEFAULT hover:bg-surface-container-low transition-colors font-ui-label-bold text-ui-label-bold text-on-surface">
+<span class="material-symbols-outlined text-sm">sort</span> Sort: Date
+                        </button>
+</div>
+</div>
+<!-- Advanced Filters Row -->
+<div class="flex flex-wrap gap-density-dense pt-2 border-t border-outline-variant border-dashed">
+<div class="flex items-center gap-2">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant uppercase text-[10px]">Department:</span>
+<select class="bg-surface border-none text-on-surface font-ui-label-md text-ui-label-md py-1 pr-8 pl-2 focus:ring-0 border-b border-outline-variant hover:border-on-surface cursor-pointer">
+<option>All Departments</option>
+<option>Literature</option>
+<option>History</option>
+<option>Sciences</option>
+</select>
+</div>
+<div class="h-6 w-px bg-outline-variant mx-2"></div>
+<div class="flex items-center gap-2">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant uppercase text-[10px]">Grade Level:</span>
+<select class="bg-surface border-none text-on-surface font-ui-label-md text-ui-label-md py-1 pr-8 pl-2 focus:ring-0 border-b border-outline-variant hover:border-on-surface cursor-pointer">
+<option>Any Level</option>
+<option>Undergraduate</option>
+<option>Graduate</option>
+<option>Post-Doc</option>
+</select>
+</div>
+<div class="h-6 w-px bg-outline-variant mx-2"></div>
+<div class="flex items-center gap-2">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant uppercase text-[10px]">Curriculum Tag:</span>
+<div class="flex gap-1">
+<span class="bg-surface-container px-2 py-0.5 border border-outline-variant rounded-DEFAULT font-mono-data text-mono-data text-on-surface flex items-center gap-1 cursor-pointer hover:bg-surface-container-high">
+                                CORE-101 <span class="material-symbols-outlined text-[10px]">close</span>
+</span>
+<span class="bg-surface px-2 py-0.5 border border-outline-variant border-dashed rounded-DEFAULT font-mono-data text-mono-data text-on-surface-variant cursor-pointer hover:bg-surface-container-low">
+                                + Add Tag
+                            </span>
+</div>
+</div>
+</div>
+</div>
+<!-- Data Table area (The Ledger) -->
+<div class="px-margin-page py-panel-padding flex-1">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-DEFAULT overflow-hidden">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b-2 border-outline-variant bg-surface-container-low text-on-surface font-ui-label-bold text-ui-label-bold uppercase text-[11px] tracking-wider">
+<th class="p-3 w-8"></th>
+<th class="p-3 w-[35%]">Document Title</th>
+<th class="p-3">Generated Date</th>
+<th class="p-3">Primary Author</th>
+<th class="p-3">Difficulty</th>
+<th class="p-3">Status</th>
+<th class="p-3 text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="font-ui-label-md text-ui-label-md text-on-surface divide-y divide-outline-variant">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low transition-colors group cursor-default">
+<td class="p-3 text-center text-on-surface-variant"><span class="material-symbols-outlined text-sm">description</span></td>
+<td class="p-3">
+<div class="font-headline-md text-[16px] leading-tight text-on-surface group-hover:text-primary transition-colors">Thematic Progression in Post-War European Cinema</div>
+<div class="font-mono-data text-[10px] text-on-surface-variant mt-1">ID: DOC-9942-A</div>
+</td>
+<td class="p-3 font-mono-data text-mono-data text-on-surface-variant">2024-10-24</td>
+<td class="p-3">Dr. E. Vance</td>
+<td class="p-3">
+<div class="flex gap-0.5 items-center">
+<span class="w-2 h-4 bg-primary-container rounded-sm"></span>
+<span class="w-2 h-4 bg-primary-container rounded-sm"></span>
+<span class="w-2 h-4 bg-primary-container rounded-sm"></span>
+<span class="w-2 h-4 bg-surface-container-high rounded-sm"></span>
+<span class="ml-2 font-mono-data text-[10px]">Adv</span>
+</div>
+</td>
+<td class="p-3">
+<span class="px-2 py-0.5 bg-surface-variant border border-outline-variant rounded-DEFAULT font-mono-data text-[10px] uppercase text-on-surface tracking-wide">Published</span>
+</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="Quick Preview">
+<span class="material-symbols-outlined text-sm">visibility</span>
+</button>
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="Download PDF">
+<span class="material-symbols-outlined text-sm">picture_as_pdf</span>
+</button>
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="More options">
+<span class="material-symbols-outlined text-sm">more_vert</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low transition-colors group cursor-default">
+<td class="p-3 text-center text-on-surface-variant"><span class="material-symbols-outlined text-sm">description</span></td>
+<td class="p-3">
+<div class="font-headline-md text-[16px] leading-tight text-on-surface group-hover:text-primary transition-colors">Analysis of Quantum Superposition in Macro Structures</div>
+<div class="font-mono-data text-[10px] text-on-surface-variant mt-1">ID: DOC-9941-B</div>
+</td>
+<td class="p-3 font-mono-data text-mono-data text-on-surface-variant">2024-10-23</td>
+<td class="p-3">Prof. H. Liang</td>
+<td class="p-3">
+<div class="flex gap-0.5 items-center">
+<span class="w-2 h-4 bg-error rounded-sm"></span>
+<span class="w-2 h-4 bg-error rounded-sm"></span>
+<span class="w-2 h-4 bg-error rounded-sm"></span>
+<span class="w-2 h-4 bg-error rounded-sm"></span>
+<span class="ml-2 font-mono-data text-[10px] text-error">Exp</span>
+</div>
+</td>
+<td class="p-3">
+<span class="px-2 py-0.5 bg-surface border border-outline-variant border-dashed rounded-DEFAULT font-mono-data text-[10px] uppercase text-on-surface-variant tracking-wide">Draft</span>
+</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="Quick Preview">
+<span class="material-symbols-outlined text-sm">visibility</span>
+</button>
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="Download DOCX">
+<span class="material-symbols-outlined text-sm">article</span>
+</button>
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="More options">
+<span class="material-symbols-outlined text-sm">more_vert</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low transition-colors group cursor-default opacity-75">
+<td class="p-3 text-center text-on-surface-variant"><span class="material-symbols-outlined text-sm">inventory_2</span></td>
+<td class="p-3">
+<div class="font-headline-md text-[16px] leading-tight text-on-surface group-hover:text-primary transition-colors">Historical Linguistics: Pre-Indo-European Roots</div>
+<div class="font-mono-data text-[10px] text-on-surface-variant mt-1">ID: DOC-9810-C</div>
+</td>
+<td class="p-3 font-mono-data text-mono-data text-on-surface-variant">2023-11-05</td>
+<td class="p-3">System Auto-Gen</td>
+<td class="p-3">
+<div class="flex gap-0.5 items-center">
+<span class="w-2 h-4 bg-outline-variant rounded-sm"></span>
+<span class="w-2 h-4 bg-outline-variant rounded-sm"></span>
+<span class="w-2 h-4 bg-surface-container-high rounded-sm"></span>
+<span class="w-2 h-4 bg-surface-container-high rounded-sm"></span>
+<span class="ml-2 font-mono-data text-[10px]">Int</span>
+</div>
+</td>
+<td class="p-3">
+<span class="px-2 py-0.5 bg-surface-container-high border border-outline rounded-DEFAULT font-mono-data text-[10px] uppercase text-on-surface-variant tracking-wide">Archived</span>
+</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="Quick Preview">
+<span class="material-symbols-outlined text-sm">visibility</span>
+</button>
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="Restore">
+<span class="material-symbols-outlined text-sm">unarchive</span>
+</button>
+<button class="p-1.5 text-on-surface hover:text-primary hover:bg-surface rounded-DEFAULT border border-transparent hover:border-outline-variant transition-all" title="More options">
+<span class="material-symbols-outlined text-sm">more_vert</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<!-- Pagination Footer inside table border -->
+<div class="bg-surface border-t border-outline-variant px-4 py-3 flex items-center justify-between">
+<div class="font-mono-data text-mono-data text-on-surface-variant">
+                            Showing 1-3 of 1,204 results
+                        </div>
+<div class="flex items-center gap-1">
+<button class="p-1 border border-outline-variant rounded-DEFAULT text-on-surface-variant hover:bg-surface-container disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</button>
+<span class="px-3 font-mono-data text-mono-data text-on-surface">Page 1 of 402</span>
+<button class="p-1 border border-outline-variant rounded-DEFAULT text-on-surface hover:bg-surface-container">
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

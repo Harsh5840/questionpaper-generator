@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Template Management - Academic Command Center</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=JetBrains+Mono:wght@400&amp;family=Libre+Caslon+Text&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-variant": "#efe0d5",
+                        "inverse-on-surface": "#fdeee3",
+                        "surface-dim": "#e6d7cc",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "on-primary-container": "#4e2c00",
+                        "error": "#ba1a1a",
+                        "secondary-container": "#e2dfe1",
+                        "surface": "#fff8f4",
+                        "inverse-primary": "#ffb86d",
+                        "surface-container-highest": "#efe0d5",
+                        "on-error": "#ffffff",
+                        "on-tertiary-container": "#00394b",
+                        "on-primary-fixed-variant": "#683c00",
+                        "tertiary": "#006685",
+                        "secondary-fixed": "#e4e2e4",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-container": "#636264",
+                        "surface-container-low": "#fff1e7",
+                        "secondary": "#5f5e60",
+                        "primary-fixed": "#ffdcbd",
+                        "outline-variant": "#d8c3b1",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#f4e6da",
+                        "on-primary-fixed": "#2c1600",
+                        "on-secondary-fixed-variant": "#474649",
+                        "surface-container": "#faebe0",
+                        "primary-container": "#d98b2c",
+                        "tertiary-container": "#26a8d6",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "on-tertiary-fixed-variant": "#004d65",
+                        "on-secondary": "#ffffff",
+                        "background": "#fff8f4",
+                        "on-background": "#211a14",
+                        "error-container": "#ffdad6",
+                        "primary": "#895100",
+                        "primary-fixed-dim": "#ffb86d",
+                        "surface-bright": "#fff8f4",
+                        "outline": "#857464",
+                        "on-primary": "#ffffff",
+                        "on-surface": "#211a14",
+                        "tertiary-fixed": "#bfe9ff",
+                        "inverse-surface": "#372f27",
+                        "on-tertiary-fixed": "#001f2a",
+                        "surface-tint": "#895100",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#6dd2ff",
+                        "on-surface-variant": "#534436"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "1px",
+                        "density-comfy": "24px",
+                        "panel-padding": "16px",
+                        "density-dense": "8px",
+                        "unit": "4px",
+                        "margin-page": "32px"
+                    },
+                    "fontFamily": {
+                        "mono-data": ["JetBrains Mono"],
+                        "headline-md": ["Newsreader"],
+                        "headline-sm-mobile": ["Newsreader"],
+                        "display-lg": ["Newsreader"],
+                        "ui-label-bold": ["Geist"],
+                        "ui-label-md": ["Geist"],
+                        "paper-preview-body": ["Libre Caslon Text"]
+                    },
+                    "fontSize": {
+                        "mono-data": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "500" }],
+                        "headline-sm-mobile": ["20px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "ui-label-bold": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "ui-label-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "paper-preview-body": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Base styles to enforce the "ink-line" and "paper" feel */
+        body {
+            background-color: theme('colors.surface');
+            color: theme('colors.on-surface');
+        }
+        
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.outline-variant');
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme('colors.outline');
+        }
+
+        /* Minimal Input Resets */
+        .academic-input {
+            border: none;
+            border-bottom: 1px solid theme('colors.outline-variant');
+            background: transparent;
+            border-radius: 0;
+            padding: theme('spacing.density-dense') 0;
+            transition: border-color 0.2s;
+        }
+        .academic-input:focus {
+            outline: none;
+            box-shadow: none;
+            border-bottom-color: theme('colors.on-surface');
+        }
+    </style>
+</head>
+<body class="font-ui-label-md antialiased overflow-hidden flex flex-col h-screen">
+<!-- TopNavBar -->
+<header class="fixed top-0 w-full z-50 bg-surface dark:bg-on-surface border-b border-outline-variant dark:border-outline flat no shadows flex justify-between items-center px-margin-page h-16 max-w-full mx-auto">
+<div class="flex items-center gap-margin-page h-full">
+<div class="text-headline-md font-headline-md text-primary dark:text-primary-fixed">
+                Academic Command Center
+            </div>
+<nav class="hidden md:flex h-full items-center gap-panel-padding">
+<!-- Navigation Link: Library -->
+<a class="h-full flex items-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-container-low dark:hover:bg-secondary-fixed-dim/10 px-density-dense font-ui-label-bold text-ui-label-bold" href="#">
+                    Library
+                </a>
+<!-- Navigation Link: Analytics -->
+<a class="h-full flex items-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-container-low dark:hover:bg-secondary-fixed-dim/10 px-density-dense font-ui-label-bold text-ui-label-bold" href="#">
+                    Analytics
+                </a>
+<!-- Navigation Link: Templates (ACTIVE) -->
+<a class="h-full flex items-center text-primary dark:text-primary-fixed border-b-2 border-primary dark:border-primary-fixed px-density-dense font-ui-label-bold text-ui-label-bold" href="#">
+                    Templates
+                </a>
+<!-- Navigation Link: Department -->
+<a class="h-full flex items-center text-on-surface-variant dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed transition-colors hover:bg-surface-container-low dark:hover:bg-secondary-fixed-dim/10 px-density-dense font-ui-label-bold text-ui-label-bold" href="#">
+                    Department
+                </a>
+</nav>
+</div>
+<div class="flex items-center gap-panel-padding">
+<!-- Search Bar placeholder -->
+<div class="hidden lg:flex items-center border border-outline-variant rounded-full px-3 py-1 bg-surface-container-lowest">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">search</span>
+<input class="border-none bg-transparent focus:ring-0 text-ui-label-md py-1 px-2 w-48 placeholder:text-on-surface-variant" placeholder="Command..." type="text"/>
+</div>
+<!-- Primary Action -->
+<button class="bg-on-surface text-surface px-4 py-2 rounded-DEFAULT font-ui-label-bold text-ui-label-bold hover:bg-surface-tint transition-colors scale-[0.99] duration-150 ease-in-out">
+                Create New Paper
+            </button>
+<!-- Icon Actions -->
+<div class="flex items-center gap-density-dense">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined">help</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="h-8 w-8 rounded-full bg-surface-variant border border-outline-variant overflow-hidden ml-2 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">person</span>
+</div>
+</div>
+</div>
+</header>
+<div class="flex flex-1 pt-16 h-full overflow-hidden">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] w-64 bg-surface-container-low dark:bg-surface-dim border-r border-outline-variant dark:border-outline flat no shadows flex flex-col justify-between py-panel-padding z-40 Transition-all duration-200 ease-out">
+<div>
+<!-- Header -->
+<div class="px-panel-padding mb-margin-page">
+<div class="h-10 w-10 bg-surface-container-highest rounded-DEFAULT border border-outline-variant flex items-center justify-center mb-density-dense">
+<span class="material-symbols-outlined text-primary">account_balance</span>
+</div>
+<div class="font-headline-sm-mobile text-headline-sm-mobile text-on-surface dark:text-surface-bright">Department of Education</div>
+<div class="font-mono-data text-mono-data text-on-surface-variant mt-1">Senior Faculty Portal</div>
+</div>
+<div class="px-panel-padding mb-panel-padding">
+<button class="w-full border border-outline-variant bg-surface-container-lowest text-on-surface py-2 rounded-DEFAULT font-ui-label-bold text-ui-label-bold hover:bg-surface-container transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">add</span> New Template
+                    </button>
+</div>
+<!-- Tabs -->
+<nav class="flex flex-col gap-gutter">
+<!-- Tab 1 -->
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">book_4</span>
+                        My Library
+                    </a>
+<!-- Tab 2 -->
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">grid_view</span>
+                        Syllabus Coverage
+                    </a>
+<!-- Tab 3 -->
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                        Difficulty Analytics
+                    </a>
+<!-- Tab 4 -->
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">rule</span>
+                        Grading Schemes
+                    </a>
+<!-- Tab 5 -->
+<a class="flex items-center gap-3 px-panel-padding py-2 text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-container dark:hover:bg-secondary-fixed-dim/5 font-ui-label-md text-ui-label-md" href="#">
+<span class="material-symbols-outlined">archive</span>
+                        Archived
+                    </a>
+</nav>
+</div>
+<!-- Footer Tabs -->
+<div class="px-panel-padding border-t border-outline-variant pt-panel-padding mt-auto flex flex-col gap-2">
+<a class="flex items-center gap-3 py-1 text-on-surface-variant font-ui-label-md text-ui-label-md hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">dns</span>
+                    System Status
+                </a>
+<a class="flex items-center gap-3 py-1 text-on-surface-variant font-ui-label-md text-ui-label-md hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">menu_book</span>
+                    Documentation
+                </a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 flex-1 flex h-full bg-surface">
+<!-- Gallery Canvas (Left) -->
+<section class="flex-1 overflow-y-auto p-margin-page relative">
+<div class="max-w-4xl mx-auto">
+<!-- Header -->
+<div class="mb-margin-page flex justify-between items-end border-b border-outline-variant pb-density-comfy">
+<div>
+<h1 class="font-display-lg text-display-lg text-on-surface mb-2">Standard Formats</h1>
+<p class="font-paper-preview-body text-paper-preview-body text-on-surface-variant max-w-2xl">
+                                Pre-configured structural guidelines for summative and formative assessments. Select a template to initiate a draft or define a new schema in the inspector.
+                            </p>
+</div>
+<div class="flex gap-2">
+<button class="p-2 border border-outline-variant bg-surface-container-lowest rounded hover:bg-surface-container transition-colors" title="List View">
+<span class="material-symbols-outlined text-on-surface">view_list</span>
+</button>
+<button class="p-2 border border-primary text-primary bg-primary-container/10 rounded" title="Grid View">
+<span class="material-symbols-outlined">grid_view</span>
+</button>
+</div>
+</div>
+<!-- Bento Gallery -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-panel-padding">
+<!-- Template Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant p-panel-padding rounded-DEFAULT hover:border-primary-container transition-colors group relative overflow-hidden cursor-pointer">
+<!-- Subtle decorative bracket indicator -->
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-surface-container group-hover:bg-primary-container transition-colors"></div>
+<div class="pl-2">
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-headline-md text-headline-md text-on-surface">Midterm Examination</h3>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">arrow_outward</span>
+</div>
+<div class="flex flex-wrap gap-2 mb-6">
+<span class="font-mono-data text-mono-data bg-surface-container text-on-surface-variant px-2 py-1 rounded">20 MCQ</span>
+<span class="font-mono-data text-mono-data bg-surface-container text-on-surface-variant px-2 py-1 rounded">5 Short Ans</span>
+<span class="font-mono-data text-mono-data bg-surface-container text-on-surface-variant px-2 py-1 rounded">1 Essay</span>
+</div>
+<div class="flex justify-between items-center border-t border-outline-variant pt-4 mt-auto">
+<div class="flex flex-col">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant">DURATION</span>
+<span class="font-mono-data text-mono-data text-on-surface">90 Minutes</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant">TOTAL MARKS</span>
+<span class="font-mono-data text-mono-data text-on-surface">100 Pts</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Template Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant p-panel-padding rounded-DEFAULT hover:border-primary-container transition-colors group relative overflow-hidden cursor-pointer">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-surface-container group-hover:bg-primary-container transition-colors"></div>
+<div class="pl-2">
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-headline-md text-headline-md text-on-surface">Weekly Seminar Quiz</h3>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">arrow_outward</span>
+</div>
+<div class="flex flex-wrap gap-2 mb-6">
+<span class="font-mono-data text-mono-data bg-surface-container text-on-surface-variant px-2 py-1 rounded">10 MCQ</span>
+<span class="font-mono-data text-mono-data bg-surface-container text-on-surface-variant px-2 py-1 rounded">2 Fill-in</span>
+</div>
+<div class="flex justify-between items-center border-t border-outline-variant pt-4 mt-auto">
+<div class="flex flex-col">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant">DURATION</span>
+<span class="font-mono-data text-mono-data text-on-surface">15 Minutes</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant">TOTAL MARKS</span>
+<span class="font-mono-data text-mono-data text-on-surface">20 Pts</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Template Card 3 -->
+<div class="bg-surface-container-lowest border border-outline-variant p-panel-padding rounded-DEFAULT hover:border-primary-container transition-colors group relative overflow-hidden cursor-pointer md:col-span-2">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-surface-container group-hover:bg-primary-container transition-colors"></div>
+<div class="pl-2 flex flex-col md:flex-row gap-panel-padding justify-between">
+<div class="flex-1">
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-headline-md text-headline-md text-on-surface">Comprehensive Final</h3>
+</div>
+<p class="font-paper-preview-body text-[16px] text-on-surface-variant mb-4 max-w-lg">
+                                        End-of-term summative assessment requiring deep analytical reasoning and broad syllabus recall.
+                                    </p>
+<div class="flex flex-wrap gap-2">
+<span class="font-mono-data text-mono-data bg-surface-container text-on-surface-variant px-2 py-1 rounded">50 MCQ</span>
+<span class="font-mono-data text-mono-data bg-surface-container text-on-surface-variant px-2 py-1 rounded">10 Short Ans</span>
+<span class="font-mono-data text-mono-data bg-surface-container text-on-surface-variant px-2 py-1 rounded">3 Essay (Choice)</span>
+</div>
+</div>
+<div class="flex flex-row md:flex-col justify-between items-end md:items-end border-t md:border-t-0 md:border-l border-outline-variant pt-4 md:pt-0 md:pl-panel-padding min-w-[140px]">
+<div class="flex flex-col text-right w-full mb-4">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant">DURATION</span>
+<span class="font-mono-data text-mono-data text-on-surface text-[14px]">180 Minutes</span>
+</div>
+<div class="flex flex-col text-right w-full mb-4">
+<span class="font-ui-label-bold text-ui-label-bold text-on-surface-variant">TOTAL MARKS</span>
+<span class="font-mono-data text-mono-data text-on-surface text-[14px]">200 Pts</span>
+</div>
+<button class="text-primary font-ui-label-bold flex items-center gap-1 hover:underline">
+                                        Inspect <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Area within Content Canvas -->
+<footer class="mt-margin-page pt-margin-page border-t border-outline-variant flex justify-between items-center text-on-surface-variant">
+<span class="font-ui-label-md text-ui-label-md">© 2024 Editorial Oversight Systems. All rights reserved.</span>
+<div class="flex gap-4 font-ui-label-md text-ui-label-md">
+<a class="hover:text-primary transition-colors underline" href="#">Privacy Policy</a>
+<a class="hover:text-primary transition-colors underline" href="#">Terms of Service</a>
+<a class="hover:text-primary transition-colors underline" href="#">Faculty Handbook</a>
+</div>
+</footer>
+</div>
+</section>
+<!-- Template Creator Inspector (Right Panel) -->
+<aside class="w-[360px] bg-surface-container-lowest border-l border-outline-variant flex flex-col h-full z-10 shadow-[-4px_0_24px_rgba(26,26,28,0.02)]">
+<div class="p-panel-padding border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
+<h2 class="font-headline-md text-[20px] text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">tune</span>
+                        Template Schema
+                    </h2>
+<button class="p-1 text-on-surface-variant hover:text-on-surface transition-colors" title="Collapse Panel">
+<span class="material-symbols-outlined">close_fullscreen</span>
+</button>
+</div>
+<div class="flex-1 overflow-y-auto p-panel-padding">
+<!-- Form Group: Meta -->
+<div class="mb-density-comfy">
+<label class="block font-ui-label-bold text-ui-label-bold text-on-surface-variant mb-1 uppercase tracking-wider">Template Nomenclature</label>
+<input class="academic-input w-full font-paper-preview-body text-[18px] text-on-surface" placeholder="e.g. Humanities Midterm V2" type="text" value="Untitled Schema"/>
+</div>
+<div class="flex gap-4 mb-margin-page">
+<div class="flex-1">
+<label class="block font-ui-label-bold text-ui-label-bold text-on-surface-variant mb-1 uppercase tracking-wider">Duration (Min)</label>
+<input class="academic-input w-full font-mono-data text-mono-data text-on-surface" placeholder="120" type="number" value="60"/>
+</div>
+<div class="flex-1">
+<label class="block font-ui-label-bold text-ui-label-bold text-on-surface-variant mb-1 uppercase tracking-wider">Base Score</label>
+<input class="academic-input w-full font-mono-data text-mono-data text-on-surface bg-surface-container-low" id="total-marks" readonly="" type="number" value="0"/>
+</div>
+</div>
+<hr class="border-outline-variant my-panel-padding"/>
+<!-- Section Builder -->
+<h3 class="font-ui-label-bold text-ui-label-bold text-on-surface mb-density-dense uppercase tracking-wider">Structural Elements</h3>
+<!-- List of current sections -->
+<div class="flex flex-col gap-gutter bg-outline-variant mb-density-comfy">
+<!-- Item 1 -->
+<div class="bg-surface-container-lowest p-3 flex flex-col group relative">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-transparent group-hover:bg-primary-container transition-colors"></div>
+<div class="flex justify-between items-center mb-2 pl-2">
+<span class="font-ui-label-bold text-on-surface">Part A: Multiple Choice</span>
+<div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[16px]">edit</span></button>
+<button class="text-on-surface-variant hover:text-error"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+</div>
+</div>
+<div class="flex justify-between items-center pl-2 font-mono-data text-[11px] text-on-surface-variant">
+<span>20 Items × 1 Pt</span>
+<span class="text-on-surface font-bold">20 Pts</span>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="bg-surface-container-lowest p-3 flex flex-col group relative">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-transparent group-hover:bg-primary-container transition-colors"></div>
+<div class="flex justify-between items-center mb-2 pl-2">
+<span class="font-ui-label-bold text-on-surface">Part B: Short Essay</span>
+<div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[16px]">edit</span></button>
+<button class="text-on-surface-variant hover:text-error"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+</div>
+</div>
+<div class="flex justify-between items-center pl-2 font-mono-data text-[11px] text-on-surface-variant">
+<span>2 Items × 15 Pts</span>
+<span class="text-on-surface font-bold">30 Pts</span>
+</div>
+</div>
+</div>
+<!-- Add New Section Form (Inline) -->
+<div class="border border-outline-variant p-3 bg-surface-container rounded-DEFAULT">
+<div class="mb-3">
+<label class="block font-ui-label-bold text-[10px] text-on-surface-variant mb-1 uppercase tracking-wider">Format Type</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant text-ui-label-md py-1 px-2 rounded focus:border-on-surface focus:outline-none">
+<option>Multiple Choice (MCQ)</option>
+<option>Short Answer</option>
+<option>Extended Essay</option>
+<option>True/False</option>
+</select>
+</div>
+<div class="flex gap-2 mb-3">
+<div class="flex-1">
+<label class="block font-ui-label-bold text-[10px] text-on-surface-variant mb-1 uppercase tracking-wider">Quantity</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant text-mono-data py-1 px-2 rounded focus:border-on-surface focus:outline-none" type="number" value="1"/>
+</div>
+<div class="flex-1">
+<label class="block font-ui-label-bold text-[10px] text-on-surface-variant mb-1 uppercase tracking-wider">Weight (Pts)</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant text-mono-data py-1 px-2 rounded focus:border-on-surface focus:outline-none" type="number" value="5"/>
+</div>
+</div>
+<button class="w-full bg-surface-container-highest hover:bg-surface-variant text-on-surface border border-outline-variant py-1.5 rounded text-ui-label-bold flex justify-center items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[16px]">add_circle</span> Append Element
+                        </button>
+</div>
+</div>
+<!-- Inspector Footer Actions -->
+<div class="p-panel-padding border-t border-outline-variant bg-surface-container-lowest flex flex-col gap-3">
+<div class="flex justify-between items-center font-mono-data">
+<span class="text-on-surface-variant">Schema Status:</span>
+<span class="text-primary-container px-2 py-0.5 bg-primary-container/10 rounded">Draft</span>
+</div>
+<button class="w-full bg-on-surface text-surface py-2 rounded-DEFAULT font-ui-label-bold text-ui-label-bold hover:bg-surface-tint transition-colors flex justify-center items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">save</span> Commit Schema
+                    </button>
+</div>
+</aside>
+</main>
+</div>
+<!-- JavaScript for micro-interactions (e.g., updating total score visually) -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Simple mockup interaction to show intent
+            const totalInput = document.getElementById('total-marks');
+            // Assuming 20*1 + 2*15 from the hardcoded list
+            let simulatedTotal = 50; 
+            totalInput.value = simulatedTotal;
+        });
+    </script>
+</body></html>
