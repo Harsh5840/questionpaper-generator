@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!frontend/.env.example
 
 data/ncert/raw/*
 !data/ncert/raw/.gitkeep
