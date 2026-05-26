@@ -575,6 +575,8 @@ defmodule Qpg.Sources do
           AND ($5::text IS NULL OR lower(d.chapter) = lower($5))
           AND ($6::text IS NULL OR lower(d.topic) = lower($6))
           AND (
+            lower($1) = 'pyq'
+            OR
             cardinality($9::text[]) = 0
             OR lower(d.chapter) = ANY(SELECT lower(unnest($9::text[])))
             OR lower(ch.name) = ANY(SELECT lower(unnest($9::text[])))
@@ -1258,8 +1260,13 @@ defmodule Qpg.Sources do
     query_blank or chapter_scope == "full_syllabus" or chapters != [] or chapter not in [nil, ""]
   end
 
-  defp broad_context?("pyq", query, _chapter_scope, _chapters, _chapter) do
-    String.trim(to_string(query || "")) == ""
+  defp broad_context?("pyq", _query, _chapter_scope, _chapters, _chapter) do
+    # PYQs are used both as chapter examples and as board-format inspiration.
+    # A chapter may have NCERT coverage but no exact tagged PYQ question in the
+    # current owned paper. In that case we still return board/class/subject PYQ
+    # chunks so NCERT + PYQ generation can use real exam format evidence instead
+    # of failing despite having an owned PYQ corpus.
+    true
   end
 
   defp broad_context?(_, _, _, _, _), do: false
