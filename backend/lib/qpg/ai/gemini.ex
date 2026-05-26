@@ -74,7 +74,7 @@ defmodule Qpg.AI.Gemini do
     if target_variants > 1 do
       generate_variant_bundles(request, target_variants)
     else
-      do_generate_single_bundle(request, 1)
+      do_generate_single_bundle_with_retry(request, 1)
     end
   end
 
@@ -93,7 +93,10 @@ defmodule Qpg.AI.Gemini do
             request
             |> Map.put("variant_count", 1)
             |> Map.put("variant_index", index)
-            |> Map.put("variant_instruction", "Generate Set #{set_label(index)}. Use the same blueprint and constraints, but create different fresh questions.")
+            |> Map.put(
+              "variant_instruction",
+              "Generate Set #{set_label(index)}. Use the same blueprint and constraints, but create different fresh questions."
+            )
             |> do_generate_single_bundle_with_retry(index)
           after
             Process.delete(:qpg_generation_run_id)
@@ -121,14 +124,18 @@ defmodule Qpg.AI.Gemini do
       {:ok, bundle} ->
         {:ok, bundle}
 
-      {:error, reason} when attempts_left > 0 and reason in [:missing_gemini_text, :invalid_generation_response, :generation_returned_no_variants] ->
-        Logging.warning("ai.gemini.generate_bundle.retrying_variant", %{
-          variant_index: variant_index,
-          reason: inspect(reason),
-          attempts_left: attempts_left
-        })
+      {:error, reason} when attempts_left > 0 ->
+        if retryable_generation_error?(reason) do
+          Logging.warning("ai.gemini.generate_bundle.retrying_variant", %{
+            variant_index: variant_index,
+            reason: inspect(reason),
+            attempts_left: attempts_left
+          })
 
-        do_generate_single_bundle_with_retry(request, variant_index, attempts_left - 1)
+          do_generate_single_bundle_with_retry(request, variant_index, attempts_left - 1)
+        else
+          {:error, reason}
+        end
 
       {:error, reason} ->
         {:error, reason}
@@ -153,7 +160,8 @@ defmodule Qpg.AI.Gemini do
       %{
         contents: contents,
         tools: [%{functionDeclarations: gemini_tools()}],
-        toolConfig: %{functionCallingConfig: %{mode: "AUTO"}}
+        toolConfig: %{functionCallingConfig: %{mode: "AUTO"}},
+        generationConfig: generation_text_config(:generation)
       }
 
     model = model_for(:generation, request)
@@ -234,7 +242,8 @@ defmodule Qpg.AI.Gemini do
       %{
         contents: contents,
         tools: [%{functionDeclarations: gemini_tools()}],
-        toolConfig: %{functionCallingConfig: %{mode: "AUTO"}}
+        toolConfig: %{functionCallingConfig: %{mode: "AUTO"}},
+        generationConfig: generation_text_config(:refinement)
       }
 
     model = model_for(:post_generation_fix, instruction)
@@ -350,14 +359,28 @@ defmodule Qpg.AI.Gemini do
 
         call_parts = Enum.map(calls, fn call -> %{functionCall: call} end)
 
-        next_contents =
-          Map.get(payload, :contents, []) ++
-            [model_content(call_parts), user_content(function_parts)]
+        next_payload =
+          payload
+          |> Map.put(
+            :contents,
+            Map.get(payload, :contents, []) ++
+              [model_content(call_parts), user_content(function_parts)]
+          )
+          |> maybe_force_final_json_after_tools(iteration)
 
-        gemini_loop(model, Map.put(payload, :contents, next_contents), iteration + 1)
+        gemini_loop(model, next_payload, iteration + 1)
       end
     end
   end
+
+  defp maybe_force_final_json_after_tools(payload, iteration) when iteration >= 1 do
+    payload
+    |> Map.delete(:tools)
+    |> Map.delete(:toolConfig)
+    |> Map.put(:generationConfig, json_text_config(:generation))
+  end
+
+  defp maybe_force_final_json_after_tools(payload, _iteration), do: payload
 
   defp base_payload(prompt, schema) do
     %{
@@ -370,6 +393,26 @@ defmodule Qpg.AI.Gemini do
     %{
       responseMimeType: "application/json",
       responseSchema: gemini_schema(schema)
+    }
+  end
+
+  defp json_text_config(operation) do
+    operation
+    |> generation_text_config()
+    |> Map.put(:responseMimeType, "application/json")
+  end
+
+  defp generation_text_config(:generation) do
+    %{
+      temperature: 0.45,
+      maxOutputTokens: 24_576
+    }
+  end
+
+  defp generation_text_config(_operation) do
+    %{
+      temperature: 0.25,
+      maxOutputTokens: 12_288
     }
   end
 
@@ -429,6 +472,12 @@ defmodule Qpg.AI.Gemini do
   end
 
   defp extract_json(response) do
+    finish_reason =
+      response
+      |> Map.get("candidates", [])
+      |> List.first(%{})
+      |> Map.get("finishReason")
+
     text =
       response
       |> Map.get("candidates", [])
@@ -439,8 +488,19 @@ defmodule Qpg.AI.Gemini do
       end)
 
     case text do
-      nil -> {:error, :missing_gemini_text}
-      value -> value |> strip_json_fence() |> decode_json_with_tool_trace_repair()
+      nil ->
+        {:error, :missing_gemini_text}
+
+      value when finish_reason in ["MAX_TOKENS", "RECITATION", "SAFETY"] ->
+        Logging.warning("ai.gemini.extract_json.incomplete_candidate", %{
+          finish_reason: finish_reason,
+          text_bytes: byte_size(value)
+        })
+
+        {:error, {:incomplete_gemini_json, finish_reason}}
+
+      value ->
+        value |> strip_json_fence() |> decode_json_with_tool_trace_repair()
     end
   end
 
@@ -449,12 +509,54 @@ defmodule Qpg.AI.Gemini do
       {:ok, decoded} ->
         {:ok, decoded}
 
-      {:error, _error} ->
-        text
-        |> String.replace(~r/,\s*"tool_trace"\s*:\s*\[.*$/s, ",\"tool_trace\":[]}")
-        |> Jason.decode()
+      {:error, first_error} ->
+        repaired =
+          text
+          |> String.replace(~r/,\s*"tool_trace"\s*:\s*\[.*$/s, ",\"tool_trace\":[]}")
+
+        case Jason.decode(repaired) do
+          {:ok, decoded} ->
+            {:ok, decoded}
+
+          {:error, second_error} ->
+            Logging.warning("ai.gemini.extract_json.decode_failed", %{
+              first_error: format_decode_error(first_error),
+              second_error: format_decode_error(second_error),
+              text_bytes: byte_size(text),
+              preview: String.slice(text, 0, 800)
+            })
+
+            {:error,
+             {:invalid_gemini_json,
+              %{
+                position: decode_error_position(second_error),
+                text_bytes: byte_size(text)
+              }}}
+        end
     end
   end
+
+  defp retryable_generation_error?(reason)
+
+  defp retryable_generation_error?(reason)
+       when reason in [
+              :missing_gemini_text,
+              :invalid_generation_response,
+              :generation_returned_no_variants
+            ],
+       do: true
+
+  defp retryable_generation_error?({:invalid_gemini_json, _metadata}), do: true
+  defp retryable_generation_error?({:incomplete_gemini_json, _finish_reason}), do: true
+  defp retryable_generation_error?(_reason), do: false
+
+  defp format_decode_error(%Jason.DecodeError{} = error),
+    do: %{position: error.position, token: error.token}
+
+  defp format_decode_error(error), do: inspect(error)
+
+  defp decode_error_position(%Jason.DecodeError{position: position}), do: position
+  defp decode_error_position(_error), do: nil
 
   defp strip_json_fence(text) do
     text
@@ -714,8 +816,7 @@ defmodule Qpg.AI.Gemini do
       "total_marks" => int_value(summary["total_marks"], total_marks),
       "question_count" => int_value(summary["question_count"], length(questions)),
       "difficulty" => safe_text(summary["difficulty"], ""),
-      "source_coverage" =>
-        safe_text(summary["source_coverage"] || summary["sourceCoverage"], "")
+      "source_coverage" => safe_text(summary["source_coverage"] || summary["sourceCoverage"], "")
     }
   end
 
