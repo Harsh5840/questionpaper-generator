@@ -94,17 +94,18 @@ defmodule QpgWeb.DashboardController do
   defp templates do
     rows(
       """
-      SELECT id::text, name, description, formatting, inferred_params, updated_at
+      SELECT id::text, name, description, payload, formatting, inferred_params, updated_at
       FROM templates
       ORDER BY updated_at DESC
       LIMIT 8
       """
     )
-    |> Enum.map(fn [id, name, description, formatting, inferred_params, updated_at] ->
+    |> Enum.map(fn [id, name, description, payload, formatting, inferred_params, updated_at] ->
       %{
         id: id,
         name: name,
         description: description,
+        payload: payload || %{},
         formatting: formatting || %{},
         inferred_params: inferred_params || %{},
         updated_at: updated_at

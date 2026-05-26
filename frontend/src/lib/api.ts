@@ -76,10 +76,10 @@ export async function refineViaApi(paper: Paper, instruction: string): Promise<R
     const response = await fetch(`${API_BASE}/papers/${paper.paperId}/refinements`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ instruction }),
+      body: JSON.stringify({ instruction, paper: toBackendPaper(paper) }),
     });
 
-    if (!response.ok) throw new Error(`Refinement failed with ${response.status}`);
+    if (!response.ok) throw new Error(await responseErrorMessage(response, "Refinement failed"));
 
     const data = await response.json();
 
@@ -762,6 +762,7 @@ function normalizeDashboard(raw: unknown): DashboardSummary {
       id: String(item.id ?? ""),
       name: String(item.name ?? "Untitled template"),
       description: item.description ? String(item.description) : undefined,
+      payload: asRecord(item.payload),
       formatting: asRecord(item.formatting),
       inferredParams: asRecord(item.inferred_params ?? item.inferredParams),
       updatedAt: item.updated_at ? String(item.updated_at) : undefined,

@@ -18,7 +18,7 @@ interface PaperEditorProps {
   documentStyle: DocumentStyle;
   isGenerating?: boolean;
   onPaperChange: (paper: Paper) => void;
-  onReplaceQuestion: (sectionId: string, questionId: string, questionNumber: number) => void;
+  onReplaceQuestion: (sectionId: string, questionId: string, questionNumber: number) => Promise<void> | void;
   onSaveQuestionToBank: (question: PaperQuestion) => void;
   onImportImage: (sectionId: string) => void;
 }
@@ -39,6 +39,7 @@ export function PaperEditor({
 }: PaperEditorProps) {
   const [draggedQuestion, setDraggedQuestion] = useState<DraggedQuestion | null>(null);
   const [expandedAnswers, setExpandedAnswers] = useState<Record<string, boolean>>({});
+  const [replacingQuestions, setReplacingQuestions] = useState<Record<string, boolean>>({});
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
 
@@ -197,9 +198,22 @@ export function PaperEditor({
     setDraggedQuestion(null);
   };
 
+  const replaceQuestion = async (sectionId: string, questionId: string, questionNumber: number) => {
+    setReplacingQuestions((current) => ({ ...current, [questionId]: true }));
+
+    try {
+      await onReplaceQuestion(sectionId, questionId, questionNumber);
+    } finally {
+      setReplacingQuestions((current) => ({ ...current, [questionId]: false }));
+    }
+  };
+
+  const templateName = paper.metadata.format || (paper.metadata.source?.toLowerCase().includes("pyq") ? "Full Syllabus" : "Default");
+  const templateTone = templateToneFor(templateName);
+
   return (
     <article
-      className="mx-auto min-h-[1120px] w-full max-w-[900px] border border-slate-200 bg-white shadow-sm"
+      className={`mx-auto min-h-[1120px] w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
       style={{
         backgroundColor: documentStyle.pageColor,
         color: documentStyle.textColor,
@@ -208,10 +222,13 @@ export function PaperEditor({
         padding: documentStyle.margin,
       }}
     >
-      <header className="border-b border-slate-200 pb-5 text-center">
+      <header className={`pb-5 text-center ${templateTone.headerClass}`}>
         <div className="mb-4 flex justify-between text-left text-xs font-bold text-slate-600">
           <span>Series: QPG/{paper.metadata.board || "CBSE"}</span>
           <span>Q.P. Code: {paper.metadata.qpCode || "30/S/1"}</span>
+        </div>
+        <div className={`mx-auto mb-3 inline-flex rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.08em] ${templateTone.badgeClass}`}>
+          {templateName}
         </div>
         <input
           aria-label="Paper title"
@@ -249,8 +266,13 @@ export function PaperEditor({
 
       <section className="my-6 text-sm text-slate-800">
         <h2 className="mb-2 font-sans text-sm font-black uppercase">General Instructions</h2>
-        <p>This question paper contains {stats?.questionCount ?? paper.summary.questionCount} questions. All questions are compulsory unless an internal choice is provided.</p>
-        <p>This question paper is divided into {paper.sections.length} sections. Use of calculator is not allowed unless specified by the teacher.</p>
+        {templateTone.instructions.map((instruction) => (
+          <p key={instruction}>
+            {instruction
+              .replace("{questionCount}", String(stats?.questionCount ?? paper.summary.questionCount))
+              .replace("{sectionCount}", String(paper.sections.length))}
+          </p>
+        ))}
       </section>
 
       <div className="space-y-8">
@@ -318,11 +340,12 @@ export function PaperEditor({
                 {section.questions.map((question) => {
                   const questionNumber = stats?.questionNumberById[question.id] ?? 0;
                   const isAnswerOpen = expandedAnswers[question.id] ?? false;
+                  const isReplacing = replacingQuestions[question.id] ?? false;
 
                   return (
                     <div
                       key={question.id}
-                      className="question-row group rounded-lg border border-transparent bg-white/70 p-3 transition hover:border-slate-200 hover:bg-slate-50"
+                      className={`question-row group relative rounded-lg border border-transparent bg-white/70 p-3 transition hover:border-slate-200 hover:bg-slate-50 ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
                       draggable
                       onDragStart={() => setDraggedQuestion({ sectionId: section.id, questionId: question.id })}
                       onDragOver={(event) => event.preventDefault()}
@@ -419,8 +442,8 @@ export function PaperEditor({
                         </div>
 
                         <div className="flex shrink-0 flex-col gap-1 opacity-100 lg:opacity-0 lg:transition lg:group-hover:opacity-100">
-                          <button className="editor-icon-button" title="Replace with AI" onClick={() => onReplaceQuestion(section.id, question.id, questionNumber)} type="button">
-                            <RefreshCcw size={15} />
+                          <button className="editor-icon-button" disabled={isReplacing} title="Replace with AI" onClick={() => void replaceQuestion(section.id, question.id, questionNumber)} type="button">
+                            <RefreshCcw className={isReplacing ? "animate-spin" : ""} size={15} />
                           </button>
                           <button className="editor-icon-button" title="Duplicate" onClick={() => duplicateQuestion(section.id, question.id)} type="button">
                             <Copy size={15} />
@@ -439,6 +462,13 @@ export function PaperEditor({
                           </button>
                         </div>
                       </div>
+                      {isReplacing && (
+                        <div className="pointer-events-none absolute inset-0 rounded-lg border border-blue-300 bg-blue-50/55">
+                          <div className="absolute right-3 top-3 rounded-full bg-white px-3 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-blue-700 shadow-sm">
+                            Replacing with AI
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -449,6 +479,58 @@ export function PaperEditor({
       </div>
     </article>
   );
+}
+
+function templateToneFor(templateName: string) {
+  const normalized = templateName.toLowerCase();
+
+  if (normalized.includes("unit")) {
+    return {
+      articleClass: "border-emerald-200",
+      headerClass: "border-b-4 border-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700",
+      instructions: [
+        "This unit test contains {questionCount} focused questions from the selected chapter/topic.",
+        "Answer all questions. Keep workings neat and show steps for application questions.",
+      ],
+    };
+  }
+
+  if (normalized.includes("mid")) {
+    return {
+      articleClass: "border-blue-200",
+      headerClass: "border-b-2 border-blue-700",
+      badgeClass: "bg-blue-50 text-blue-700",
+      instructions: [
+        "This mid-term paper contains {questionCount} questions across {sectionCount} sections.",
+        "All questions are compulsory unless an internal choice is provided. Marks are shown against each question.",
+        "Use proper reasoning and write final answers clearly.",
+      ],
+    };
+  }
+
+  if (normalized.includes("full")) {
+    return {
+      articleClass: "border-amber-300",
+      headerClass: "border-y-4 border-double border-amber-700 py-5",
+      badgeClass: "bg-amber-50 text-amber-800",
+      instructions: [
+        "This question paper contains {questionCount} questions. All questions are compulsory.",
+        "This question paper is divided into {sectionCount} sections. Internal choices, if any, are printed inside the relevant question.",
+        "Use of calculator is not allowed. Draw neat diagrams wherever required.",
+      ],
+    };
+  }
+
+  return {
+    articleClass: "border-slate-200",
+    headerClass: "border-b border-slate-200",
+    badgeClass: "bg-slate-100 text-slate-700",
+    instructions: [
+      "This question paper contains {questionCount} questions. All questions are compulsory unless an internal choice is provided.",
+      "This question paper is divided into {sectionCount} sections. Use of calculator is not allowed unless specified by the teacher.",
+    ],
+  };
 }
 
 function calculateStats(paper: Paper) {

@@ -244,6 +244,7 @@ export type DashboardSummary = {
     id: string;
     name: string;
     description?: string;
+    payload: Record<string, unknown>;
     formatting: Record<string, unknown>;
     inferredParams: Record<string, unknown>;
     updatedAt?: string;

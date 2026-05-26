@@ -47,6 +47,241 @@ defmodule Qpg.AI.Orchestrator do
     end
   end
 
+  def refine_payload(paper_payload, instruction, paper_id \\ nil) do
+    Logging.info("ai.orchestrator.refine_payload.started", %{
+      provider: inspect(Provider.active()),
+      paper_id: paper_id,
+      instruction: instruction,
+      has_sections: is_list(paper_payload["sections"])
+    })
+
+    case maybe_replace_question(paper_payload, instruction, paper_id) do
+      {:ok, response} ->
+        response
+
+      :skip ->
+        refine_payload_with_provider(paper_payload, instruction, paper_id)
+    end
+  end
+
+  defp refine_payload_with_provider(paper_payload, instruction, paper_id) do
+    refinement_input = %{"id" => paper_id, "current_paper" => paper_payload}
+
+    case safe_refine_bundle(refinement_input, instruction) do
+      {:ok, response} when is_map(response) ->
+        response = normalize_refinement_response(response, paper_payload)
+        patch_ops = Map.get(response, "patch_ops", [])
+        response = ensure_preview(response, paper_payload, patch_ops)
+
+        Logging.info("ai.orchestrator.refine_payload.completed", %{
+          paper_id: paper_id,
+          patch_count: length(List.wrap(patch_ops))
+        })
+
+        response
+
+      {:error, reason} ->
+        Logging.error("ai.orchestrator.refine_payload.failed", %{paper_id: paper_id, reason: reason})
+        raise "AI refinement failed: #{format_error(reason)}"
+    end
+  end
+
+  defp maybe_replace_question(paper_payload, instruction, paper_id) do
+    with true <- replace_instruction?(instruction),
+         {:ok, question_number} <- question_number_from_instruction(instruction),
+         {:ok, target} <- question_at_global_number(paper_payload, question_number),
+         {:ok, replacement} <- generate_replacement_question(paper_payload, target) do
+      preview = put_json_pointer(paper_payload, target.path, replacement)
+
+      Logging.info("ai.orchestrator.replace_question.completed", %{
+        paper_id: paper_id,
+        question_number: question_number,
+        path: "/" <> Enum.join(target.path, "/")
+      })
+
+      {:ok,
+       %{
+         "message" => "Replaced question #{question_number}.",
+         "base_version_id" => "",
+         "patch_ops" => [
+           %{
+             "op" => "replace",
+             "path" => "/" <> Enum.join(target.path, "/"),
+             "value" => replacement
+           }
+         ],
+         "preview" => preview
+       }}
+    else
+      false -> :skip
+      {:error, reason} ->
+        Logging.warning("ai.orchestrator.replace_question.skipped", %{reason: inspect(reason)})
+        :skip
+    end
+  end
+
+  defp replace_instruction?(instruction) do
+    lower = String.downcase(instruction || "")
+    String.contains?(lower, "replace") or String.contains?(lower, "change")
+  end
+
+  defp question_number_from_instruction(instruction) do
+    lower = String.downcase(instruction || "")
+
+    cond do
+      lower =~ ~r/\bfirst\s+ques/ -> {:ok, 1}
+      lower =~ ~r/\bsecond\s+ques/ -> {:ok, 2}
+      lower =~ ~r/\bthird\s+ques/ -> {:ok, 3}
+      match = Regex.run(~r/(?:global\s+)?q(?:uestion)?\s*\.?\s*(\d+)/, lower) -> {:ok, match |> List.last() |> String.to_integer()}
+      match = Regex.run(~r/\b(\d+)(?:st|nd|rd|th)?\s+ques/, lower) -> {:ok, match |> List.last() |> String.to_integer()}
+      true -> {:error, :missing_question_number}
+    end
+  end
+
+  defp question_at_global_number(%{"sections" => sections}, question_number) when is_list(sections) do
+    sections
+    |> Enum.with_index()
+    |> Enum.reduce_while(1, fn {section, section_index}, count ->
+      questions = List.wrap(section["questions"])
+
+      case find_question_in_section(questions, section_index, question_number, count) do
+        {:ok, target} -> {:halt, {:found, target}}
+        {:cont, next_count} -> {:cont, next_count}
+      end
+    end)
+    |> case do
+      {:found, target} -> {:ok, target}
+      _ -> {:error, :question_not_found}
+    end
+  end
+
+  defp question_at_global_number(_paper, _number), do: {:error, :missing_sections}
+
+  defp find_question_in_section(questions, section_index, target_number, start_count) do
+    questions
+    |> Enum.with_index()
+    |> Enum.reduce_while(start_count, fn {question, question_index}, count ->
+      if count == target_number do
+        {:halt,
+         {:ok,
+          %{
+            path: ["sections", Integer.to_string(section_index), "questions", Integer.to_string(question_index)],
+            question: question
+          }}}
+      else
+        {:cont, count + 1}
+      end
+    end)
+    |> case do
+      {:ok, target} -> {:ok, target}
+      next_count -> {:cont, next_count}
+    end
+  end
+
+  defp generate_replacement_question(paper_payload, %{question: question}) do
+    metadata = Map.get(paper_payload, "metadata", %{})
+    marks = int_value(question["marks"], 1)
+    question_type = question["type"] || question["question_type"] || "SA"
+    chapter = metadata["chapter"] || question["topic"] || metadata["topic"] || ""
+
+    request = %{
+      "board" => metadata["board"] || "CBSE",
+      "class_level" => metadata["class_level"] || metadata["classLevel"] || "10",
+      "subject" => metadata["subject"] || "Maths",
+      "chapter_scope" => "single",
+      "chapter" => chapter,
+      "chapters" => [chapter],
+      "topic" => question["topic"] || metadata["topic"] || chapter,
+      "source" => metadata["source"] || "NCERT + PYQ",
+      "difficulty" => question["difficulty"] || "Medium",
+      "question_types" => [question_type],
+      "marking_scheme" => "Generate one replacement question only",
+      "total_marks" => marks,
+      "duration_minutes" => 10,
+      "variant_count" => 1,
+      "template" => nil,
+      "template_context" => %{}
+    }
+
+    case safe_generate_bundle(request) do
+      {:ok, %{"variants" => [variant | _]}} ->
+        replacement =
+          variant
+          |> Map.get("sections", [])
+          |> List.wrap()
+          |> Enum.flat_map(&List.wrap(&1["questions"]))
+          |> Enum.find(&is_map/1)
+
+        if replacement do
+          {:ok,
+           replacement
+           |> Map.put("id", question["id"] || Ecto.UUID.generate())
+           |> Map.put("marks", marks)
+           |> Map.put("type", question_type)
+           |> Map.put("difficulty", question["difficulty"] || replacement["difficulty"] || "Medium")}
+        else
+          {:error, :missing_replacement_question}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp int_value(value, _default) when is_integer(value), do: value
+
+  defp int_value(value, default) do
+    case Integer.parse(to_string(value || "")) do
+      {number, _} -> number
+      :error -> default
+    end
+  end
+
+  defp normalize_refinement_response(%{"patch_ops" => _} = response, _paper_payload), do: response
+
+  defp normalize_refinement_response(%{"paper" => %{"current_paper" => preview}} = response, _paper_payload)
+       when is_map(preview) do
+    %{
+      "message" => response["message"] || "Replaced the requested question.",
+      "base_version_id" => response["base_version_id"] || "",
+      "patch_ops" => [],
+      "preview" => preview
+    }
+  end
+
+  defp normalize_refinement_response(%{"current_paper" => preview} = response, _paper_payload)
+       when is_map(preview) do
+    %{
+      "message" => response["message"] || "Updated the paper.",
+      "base_version_id" => response["base_version_id"] || "",
+      "patch_ops" => [],
+      "preview" => preview
+    }
+  end
+
+  defp normalize_refinement_response(%{"sections" => sections} = preview, _paper_payload)
+       when is_list(sections) do
+    %{
+      "message" => "Updated the paper.",
+      "base_version_id" => "",
+      "patch_ops" => [],
+      "preview" => preview
+    }
+  end
+
+  defp normalize_refinement_response(response, paper_payload) do
+    Logging.warning("ai.orchestrator.refine_payload.unexpected_shape", %{
+      keys: Map.keys(response)
+    })
+
+    %{
+      "message" => response["message"] || "No paper changes were returned by the AI provider.",
+      "base_version_id" => response["base_version_id"] || "",
+      "patch_ops" => List.wrap(response["patch_ops"]),
+      "preview" => paper_payload
+    }
+  end
+
   def apply_patch_preview(payload, patch_ops) do
     # This preview is intentionally small in v1. Logs make it clear when an AI
     # patch was ignored because we have not implemented that operation yet.
@@ -55,22 +290,67 @@ defmodule Qpg.AI.Orchestrator do
       operations: Enum.map(patch_ops, &Map.take(&1, [:op, "op", :path, "path"]))
     })
 
-    Enum.reduce(patch_ops, payload, fn op, acc ->
-      case op do
-        %{op: "replace", path: "/summary/difficulty", value: value} ->
-          put_in(acc, ["summary", "difficulty"], value)
-
-        %{op: "replace", path: "/sections/0/questions/0/text", value: value} ->
-          put_in(acc, ["sections", Access.at(0), "questions", Access.at(0), "text"], value)
-
-        %{op: "add", path: "/warnings/-", value: value} ->
-          Map.update(acc, "warnings", [value], &(&1 ++ [value]))
-
-        _ ->
-          acc
-      end
-    end)
+    Enum.reduce(patch_ops, payload, &apply_patch_op/2)
   end
+
+  defp ensure_preview(%{"preview" => preview} = response, _payload, _patch_ops)
+       when is_map(preview) and map_size(preview) > 0,
+       do: response
+
+  defp ensure_preview(response, payload, patch_ops) do
+    Map.put(response, "preview", apply_patch_preview(payload, List.wrap(patch_ops)))
+  end
+
+  defp apply_patch_op(%{"op" => op, "path" => path, "value" => value}, acc),
+    do: apply_patch_op(%{op: op, path: path, value: value}, acc)
+
+  defp apply_patch_op(%{op: "replace", path: path, value: value}, acc) when is_binary(path),
+    do: put_json_pointer(acc, pointer_parts(path), value)
+
+  defp apply_patch_op(%{op: "add", path: path, value: value}, acc) when is_binary(path),
+    do: add_json_pointer(acc, pointer_parts(path), value)
+
+  defp apply_patch_op(_op, acc), do: acc
+
+  defp pointer_parts(path) do
+    path
+    |> String.trim_leading("/")
+    |> String.split("/", trim: true)
+    |> Enum.map(&String.replace(&1, "~1", "/"))
+    |> Enum.map(&String.replace(&1, "~0", "~"))
+  end
+
+  defp put_json_pointer(_value, [], replacement), do: replacement
+
+  defp put_json_pointer(map, [key], value) when is_map(map), do: Map.put(map, key, value)
+
+  defp put_json_pointer(list, [index], value) when is_list(list) do
+    case Integer.parse(index) do
+      {position, ""} -> List.replace_at(list, position, value)
+      _ -> list
+    end
+  end
+
+  defp put_json_pointer(map, [key | rest], value) when is_map(map) do
+    Map.put(map, key, put_json_pointer(Map.get(map, key, %{}), rest, value))
+  end
+
+  defp put_json_pointer(list, [index | rest], value) when is_list(list) do
+    case Integer.parse(index) do
+      {position, ""} ->
+        List.update_at(list, position, &put_json_pointer(&1, rest, value))
+
+      _ ->
+        list
+    end
+  end
+
+  defp put_json_pointer(value, _parts, _replacement), do: value
+
+  defp add_json_pointer(map, ["warnings", "-"], value) when is_map(map),
+    do: Map.update(map, "warnings", [value], &(&1 ++ [value]))
+
+  defp add_json_pointer(map, path, value), do: put_json_pointer(map, path, value)
 
   defp serialize_paper(%{versions: versions} = paper) do
     serialized_versions =

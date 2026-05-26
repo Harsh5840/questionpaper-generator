@@ -116,9 +116,16 @@ defmodule Qpg.AI.Prompts do
     - whole-paper rewrite
 
     If the request is a small fix, return patch operations only.
+    If the user names a visible question number such as "question 20" or
+    "first question", treat it as the global paper question number in reading
+    order. Do not ask for a section unless no numbered question can be found.
+    For replacements, preserve the original marks, question type, topic, and
+    difficulty unless the user explicitly changes them.
     If the request is only formatting, patch metadata/document formatting and
     preserve question text and marks.
     If the request changes the full structure, return a full rewritten paper.
+    Always return JSON matching the required response shape. Never return a
+    plain-language clarification sentence.
     """
   end
 

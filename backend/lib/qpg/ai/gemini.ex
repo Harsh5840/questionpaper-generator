@@ -153,7 +153,8 @@ defmodule Qpg.AI.Gemini do
       %{
         contents: contents,
         tools: [%{functionDeclarations: gemini_tools()}],
-        toolConfig: %{functionCallingConfig: %{mode: "AUTO"}}
+        toolConfig: %{functionCallingConfig: %{mode: "AUTO"}},
+        generationConfig: json_config(refinement_schema())
       }
 
     model = model_for(:generation, request)
@@ -931,6 +932,29 @@ defmodule Qpg.AI.Gemini do
         answerRichText: %{type: "string"},
         tags: %{type: "array", items: %{type: "string"}}
       }
+    }
+  end
+
+  defp refinement_schema do
+    %{
+      type: "object",
+      properties: %{
+        message: %{type: "string"},
+        base_version_id: %{type: "string"},
+        patch_ops: %{
+          type: "array",
+          items: %{
+            type: "object",
+            properties: %{
+              op: %{type: "string"},
+              path: %{type: "string"},
+              value: %{type: "string"}
+            }
+          }
+        },
+        preview: %{type: "object"}
+      },
+      required: ["message", "patch_ops", "preview"]
     }
   end
 

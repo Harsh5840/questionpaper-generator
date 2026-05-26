@@ -272,6 +272,46 @@ button:disabled {
   color: #0f172a;
 }
 
+.editor-icon-button:disabled {
+  opacity: 0.7;
+}
+
+.ai-replacing {
+  animation: ai-replace-pulse 1.15s ease-in-out infinite;
+}
+
+.ai-replacing::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.18), transparent);
+  background-size: 220% 100%;
+  animation: ai-replace-sheen 1.4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes ai-replace-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.18);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+  }
+}
+
+@keyframes ai-replace-sheen {
+  from {
+    background-position: 220% 0;
+  }
+
+  to {
+    background-position: -220% 0;
+  }
+}
+
 .qpg-canvas {
   min-height: 980px;
   font-family: var(--font-paper), Georgia, "Times New Roman", serif;

@@ -157,6 +157,8 @@ export default function Home() {
       template: paperTemplate,
     }));
     setDocumentStyle((current) => ({ ...current, ...formatting }));
+    setSelectedPaper((current) => (current ? applyTemplateToExistingPaper(current, paperTemplate) : current));
+    setVariantPapers((papers) => papers.map((paper) => applyTemplateToExistingPaper(paper, paperTemplate)));
     addAssistantMessage(`Template selected: ${template.name}`);
   }
 
@@ -302,16 +304,29 @@ export default function Home() {
       await refreshVersions(nextPaper.paperId);
       setStatus({ status: "completed", step: "refined", message: "Refinement applied", progress: 100 });
       addAssistantMessage(refinement.message || "Applied the refinement.");
-    } catch {
-      setStatus({ status: "failed", step: "refine_failed", message: "Refinement failed", progress: 100 });
-      addAssistantMessage("I could not apply that refinement. Try a more specific instruction.");
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setLastError(message);
+      setStatus({ status: "failed", step: "refine_failed", message, progress: 100 });
+      addAssistantMessage(`I could not apply that refinement: ${message}`);
     } finally {
       setIsChatting(false);
     }
   }
 
-  async function replaceQuestionWithAi(_sectionId: string, _questionId: string, questionNumber: number) {
-    await askAi(`Replace question ${questionNumber} with a new valid question from the selected chapters. Preserve marks, type, total marks, and CBSE style.`);
+  async function replaceQuestionWithAi(sectionId: string, questionId: string, questionNumber: number) {
+    const section = selectedPaper?.sections.find((item) => item.id === sectionId);
+    const question = section?.questions.find((item) => item.id === questionId);
+
+    await askAi(
+      [
+        `Replace global question ${questionNumber} in ${section?.title ?? "the paper"}.`,
+        `Question id: ${questionId}.`,
+        `Current question: ${question?.text ?? ""}`,
+        `Preserve ${question?.marks ?? "the same"} marks, ${question?.type ?? "same"} type, ${question?.difficulty ?? "same"} difficulty, and the paper total.`,
+        "Generate a genuinely different valid question from the selected chapters using owned NCERT/PYQ context.",
+      ].join("\n"),
+    );
   }
 
   async function saveCurrentVersion() {
@@ -1407,6 +1422,75 @@ function applyDocumentStyle(paper: Paper, documentStyle: DocumentStyle): Paper {
   return { ...paper, documentStyle };
 }
 
+function applyTemplateToExistingPaper(paper: Paper, template: PaperTemplate): Paper {
+  const sections = templateSections(template);
+  const inferred = template.inferredParams ?? {};
+
+  return applyDocumentStyle(
+    recalculatePaper({
+      ...paper,
+      metadata: {
+        ...paper.metadata,
+        format: template.name,
+        durationMinutes: inferred.durationMinutes ?? paper.metadata.durationMinutes,
+      },
+      sections:
+        sections.length > 0
+          ? paper.sections.map((section, index) => ({
+              ...section,
+              title: sections[index] ?? section.title,
+              instructions: sectionInstructions(template.name, sections[index] ?? section.title, section.instructions),
+            }))
+          : paper.sections,
+      documentStyle: {
+        ...paper.documentStyle,
+        ...template.formatting,
+      },
+    }),
+    {
+      ...defaultDocumentStyle,
+      ...paper.documentStyle,
+      ...template.formatting,
+    },
+  );
+}
+
+function templateSections(template: PaperTemplate) {
+  return template.sections ?? defaultTemplateSections(template.name);
+}
+
+function defaultTemplateSections(name: string) {
+  const normalized = name.toLowerCase();
+
+  if (normalized.includes("unit")) return ["Section A: Objective", "Section B: Short Answer", "Section C: Application"];
+  if (normalized.includes("mid")) return ["Section A: MCQ", "Section B: VSA", "Section C: SA", "Section D: LA"];
+  if (normalized.includes("full")) return ["Section A: MCQ", "Section B: Very Short Answer", "Section C: Short Answer", "Section D: Long Answer", "Section E: Case Study"];
+  return ["Section A", "Section B", "Section C", "Section D"];
+}
+
+function sectionInstructions(templateName: string, sectionTitle: string, existing: string) {
+  const normalized = templateName.toLowerCase();
+  const title = sectionTitle.toLowerCase();
+
+  if (normalized.includes("unit")) {
+    if (title.includes("objective")) return "Attempt all objective questions. Each question carries the marks shown.";
+    if (title.includes("application")) return "Show method, reasoning, and final result.";
+  }
+
+  if (normalized.includes("full")) {
+    if (title.includes("mcq")) return "This section contains Multiple Choice Questions. Choose the correct option.";
+    if (title.includes("case")) return "Read the case carefully and answer the sub-parts.";
+    if (title.includes("long")) return "Write complete solutions with proper steps.";
+  }
+
+  if (normalized.includes("mid")) {
+    if (title.includes("vsa")) return "Answer briefly with reason where required.";
+    if (title.includes("la")) return "Solve with complete steps and final conclusion.";
+  }
+
+  return existing;
+}
+
 function createDraftPaper(request: PaperRequest, documentStyle: DocumentStyle): Paper {
   return applyDocumentStyle(
     recalculatePaper({
@@ -1595,9 +1679,14 @@ function dashboardFormattingToDocumentStyle(raw: Record<string, unknown>): Parti
 }
 
 function dashboardTemplateToPaperTemplate(template: DashboardSummary["templates"][number]): PaperTemplate {
+  const payload = asRecord(template.payload);
+
   return {
     name: template.name,
     description: template.description,
+    instructions: stringOrUndefined(payload.instructions),
+    sections: Array.isArray(payload.sections) ? payload.sections.map(String) : undefined,
+    layoutNotes: stringOrUndefined(payload.layout_notes ?? payload.layoutNotes),
     formatting: dashboardFormattingToDocumentStyle(template.formatting),
     inferredParams: normalizeTemplateParams(template.inferredParams),
   };
