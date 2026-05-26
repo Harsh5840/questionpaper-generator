@@ -1,0 +1,512 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  Copy,
+  GripVertical,
+  ImagePlus,
+  Plus,
+  RefreshCcw,
+  Save,
+  Trash2,
+} from "lucide-react";
+import { DocumentStyle, Paper, PaperQuestion, PaperSection } from "@/lib/types";
+import { RichTextEditor } from "./rich-text-editor";
+
+interface PaperEditorProps {
+  paper: Paper | null;
+  documentStyle: DocumentStyle;
+  isGenerating?: boolean;
+  onPaperChange: (paper: Paper) => void;
+  onReplaceQuestion: (sectionId: string, questionId: string, questionNumber: number) => void;
+  onSaveQuestionToBank: (question: PaperQuestion) => void;
+  onImportImage: (sectionId: string) => void;
+}
+
+interface DraggedQuestion {
+  sectionId: string;
+  questionId: string;
+}
+
+export function PaperEditor({
+  paper,
+  documentStyle,
+  isGenerating = false,
+  onPaperChange,
+  onReplaceQuestion,
+  onSaveQuestionToBank,
+  onImportImage,
+}: PaperEditorProps) {
+  const [draggedQuestion, setDraggedQuestion] = useState<DraggedQuestion | null>(null);
+  const [expandedAnswers, setExpandedAnswers] = useState<Record<string, boolean>>({});
+
+  const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
+
+  if (!paper) {
+    return (
+      <div
+        className="relative mx-auto flex min-h-[1120px] w-full max-w-[900px] items-center justify-center border border-slate-200 bg-white p-12 text-center shadow-sm"
+        style={{ backgroundColor: documentStyle.pageColor }}
+      >
+        <div className="max-w-sm text-slate-400">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            {isGenerating ? <RefreshCcw className="animate-spin" size={24} /> : <Plus size={24} />}
+          </div>
+          <p className="text-sm font-bold text-slate-500">{isGenerating ? "Generating structured paper" : "Blank paper workspace"}</p>
+          <p className="mt-1 text-xs">Generate a paper or import questions. Cards with marks, drag handles, and rich text controls will appear here.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const updatePaper = (updater: (current: Paper) => Paper) => {
+    onPaperChange(recalculatePaper(updater(paper)));
+  };
+
+  const updateSection = (sectionId: string, patch: Partial<PaperSection>) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) => (section.id === sectionId ? { ...section, ...patch } : section)),
+    }));
+  };
+
+  const updateQuestion = (sectionId: string, questionId: string, patch: Partial<PaperQuestion>) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: section.questions.map((question) => (question.id === questionId ? { ...question, ...patch } : question)),
+            }
+          : section,
+      ),
+    }));
+  };
+
+  const deleteQuestion = (sectionId: string, questionId: string) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId ? { ...section, questions: section.questions.filter((question) => question.id !== questionId) } : section,
+      ),
+    }));
+  };
+
+  const duplicateQuestion = (sectionId: string, questionId: string) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) => {
+        if (section.id !== sectionId) return section;
+
+        const nextQuestions: PaperQuestion[] = [];
+        section.questions.forEach((question) => {
+          nextQuestions.push(question);
+          if (question.id === questionId) {
+            nextQuestions.push({ ...question, id: crypto.randomUUID(), text: `${question.text}\n`, richText: question.richText });
+          }
+        });
+
+        return { ...section, questions: nextQuestions };
+      }),
+    }));
+  };
+
+  const addBlankQuestion = (sectionId: string) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: [
+                ...section.questions,
+                {
+                  id: crypto.randomUUID(),
+                  text: "",
+                  richText: "",
+                  marks: 1,
+                  type: "SA",
+                  difficulty: section.difficulty || current.summary.difficulty || "Medium",
+                  source: "Manual",
+                  topic: current.metadata.topic,
+                  answer: "",
+                },
+              ],
+            }
+          : section,
+      ),
+    }));
+  };
+
+  const addInternalChoice = (sectionId: string, questionId: string) => {
+    updateQuestion(sectionId, questionId, {
+      optionalChoice: {
+        text: "",
+        richText: "",
+        answer: "",
+      },
+    });
+  };
+
+  const moveDraggedQuestion = (targetSectionId: string, targetQuestionId?: string) => {
+    if (!draggedQuestion) return;
+
+    updatePaper((current) => {
+      let movingQuestion: PaperQuestion | null = null;
+      const sectionsWithoutQuestion = current.sections.map((section) => {
+        if (section.id !== draggedQuestion.sectionId) return section;
+
+        return {
+          ...section,
+          questions: section.questions.filter((question) => {
+            if (question.id === draggedQuestion.questionId) {
+              movingQuestion = question;
+              return false;
+            }
+
+            return true;
+          }),
+        };
+      });
+
+      if (!movingQuestion) return current;
+
+      return {
+        ...current,
+        sections: sectionsWithoutQuestion.map((section) => {
+          if (section.id !== targetSectionId) return section;
+
+          if (!targetQuestionId) return { ...section, questions: [...section.questions, movingQuestion as PaperQuestion] };
+
+          const targetIndex = section.questions.findIndex((question) => question.id === targetQuestionId);
+          if (targetIndex < 0) return { ...section, questions: [...section.questions, movingQuestion as PaperQuestion] };
+
+          return {
+            ...section,
+            questions: [
+              ...section.questions.slice(0, targetIndex),
+              movingQuestion as PaperQuestion,
+              ...section.questions.slice(targetIndex),
+            ],
+          };
+        }),
+      };
+    });
+
+    setDraggedQuestion(null);
+  };
+
+  return (
+    <article
+      className="mx-auto min-h-[1120px] w-full max-w-[900px] border border-slate-200 bg-white shadow-sm"
+      style={{
+        backgroundColor: documentStyle.pageColor,
+        color: documentStyle.textColor,
+        fontSize: documentStyle.fontSize,
+        lineHeight: documentStyle.lineHeight,
+        padding: documentStyle.margin,
+      }}
+    >
+      <header className="border-b border-slate-200 pb-5 text-center">
+        <div className="mb-4 flex justify-between text-left text-xs font-bold text-slate-600">
+          <span>Series: QPG/{paper.metadata.board || "CBSE"}</span>
+          <span>Q.P. Code: {paper.metadata.qpCode || "30/S/1"}</span>
+        </div>
+        <input
+          aria-label="Paper title"
+          className="w-full bg-transparent text-center font-sans text-2xl font-black uppercase tracking-normal text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          value={paper.title}
+          onChange={(event) => updatePaper((current) => ({ ...current, title: event.target.value }))}
+        />
+        <div className="mt-2 flex flex-wrap justify-center gap-3 text-sm font-semibold text-slate-600">
+          <span>{paper.metadata.board} Class {paper.metadata.classLevel}</span>
+          <span>{paper.metadata.subject}</span>
+          <span>Time: {formatDuration(paper.metadata.durationMinutes)}</span>
+          <span>Max Marks: {stats?.totalMarks ?? paper.summary.totalMarks}</span>
+        </div>
+      </header>
+
+      {stats && (
+        <div className="my-5 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-2 flex items-center justify-between text-xs font-bold text-slate-700">
+            <span>Topic-wise weightage</span>
+            <span>{stats.questionCount} questions · {stats.totalMarks} marks</span>
+          </div>
+          <div className="space-y-2">
+            {stats.topicWeights.map((item) => (
+              <div key={item.topic} className="grid grid-cols-[130px_1fr_48px] items-center gap-2 text-xs text-slate-600">
+                <span className="truncate font-semibold">{item.topic}</span>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                  <div className="h-full rounded-full bg-blue-600" style={{ width: `${item.percent}%` }} />
+                </div>
+                <span className="text-right font-bold">{item.marks}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <section className="my-6 text-sm text-slate-800">
+        <h2 className="mb-2 font-sans text-sm font-black uppercase">General Instructions</h2>
+        <p>This question paper contains {stats?.questionCount ?? paper.summary.questionCount} questions. All questions are compulsory unless an internal choice is provided.</p>
+        <p>This question paper is divided into {paper.sections.length} sections. Use of calculator is not allowed unless specified by the teacher.</p>
+      </section>
+
+      <div className="space-y-8">
+        {paper.sections.map((section) => {
+          const sectionMarks = section.questions.reduce((total, question) => total + Number(question.marks || 0), 0);
+
+          return (
+            <section
+              key={section.id}
+              className="rounded-lg border border-transparent"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => moveDraggedQuestion(section.id)}
+            >
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
+                <input
+                  aria-label="Section title"
+                  className="min-w-48 flex-1 bg-transparent font-sans text-sm font-black uppercase tracking-normal text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  value={section.title}
+                  onChange={(event) => updateSection(section.id, { title: event.target.value })}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                    Difficulty
+                    <select
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                      value={section.difficulty || ""}
+                      onChange={(event) => updateSection(section.id, { difficulty: event.target.value || undefined })}
+                    >
+                      <option value="">Mixed</option>
+                      <option>Low</option>
+                      <option>Medium</option>
+                      <option>High</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                    Target
+                    <input
+                      className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                      type="number"
+                      value={section.targetMarks ?? sectionMarks}
+                      onChange={(event) => updateSection(section.id, { targetMarks: Number(event.target.value) })}
+                    />
+                  </label>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">{sectionMarks} marks</span>
+                  <button className="editor-mini-button" onClick={() => addBlankQuestion(section.id)} type="button">
+                    <Plus size={14} />
+                    Add
+                  </button>
+                  <button className="editor-mini-button" onClick={() => onImportImage(section.id)} type="button">
+                    <ImagePlus size={14} />
+                    Image
+                  </button>
+                </div>
+              </div>
+
+              <textarea
+                aria-label={`${section.title} instructions`}
+                className="mb-4 min-h-10 w-full resize-y rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-slate-600 outline-none hover:border-slate-200 focus:border-blue-400 focus:bg-white"
+                placeholder="Section instructions"
+                value={section.instructions}
+                onChange={(event) => updateSection(section.id, { instructions: event.target.value })}
+              />
+
+              <div className="space-y-4">
+                {section.questions.map((question) => {
+                  const questionNumber = stats?.questionNumberById[question.id] ?? 0;
+                  const isAnswerOpen = expandedAnswers[question.id] ?? false;
+
+                  return (
+                    <div
+                      key={question.id}
+                      className="question-row group rounded-lg border border-transparent bg-white/70 p-3 transition hover:border-slate-200 hover:bg-slate-50"
+                      draggable
+                      onDragStart={() => setDraggedQuestion({ sectionId: section.id, questionId: question.id })}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.stopPropagation();
+                        moveDraggedQuestion(section.id, question.id);
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex flex-col items-center gap-2 pt-2">
+                          <GripVertical className="cursor-grab text-slate-400" size={18} />
+                          <span className="font-display text-lg font-bold text-slate-950">{questionNumber}.</span>
+                        </div>
+
+                        <div className="min-w-0 flex-1 space-y-3">
+                          <RichTextEditor
+                            label={`Question ${questionNumber}`}
+                            minHeight="normal"
+                            placeholder="Write the question..."
+                            value={question.text}
+                            onChange={(text) => updateQuestion(section.id, question.id, { text })}
+                            onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
+                          />
+
+                          {question.optionalChoice && (
+                            <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3">
+                              <div className="mb-2 text-center text-xs font-black text-blue-700">OR</div>
+                              <RichTextEditor
+                                label={`Question ${questionNumber} internal choice`}
+                                minHeight="compact"
+                                placeholder="Write the internal choice..."
+                                value={question.optionalChoice.text}
+                                onChange={(text) =>
+                                  updateQuestion(section.id, question.id, {
+                                    optionalChoice: { ...question.optionalChoice!, text },
+                                  })
+                                }
+                                onHtmlChange={(richText) =>
+                                  updateQuestion(section.id, question.id, {
+                                    optionalChoice: { ...question.optionalChoice!, richText },
+                                  })
+                                }
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                            <input
+                              aria-label={`Question ${questionNumber} marks`}
+                              className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+                              min={0}
+                              type="number"
+                              value={question.marks}
+                              onChange={(event) => updateQuestion(section.id, question.id, { marks: Number(event.target.value) })}
+                            />
+                            <span>Marks</span>
+                            <select
+                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                              value={question.type}
+                              onChange={(event) => updateQuestion(section.id, question.id, { type: event.target.value })}
+                            >
+                              {["MCQ", "VSA", "SA", "LA", "Case Study"].map((type) => (
+                                <option key={type}>{type}</option>
+                              ))}
+                            </select>
+                            <select
+                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                              value={question.difficulty}
+                              onChange={(event) => updateQuestion(section.id, question.id, { difficulty: event.target.value })}
+                            >
+                              {["Low", "Medium", "High", "Easy", "Hard"].map((difficulty) => (
+                                <option key={difficulty}>{difficulty}</option>
+                              ))}
+                            </select>
+                            <input
+                              className="min-w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                              placeholder="Topic"
+                              value={question.topic ?? ""}
+                              onChange={(event) => updateQuestion(section.id, question.id, { topic: event.target.value })}
+                            />
+                            <span className="rounded bg-blue-50 px-2 py-1 text-blue-700">{question.source || "Manual"}</span>
+                          </div>
+
+                          {isAnswerOpen && (
+                            <RichTextEditor
+                              label={`Question ${questionNumber} answer`}
+                              minHeight="answer"
+                              placeholder="Write answer / marking scheme..."
+                              value={question.answer}
+                              onChange={(answer) => updateQuestion(section.id, question.id, { answer })}
+                              onHtmlChange={(answerRichText) => updateQuestion(section.id, question.id, { answerRichText })}
+                            />
+                          )}
+                        </div>
+
+                        <div className="flex shrink-0 flex-col gap-1 opacity-100 lg:opacity-0 lg:transition lg:group-hover:opacity-100">
+                          <button className="editor-icon-button" title="Replace with AI" onClick={() => onReplaceQuestion(section.id, question.id, questionNumber)} type="button">
+                            <RefreshCcw size={15} />
+                          </button>
+                          <button className="editor-icon-button" title="Duplicate" onClick={() => duplicateQuestion(section.id, question.id)} type="button">
+                            <Copy size={15} />
+                          </button>
+                          <button className="editor-icon-button" title="Add internal choice" onClick={() => addInternalChoice(section.id, question.id)} type="button">
+                            OR
+                          </button>
+                          <button className="editor-icon-button" title="Show answer" onClick={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))} type="button">
+                            A
+                          </button>
+                          <button className="editor-icon-button" title="Save to question bank" onClick={() => onSaveQuestionToBank(question)} type="button">
+                            <Save size={15} />
+                          </button>
+                          <button className="editor-icon-button text-red-600 hover:bg-red-50" title="Delete" onClick={() => deleteQuestion(section.id, question.id)} type="button">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </article>
+  );
+}
+
+function calculateStats(paper: Paper) {
+  let questionNumber = 1;
+  const questionNumberById: Record<string, number> = {};
+  const topicMarks = new Map<string, number>();
+  let totalMarks = 0;
+  let questionCount = 0;
+
+  paper.sections.forEach((section) => {
+    section.questions.forEach((question) => {
+      questionNumberById[question.id] = questionNumber;
+      questionNumber += 1;
+      questionCount += 1;
+      totalMarks += Number(question.marks || 0);
+      const topic = question.topic || paper.metadata.topic || paper.metadata.chapter || section.title || "Unassigned";
+      topicMarks.set(topic, (topicMarks.get(topic) || 0) + Number(question.marks || 0));
+    });
+  });
+
+  const topicWeights = Array.from(topicMarks.entries()).map(([topic, marks]) => ({
+    topic,
+    marks,
+    percent: totalMarks > 0 ? Math.round((marks / totalMarks) * 100) : 0,
+  }));
+
+  return { questionNumberById, totalMarks, questionCount, topicWeights };
+}
+
+function recalculatePaper(paper: Paper): Paper {
+  const totalMarks = paper.sections.reduce(
+    (paperTotal, section) => paperTotal + section.questions.reduce((sectionTotal, question) => sectionTotal + Number(question.marks || 0), 0),
+    0,
+  );
+  const questionCount = paper.sections.reduce((count, section) => count + section.questions.length, 0);
+  const topicWeightage: Record<string, number> = {};
+
+  paper.sections.forEach((section) => {
+    section.questions.forEach((question) => {
+      const topic = question.topic || paper.metadata.topic || paper.metadata.chapter || section.title || "Unassigned";
+      topicWeightage[topic] = (topicWeightage[topic] || 0) + Number(question.marks || 0);
+    });
+  });
+
+  return {
+    ...paper,
+    summary: {
+      ...paper.summary,
+      totalMarks,
+      questionCount,
+    },
+    topicWeightage,
+  };
+}
+
+function formatDuration(minutes: number) {
+  if (minutes % 60 === 0) return `${minutes / 60} hour${minutes === 60 ? "" : "s"}`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours > 0 ? `${hours} hour${hours === 1 ? "" : "s"} ${remainder} minutes` : `${minutes} minutes`;
+}
