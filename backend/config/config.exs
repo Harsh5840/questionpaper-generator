@@ -1,5 +1,22 @@
 import Config
 
+env_path = Path.expand("../../.env", __DIR__)
+
+if File.exists?(env_path) do
+  env_path
+  |> File.stream!()
+  |> Stream.map(&String.trim/1)
+  |> Stream.reject(&(&1 == "" or String.starts_with?(&1, "#") or not String.contains?(&1, "=")))
+  |> Enum.each(fn line ->
+    [key, value] = String.split(line, "=", parts: 2)
+    key = String.trim(key)
+
+    if System.get_env(key) in [nil, ""] do
+      System.put_env(key, String.trim(value))
+    end
+  end)
+end
+
 config :qpg,
   ecto_repos: [Qpg.Repo],
   generators: [timestamp_type: :utc_datetime]

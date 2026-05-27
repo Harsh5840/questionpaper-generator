@@ -11,3 +11,7 @@ config :qpg, Qpg.AI.OpenAI,
   model: System.get_env("OPENAI_MODEL", "gpt-5.1"),
   small_model: System.get_env("OPENAI_SMALL_MODEL", "gpt-5.1-mini"),
   large_model: System.get_env("OPENAI_LARGE_MODEL", "gpt-5.1")
+
+config :qpg, Qpg.AI.Gemini,
+  api_key: System.get_env("GEMINI_API_KEY"),
+  model: System.get_env("GEMINI_MODEL", "gemini-2.5-flash")
