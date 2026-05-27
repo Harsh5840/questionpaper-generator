@@ -420,7 +420,9 @@ defmodule Qpg.AI.Gemini do
   defp user_content(parts) when is_list(parts), do: %{role: "user", parts: parts}
   defp model_content(parts), do: %{role: "model", parts: parts}
 
-  defp generate_content(model, payload) do
+  defp generate_content(model, payload, attempts_left \\ 3)
+
+  defp generate_content(model, payload, attempts_left) do
     url = "#{@endpoint_base}/#{model}:generateContent?key=#{api_key()}"
 
     # Do not log the URL: Gemini keys live in the query string.
@@ -439,7 +441,7 @@ defmodule Qpg.AI.Gemini do
       )
 
     with {:ok, %{status: 200} = response} <-
-           Finch.request(request, Qpg.Finch, receive_timeout: 120_000),
+           Finch.request(request, Qpg.Finch, receive_timeout: 180_000),
          {:ok, body} <- Jason.decode(response.body) do
       Logging.debug("ai.gemini.http.response.ok", %{model: model, status: response.status})
       Usage.record_gemini_event(model, body)
@@ -455,14 +457,56 @@ defmodule Qpg.AI.Gemini do
         {:error, %{status: response.status, body: decode_body(response.body)}}
 
       {:error, reason} ->
-        Logging.error("ai.gemini.http.request.failed", %{model: model, reason: inspect(reason)})
-        {:error, reason}
+        if retryable_transport_error?(reason) and attempts_left > 0 do
+          backoff_ms = retry_backoff_ms(attempts_left)
+
+          Logging.warning("ai.gemini.http.request.retrying", %{
+            model: model,
+            reason: inspect(reason),
+            attempts_left: attempts_left,
+            backoff_ms: backoff_ms
+          })
+
+          Process.sleep(backoff_ms)
+          generate_content(model, payload, attempts_left - 1)
+        else
+          Logging.error("ai.gemini.http.request.failed", %{model: model, reason: inspect(reason)})
+          {:error, normalize_transport_error(reason)}
+        end
 
       {:error, reason, _position} ->
         Logging.error("ai.gemini.http.decode.failed", %{model: model, reason: inspect(reason)})
         {:error, reason}
     end
   end
+
+  defp retryable_transport_error?(%Finch.TransportError{reason: reason})
+       when reason in [:closed, :timeout, :econnreset],
+       do: true
+
+  defp retryable_transport_error?(%Mint.TransportError{reason: reason})
+       when reason in [:closed, :timeout, :econnreset],
+       do: true
+
+  defp retryable_transport_error?(%Mint.HTTPError{reason: reason})
+       when reason in [:closed, :timeout, :econnreset],
+       do: true
+
+  defp retryable_transport_error?(_reason), do: false
+
+  defp normalize_transport_error(%Finch.TransportError{reason: :closed}),
+    do:
+      {:gemini_connection_closed,
+       "Gemini closed the HTTP connection before returning a response. Retry generation."}
+
+  defp normalize_transport_error(%Mint.TransportError{reason: :closed}),
+    do:
+      {:gemini_connection_closed,
+       "Gemini closed the HTTP connection before returning a response. Retry generation."}
+
+  defp normalize_transport_error(reason), do: reason
+
+  defp retry_backoff_ms(attempts_left), do: (4 - attempts_left) * 750
 
   defp decode_body(body) do
     case Jason.decode(body) do
@@ -537,8 +581,6 @@ defmodule Qpg.AI.Gemini do
   end
 
   defp retryable_generation_error?(reason)
-
-  defp retryable_generation_error?(reason)
        when reason in [
               :missing_gemini_text,
               :invalid_generation_response,
@@ -548,6 +590,11 @@ defmodule Qpg.AI.Gemini do
 
   defp retryable_generation_error?({:invalid_gemini_json, _metadata}), do: true
   defp retryable_generation_error?({:incomplete_gemini_json, _finish_reason}), do: true
+  defp retryable_generation_error?({:gemini_connection_closed, _message}), do: true
+
+  defp retryable_generation_error?(%Finch.TransportError{} = reason),
+    do: retryable_transport_error?(reason)
+
   defp retryable_generation_error?(_reason), do: false
 
   defp format_decode_error(%Jason.DecodeError{} = error),
