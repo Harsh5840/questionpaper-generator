@@ -10,7 +10,7 @@ import {
   Save,
   Trash2,
 } from "lucide-react";
-import { DocumentStyle, Paper, PaperQuestion, PaperSection } from "@/lib/types";
+import { DocumentStyle, Paper, PaperQuestion, PaperSection, PaperSubpart } from "@/lib/types";
 import { RichTextEditor } from "./rich-text-editor";
 
 interface PaperEditorProps {
@@ -184,6 +184,77 @@ export function PaperEditor({
 
   const removeInternalChoice = (sectionId: string, questionId: string) => {
     updateQuestion(sectionId, questionId, { optionalChoice: undefined });
+  };
+
+  const addSubpart = (sectionId: string, questionId: string) => {
+    const section = paper.sections.find((item) => item.id === sectionId);
+    const question = section?.questions.find((item) => item.id === questionId);
+    const subparts = question?.subparts ?? [];
+
+    updateQuestion(sectionId, questionId, {
+      subparts: [
+        ...subparts,
+        {
+          id: crypto.randomUUID(),
+          label: String.fromCharCode(97 + subparts.length),
+          text: "",
+          richText: "",
+          marks: 1,
+          answer: "",
+        },
+      ],
+    });
+  };
+
+  const updateSubpart = (sectionId: string, questionId: string, subpartId: string, patch: Partial<PaperSubpart>) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    if (!question?.subparts) return;
+
+    updateQuestion(sectionId, questionId, {
+      subparts: question.subparts.map((subpart) => (subpart.id === subpartId ? { ...subpart, ...patch } : subpart)),
+    });
+  };
+
+  const deleteSubpart = (sectionId: string, questionId: string, subpartId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    if (!question?.subparts) return;
+
+    updateQuestion(sectionId, questionId, {
+      subparts: question.subparts
+        .filter((subpart) => subpart.id !== subpartId)
+        .map((subpart, index) => ({ ...subpart, label: String.fromCharCode(97 + index) })),
+    });
+  };
+
+  const addSubpartChoice = (sectionId: string, questionId: string, subpartId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const subpart = question?.subparts?.find((item) => item.id === subpartId);
+    if (!subpart) return;
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      optionalChoice: {
+        id: crypto.randomUUID(),
+        text: "",
+        richText: "",
+        marks: subpart.marks,
+        answer: "",
+        answerRichText: "",
+      },
+    });
+  };
+
+  const updateSubpartChoice = (sectionId: string, questionId: string, subpartId: string, patch: Partial<NonNullable<PaperSubpart["optionalChoice"]>>) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const subpart = question?.subparts?.find((item) => item.id === subpartId);
+    if (!subpart?.optionalChoice) return;
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      optionalChoice: { ...subpart.optionalChoice, ...patch },
+    });
+  };
+
+  const removeSubpartChoice = (sectionId: string, questionId: string, subpartId: string) => {
+    updateSubpart(sectionId, questionId, subpartId, { optionalChoice: undefined });
   };
 
   const moveQuestionToInternalChoice = (sourceSectionId: string, sourceQuestionId: string, targetQuestionId: string) => {
@@ -462,6 +533,59 @@ export function PaperEditor({
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
 
+                          {question.subparts && question.subparts.length > 0 && (
+                            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                              {question.subparts.map((subpart) => (
+                                <div key={subpart.id} className="rounded-md border border-slate-200 bg-white p-2">
+                                  <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                                    <span className="rounded bg-slate-100 px-2 py-1 font-black text-slate-800">({subpart.label})</span>
+                                    <input
+                                      aria-label={`Question ${questionNumber} subpart ${subpart.label} marks`}
+                                      className="w-14 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+                                      min={0}
+                                      type="number"
+                                      value={subpart.marks ?? 0}
+                                      onChange={(event) => updateSubpart(section.id, question.id, subpart.id, { marks: Number(event.target.value) })}
+                                    />
+                                    <span>Marks</span>
+                                    <button className="editor-mini-button" onClick={() => addSubpartChoice(section.id, question.id, subpart.id)} type="button">
+                                      OR in part
+                                    </button>
+                                    <button className="editor-mini-button text-red-600" onClick={() => deleteSubpart(section.id, question.id, subpart.id)} type="button">
+                                      Delete part
+                                    </button>
+                                  </div>
+                                  <RichTextEditor
+                                    label={`Question ${questionNumber} subpart ${subpart.label}`}
+                                    minHeight="compact"
+                                    placeholder="Write this subpart..."
+                                    value={subpart.text}
+                                    onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
+                                    onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
+                                  />
+                                  {subpart.optionalChoice && (
+                                    <div className="mt-2 rounded-md border border-dashed border-blue-200 bg-blue-50/60 p-2">
+                                      <div className="mb-2 flex items-center justify-between text-xs font-black text-blue-700">
+                                        <span>OR for part ({subpart.label})</span>
+                                        <button className="editor-mini-button text-red-600" onClick={() => removeSubpartChoice(section.id, question.id, subpart.id)} type="button">
+                                          Remove OR
+                                        </button>
+                                      </div>
+                                      <RichTextEditor
+                                        label={`Question ${questionNumber} subpart ${subpart.label} OR`}
+                                        minHeight="compact"
+                                        placeholder="Write the OR alternative for this subpart..."
+                                        value={subpart.optionalChoice.text}
+                                        onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
+                                        onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
                           {question.optionalChoice && (
                             <div className={`choice-row group/choice relative rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 ${isChoiceReplacing ? "ai-replacing border-blue-300 bg-blue-100/70" : ""}`}>
                               <div className="mb-2 text-center text-xs font-black text-blue-700">OR</div>
@@ -621,6 +745,9 @@ export function PaperEditor({
                           </button>
                           <button className="editor-icon-button" title="Add internal choice" onClick={() => addInternalChoice(section.id, question.id)} type="button">
                             OR
+                          </button>
+                          <button className="editor-icon-button" title="Add subpart" onClick={() => addSubpart(section.id, question.id)} type="button">
+                            (a)
                           </button>
                           <button className="editor-icon-button" title="Show answer" onClick={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))} type="button">
                             A

@@ -1,7 +1,7 @@
 export type PaperRequest = {
   board: "CBSE" | "ICSE";
   classLevel: "9" | "10" | "11" | "12";
-  subject: "Maths" | "Physics" | "Chemistry" | "Biology";
+  subject: "Maths" | "Science" | "Physics" | "Chemistry" | "Biology";
   chapter: string;
   chapterScope: "single" | "multiple" | "full_syllabus";
   chapters: string[];
@@ -50,6 +50,7 @@ export type PaperQuestion = {
   topic?: string;
   tags?: string[];
   sourceCitations?: string[];
+  subparts?: PaperSubpart[];
   optionalChoice?: {
     id?: string;
     text: string;
@@ -71,6 +72,24 @@ export type PaperQuestion = {
   }[];
   answer: string;
   answerRichText?: string;
+};
+
+export type PaperSubpart = {
+  id: string;
+  label?: string;
+  text: string;
+  richText?: string;
+  marks?: number;
+  answer?: string;
+  answerRichText?: string;
+  optionalChoice?: {
+    id?: string;
+    text: string;
+    richText?: string;
+    marks?: number;
+    answer?: string;
+    answerRichText?: string;
+  };
 };
 
 export type PaperSection = {

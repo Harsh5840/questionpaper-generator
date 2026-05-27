@@ -665,7 +665,7 @@ export default function Home() {
 
               <Field label="Subject">
                 <Select value={request.subject} onChange={(event) => updateRequest("subject", event.target.value as PaperRequest["subject"])}>
-                  {["Maths", "Physics", "Chemistry", "Biology"].map((item) => (
+                  {["Maths", "Science", "Physics", "Chemistry", "Biology"].map((item) => (
                     <option key={item}>{item}</option>
                   ))}
                 </Select>
@@ -1566,9 +1566,18 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     .map((section) => {
       const questions = section.questions
         .map((question) => {
+          const subpartsHtml = (question.subparts ?? [])
+            .map(
+              (subpart) => `
+                <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${subpart.richText || textToHtml(subpart.text)}</div><span>[${subpart.marks ?? ""} marks]</span></div>
+                ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${subpart.optionalChoice.richText || textToHtml(subpart.optionalChoice.text)}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>` : ""}
+              `,
+            )
+            .join("");
           const html = `
             <div class="question">
               <div class="q-main"><strong>${questionNumber++}.</strong><div>${question.richText || textToHtml(question.text)}</div><span>[${question.marks} marks]</span></div>
+              ${subpartsHtml}
               ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>` : ""}
             </div>`;
           return html;
@@ -1585,7 +1594,8 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     h1{font-family:Arial,sans-serif;font-size:22px;text-transform:uppercase;margin:8px 0}
     h2{font-family:Arial,sans-serif;font-size:14px;text-transform:uppercase;margin-top:24px}
     .meta{display:flex;justify-content:center;gap:16px;font-family:Arial,sans-serif;font-size:12px;color:#475569}
-    .question{margin:16px 0}.q-main{display:grid;grid-template-columns:32px 1fr auto;gap:12px;align-items:start}
+    .question{margin:16px 0}.q-main,.subpart{display:grid;grid-template-columns:32px 1fr auto;gap:12px;align-items:start}
+    .subpart{margin:8px 0 8px 32px}
     .instructions{font-size:14px;color:#475569}.or{text-align:center;font-family:Arial,sans-serif;font-weight:bold;color:#1d4ed8;margin:10px 0}
   </style></head><body><header><div>Series: QPG/${escapeHtml(paper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(paper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(paper.title)}</h1><div class="meta"><span>${escapeHtml(paper.metadata.board)} Class ${escapeHtml(paper.metadata.classLevel)}</span><span>${escapeHtml(paper.metadata.subject)}</span><span>Time: ${formatDuration(paper.metadata.durationMinutes)}</span><span>Max Marks: ${paper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
 }
@@ -1601,7 +1611,9 @@ function parseTemplate(name: string, text: string): PaperTemplate {
   const lower = text.toLowerCase();
   const marksMatch = text.match(/(?:maximum|max)\s*marks?\s*:?\s*(\d+)/i) ?? text.match(/(\d+)\s*marks?/i);
   const classMatch = text.match(/class\s*(9|10|11|12)/i);
-  const subject = lower.includes("physics")
+  const subject = lower.includes("science")
+    ? "Science"
+    : lower.includes("physics")
     ? "Physics"
     : lower.includes("chemistry")
       ? "Chemistry"
@@ -1677,7 +1689,7 @@ function normalizeTemplateParams(raw: Record<string, unknown>): Partial<PaperReq
 
   if (board === "CBSE" || board === "ICSE") params.board = board;
   if (["9", "10", "11", "12"].includes(String(classLevel))) params.classLevel = String(classLevel) as PaperRequest["classLevel"];
-  if (["Maths", "Physics", "Chemistry", "Biology"].includes(String(subject))) params.subject = String(subject) as PaperRequest["subject"];
+  if (["Maths", "Science", "Physics", "Chemistry", "Biology"].includes(String(subject))) params.subject = String(subject) as PaperRequest["subject"];
   if (totalMarks !== undefined) params.totalMarks = Number(totalMarks);
   if (durationMinutes !== undefined) params.durationMinutes = Number(durationMinutes);
 
@@ -1767,6 +1779,7 @@ function normalizeQuestion(record: Record<string, unknown>): PaperQuestion {
     topic: stringOrUndefined(record.topic),
     tags: Array.isArray(record.tags) ? record.tags.map(String) : undefined,
     sourceCitations: Array.isArray(sourceCitations) ? sourceCitations.map(String) : undefined,
+    subparts: normalizeSubparts(record.subparts ?? record.sub_parts),
     optionalChoice:
       optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
         ? {
@@ -1786,6 +1799,36 @@ function normalizeQuestion(record: Record<string, unknown>): PaperQuestion {
     answer: String(record.answer ?? ""),
     answerRichText: String(record.answerRichText ?? record.answer_rich_text ?? ""),
   };
+}
+
+function normalizeSubparts(value: unknown): PaperQuestion["subparts"] {
+  if (!Array.isArray(value)) return undefined;
+
+  return value.map((item, index) => {
+    const record = asRecord(item);
+    const optionalChoice = asRecord(record.optionalChoice ?? record.optional_choice);
+
+    return {
+      id: String(record.id ?? crypto.randomUUID()),
+      label: stringOrUndefined(record.label) ?? String.fromCharCode(97 + index),
+      text: String(record.text ?? ""),
+      richText: stringOrUndefined(record.richText ?? record.rich_text),
+      marks: record.marks === undefined ? undefined : Number(record.marks),
+      answer: stringOrUndefined(record.answer),
+      answerRichText: stringOrUndefined(record.answerRichText ?? record.answer_rich_text),
+      optionalChoice:
+        optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
+          ? {
+              id: stringOrUndefined(optionalChoice.id),
+              text: String(optionalChoice.text ?? ""),
+              richText: stringOrUndefined(optionalChoice.richText ?? optionalChoice.rich_text),
+              marks: optionalChoice.marks === undefined ? undefined : Number(optionalChoice.marks),
+              answer: stringOrUndefined(optionalChoice.answer),
+              answerRichText: stringOrUndefined(optionalChoice.answerRichText ?? optionalChoice.answer_rich_text),
+            }
+          : undefined,
+    };
+  });
 }
 
 function inferLayoutNotes(text: string) {

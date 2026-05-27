@@ -161,12 +161,13 @@ export async function fetchChaptersViaApi(request: Pick<PaperRequest, "board" | 
     const params = new URLSearchParams({
       board: request.board,
       class_level: request.classLevel,
-      subject: request.subject,
+      subject: sourceSubjectFor(request.subject),
     });
     const response = await fetch(`${API_BASE}/catalog/chapters?${params.toString()}`);
     if (!response.ok) throw new Error("Could not load chapters");
     const data = await response.json();
-    return Array.isArray(data.chapters) ? data.chapters.map(String) : [];
+    const chapters = Array.isArray(data.chapters) ? data.chapters.map(String) : [];
+    return filterChaptersForSubject(request.subject, chapters);
   } catch {
     return [];
   }
@@ -468,6 +469,41 @@ function normalizeRunStatus(status: string): GenerationStatus["status"] {
   return "running";
 }
 
+function sourceSubjectFor(subject: PaperRequest["subject"] | string | undefined) {
+  return subject === "Physics" || subject === "Chemistry" || subject === "Biology" ? "Science" : subject || "Maths";
+}
+
+function filterChaptersForSubject(subject: PaperRequest["subject"], chapters: string[]) {
+  const normalized = subject.toLowerCase();
+  const groups: Record<string, string[]> = {
+    physics: [
+      "Light Reflection And Refraction",
+      "The Human Eye And The Colourful World",
+      "Electricity",
+      "Magnetic Effects Of Electric Current",
+    ],
+    chemistry: [
+      "Chemical Reactions And Equations",
+      "Acids Bases And Salts",
+      "Metals And Non-Metals",
+      "Carbon And Its Compounds",
+    ],
+    biology: [
+      "Life Processes",
+      "Control And Coordination",
+      "How Do Organisms Reproduce",
+      "Heredity",
+      "Our Environment",
+    ],
+  };
+
+  const allowed = groups[normalized];
+  if (!allowed) return chapters;
+
+  const chapterSet = new Set(chapters.map((chapter) => chapter.toLowerCase()));
+  return allowed.filter((chapter) => chapterSet.has(chapter.toLowerCase()));
+}
+
 function messageForRun(status: string) {
   if (status === "queued") return "Generation queued";
   if (status === "running") return "Generating paper variants";
@@ -488,7 +524,7 @@ function toBackendRequest(request: PaperRequest) {
   return {
     board: request.board,
     class_level: request.classLevel,
-    subject: request.subject,
+    subject: sourceSubjectFor(request.subject),
     chapter: request.chapter,
     chapter_scope: request.chapterScope,
     chapters: request.chapters,
@@ -570,6 +606,7 @@ function normalizeQuestion(questionRecord: Record<string, unknown>): PaperQuesti
     topic: questionRecord.topic ? String(questionRecord.topic) : undefined,
     tags: Array.isArray(questionRecord.tags) ? questionRecord.tags.map(String) : undefined,
     sourceCitations: Array.isArray(sourceCitations) ? sourceCitations.map(String) : undefined,
+    subparts: normalizeSubparts(questionRecord.subparts ?? questionRecord.sub_parts),
     optionalChoice:
       optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
         ? {
@@ -600,6 +637,36 @@ function normalizeQuestion(questionRecord: Record<string, unknown>): PaperQuesti
     answer: String(questionRecord.answer ?? ""),
     answerRichText: String(questionRecord.answerRichText ?? questionRecord.answer_rich_text ?? ""),
   };
+}
+
+function normalizeSubparts(value: unknown): PaperQuestion["subparts"] {
+  if (!Array.isArray(value)) return undefined;
+
+  return value.map((item, index) => {
+    const record = asRecord(item);
+    const optionalChoice = asRecord(record.optionalChoice ?? record.optional_choice);
+
+    return {
+      id: String(record.id ?? crypto.randomUUID()),
+      label: record.label ? String(record.label) : String.fromCharCode(97 + index),
+      text: String(record.text ?? ""),
+      richText: record.richText || record.rich_text ? String(record.richText ?? record.rich_text) : undefined,
+      marks: record.marks === undefined ? undefined : Number(record.marks),
+      answer: record.answer ? String(record.answer) : undefined,
+      answerRichText: record.answerRichText || record.answer_rich_text ? String(record.answerRichText ?? record.answer_rich_text) : undefined,
+      optionalChoice:
+        optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
+          ? {
+              id: optionalChoice.id ? String(optionalChoice.id) : undefined,
+              text: String(optionalChoice.text ?? ""),
+              richText: optionalChoice.richText || optionalChoice.rich_text ? String(optionalChoice.richText ?? optionalChoice.rich_text) : undefined,
+              marks: optionalChoice.marks === undefined ? undefined : Number(optionalChoice.marks),
+              answer: optionalChoice.answer ? String(optionalChoice.answer) : undefined,
+              answerRichText: optionalChoice.answerRichText || optionalChoice.answer_rich_text ? String(optionalChoice.answerRichText ?? optionalChoice.answer_rich_text) : undefined,
+            }
+          : undefined,
+    };
+  });
 }
 
 function toBackendPaper(paper: Paper) {

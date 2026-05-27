@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -47,6 +47,13 @@ export function RichTextEditor({
   minHeight = "normal",
   placeholder = "Write here...",
 }: RichTextEditorProps) {
+  const [activeFormulaId, setActiveFormulaId] = useState<string | null>(null);
+  const [formulaValues, setFormulaValues] = useState<Record<string, string>>({});
+  const activeFormula = useMemo(
+    () => formulaSnippets.flatMap((group) => group.items).find((item) => item.id === activeFormulaId),
+    [activeFormulaId],
+  );
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -100,84 +107,97 @@ export function RichTextEditor({
   return (
     <div className="rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white">
       <div className="flex flex-wrap items-center gap-1 border-b border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-1">
-        <ToolbarButton
-          active={editor.isActive("bold")}
-          label="Bold"
-          onClick={() => editor.chain().focus().toggleBold().run()}
-        >
-          <Bold size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive("italic")}
-          label="Italic"
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-        >
-          <Italic size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive("underline")}
-          label="Underline"
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-        >
-          <UnderlineIcon size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive("superscript")}
-          label="Superscript"
-          onClick={() => editor.chain().focus().toggleSuperscript().run()}
-        >
-          <SuperscriptIcon size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive("subscript")}
-          label="Subscript"
-          onClick={() => editor.chain().focus().toggleSubscript().run()}
-        >
-          <SubscriptIcon size={15} />
-        </ToolbarButton>
-        <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
-        <ToolbarButton
-          active={editor.isActive("bulletList")}
-          label="Bullet list"
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-        >
-          <List size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive("orderedList")}
-          label="Numbered list"
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        >
-          <ListOrdered size={15} />
-        </ToolbarButton>
-        <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
-        <ToolbarButton
-          active={editor.isActive({ textAlign: "left" })}
-          label="Align left"
-          onClick={() => editor.chain().focus().setTextAlign("left").run()}
-        >
-          <AlignLeft size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive({ textAlign: "center" })}
-          label="Align center"
-          onClick={() => editor.chain().focus().setTextAlign("center").run()}
-        >
-          <AlignCenter size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive("paragraph")}
-          label="Paragraph"
-          onClick={() => editor.chain().focus().setParagraph().run()}
-        >
-          <Pilcrow size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          label="Insert formula"
-          onClick={() => editor.chain().focus().insertContent("$x^2 + bx + c = 0$").run()}
-        >
-          <Sigma size={15} />
-        </ToolbarButton>
+        {activeFormula ? (
+          <FormulaBuilder
+            formula={activeFormula}
+            values={formulaValues}
+            onCancel={() => {
+              setActiveFormulaId(null);
+              setFormulaValues({});
+            }}
+            onChange={(key, value) => setFormulaValues((current) => ({ ...current, [key]: value }))}
+            onInsert={() => {
+              editor.chain().focus().insertContent(activeFormula.build(formulaValues)).run();
+              setActiveFormulaId(null);
+              setFormulaValues({});
+            }}
+          />
+        ) : (
+          <>
+            <ToolbarButton
+              active={editor.isActive("bold")}
+              label="Bold"
+              onClick={() => editor.chain().focus().toggleBold().run()}
+            >
+              <Bold size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive("italic")}
+              label="Italic"
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+            >
+              <Italic size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive("underline")}
+              label="Underline"
+              onClick={() => editor.chain().focus().toggleUnderline().run()}
+            >
+              <UnderlineIcon size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive("superscript")}
+              label="Superscript"
+              onClick={() => editor.chain().focus().toggleSuperscript().run()}
+            >
+              <SuperscriptIcon size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive("subscript")}
+              label="Subscript"
+              onClick={() => editor.chain().focus().toggleSubscript().run()}
+            >
+              <SubscriptIcon size={15} />
+            </ToolbarButton>
+            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
+            <ToolbarButton
+              active={editor.isActive("bulletList")}
+              label="Bullet list"
+              onClick={() => editor.chain().focus().toggleBulletList().run()}
+            >
+              <List size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive("orderedList")}
+              label="Numbered list"
+              onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            >
+              <ListOrdered size={15} />
+            </ToolbarButton>
+            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
+            <ToolbarButton
+              active={editor.isActive({ textAlign: "left" })}
+              label="Align left"
+              onClick={() => editor.chain().focus().setTextAlign("left").run()}
+            >
+              <AlignLeft size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive({ textAlign: "center" })}
+              label="Align center"
+              onClick={() => editor.chain().focus().setTextAlign("center").run()}
+            >
+              <AlignCenter size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive("paragraph")}
+              label="Paragraph"
+              onClick={() => editor.chain().focus().setParagraph().run()}
+            >
+              <Pilcrow size={15} />
+            </ToolbarButton>
+          </>
+        )}
         <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)] hover:bg-white">
           <Sigma size={14} />
           <span>Math</span>
@@ -187,15 +207,19 @@ export function RichTextEditor({
             defaultValue=""
             onChange={(event) => {
               const value = event.target.value;
-              if (value) editor.chain().focus().insertContent(value).run();
+              if (value) {
+                setActiveFormulaId(value);
+                const formula = formulaSnippets.flatMap((group) => group.items).find((item) => item.id === value);
+                setFormulaValues(formula ? Object.fromEntries(formula.fields.map((field) => [field.key, field.defaultValue])) : {});
+              }
               event.currentTarget.value = "";
             }}
           >
             <option value="">Insert...</option>
-            {mathSnippets.map((group) => (
+            {formulaSnippets.map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.items.map((item) => (
-                  <option key={item.label} value={item.value}>
+                  <option key={item.id} value={item.id}>
                     {item.label}
                   </option>
                 ))}
@@ -251,45 +275,203 @@ function ToolbarButton({ active = false, children, label, onClick }: ToolbarButt
   );
 }
 
-const mathSnippets = [
+interface FormulaField {
+  key: string;
+  label: string;
+  defaultValue: string;
+}
+
+interface FormulaSnippet {
+  id: string;
+  label: string;
+  fields: FormulaField[];
+  build: (values: Record<string, string>) => string;
+}
+
+interface FormulaBuilderProps {
+  formula: FormulaSnippet;
+  values: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+  onCancel: () => void;
+  onInsert: () => void;
+}
+
+function FormulaBuilder({ formula, values, onChange, onCancel, onInsert }: FormulaBuilderProps) {
+  const preview = formula.build(values);
+
+  return (
+    <div className="flex min-h-8 flex-1 flex-wrap items-center gap-2 rounded-md border border-[var(--primary-container)] bg-white px-2 py-1">
+      <span className="inline-flex items-center gap-1 text-xs font-black text-[var(--primary)]">
+        <Sigma size={14} />
+        {formula.label}
+      </span>
+      {formula.fields.map((field) => (
+        <label key={field.key} className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--on-surface-variant)]">
+          <span>{field.label}</span>
+          <input
+            aria-label={`${formula.label} ${field.label}`}
+            className="h-7 w-14 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-2 text-xs text-[var(--on-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+            value={values[field.key] ?? field.defaultValue}
+            onChange={(event) => onChange(field.key, event.target.value)}
+          />
+        </label>
+      ))}
+      <code className="rounded bg-[var(--surface-container-low)] px-2 py-1 text-[11px] font-bold text-[var(--on-surface)]">{preview}</code>
+      <button className="rounded bg-[var(--primary)] px-2 py-1 text-xs font-black text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]" onClick={onInsert} type="button">
+        Insert
+      </button>
+      <button className="rounded px-2 py-1 text-xs font-black text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]" onClick={onCancel} type="button">
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+const getValue = (values: Record<string, string>, key: string, fallback: string) => values[key]?.trim() || fallback;
+
+const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
   {
     label: "Algebra",
     items: [
-      { label: "Quadratic", value: "$ax^2 + bx + c = 0$" },
-      { label: "Formula", value: "$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$" },
-      { label: "Linear pair", value: "$a_1x + b_1y + c_1 = 0,\\ a_2x + b_2y + c_2 = 0$" },
-      { label: "Ratio", value: "$\\frac{a_1}{a_2} = \\frac{b_1}{b_2} \\ne \\frac{c_1}{c_2}$" },
-      { label: "AP nth term", value: "$a_n = a + (n - 1)d$" },
-      { label: "AP sum", value: "$S_n = \\frac{n}{2}[2a + (n - 1)d]$" },
+      {
+        id: "quadratic",
+        label: "Quadratic",
+        fields: [
+          { key: "a", label: "a", defaultValue: "a" },
+          { key: "b", label: "b", defaultValue: "b" },
+          { key: "c", label: "c", defaultValue: "c" },
+          { key: "x", label: "var", defaultValue: "x" },
+          { key: "rhs", label: "rhs", defaultValue: "0" },
+        ],
+        build: (values) => `$${getValue(values, "a", "a")}${getValue(values, "x", "x")}^2 + ${getValue(values, "b", "b")}${getValue(values, "x", "x")} + ${getValue(values, "c", "c")} = ${getValue(values, "rhs", "0")}$`,
+      },
+      {
+        id: "quadratic-formula",
+        label: "Formula",
+        fields: [
+          { key: "a", label: "a", defaultValue: "a" },
+          { key: "b", label: "b", defaultValue: "b" },
+          { key: "c", label: "c", defaultValue: "c" },
+          { key: "x", label: "var", defaultValue: "x" },
+        ],
+        build: (values) => `$${getValue(values, "x", "x")} = \\frac{-${getValue(values, "b", "b")} \\pm \\sqrt{${getValue(values, "b", "b")}^2 - 4${getValue(values, "a", "a")}${getValue(values, "c", "c")}}}{2${getValue(values, "a", "a")}}$`,
+      },
+      {
+        id: "linear-pair",
+        label: "Linear pair",
+        fields: [
+          { key: "a1", label: "a1", defaultValue: "a_1" },
+          { key: "b1", label: "b1", defaultValue: "b_1" },
+          { key: "c1", label: "c1", defaultValue: "c_1" },
+          { key: "a2", label: "a2", defaultValue: "a_2" },
+          { key: "b2", label: "b2", defaultValue: "b_2" },
+          { key: "c2", label: "c2", defaultValue: "c_2" },
+        ],
+        build: (values) => `$${getValue(values, "a1", "a_1")}x + ${getValue(values, "b1", "b_1")}y + ${getValue(values, "c1", "c_1")} = 0,\\ ${getValue(values, "a2", "a_2")}x + ${getValue(values, "b2", "b_2")}y + ${getValue(values, "c2", "c_2")} = 0$`,
+      },
+      {
+        id: "ap-nth",
+        label: "AP nth term",
+        fields: [
+          { key: "an", label: "term", defaultValue: "a_n" },
+          { key: "a", label: "a", defaultValue: "a" },
+          { key: "n", label: "n", defaultValue: "n" },
+          { key: "d", label: "d", defaultValue: "d" },
+        ],
+        build: (values) => `$${getValue(values, "an", "a_n")} = ${getValue(values, "a", "a")} + (${getValue(values, "n", "n")} - 1)${getValue(values, "d", "d")}$`,
+      },
     ],
   },
   {
     label: "Geometry",
     items: [
-      { label: "Similarity", value: "$\\triangle ABC \\sim \\triangle PQR$" },
-      { label: "Pythagoras", value: "$AB^2 + BC^2 = AC^2$" },
-      { label: "Circle area", value: "$A = \\pi r^2$" },
-      { label: "Sector area", value: "$\\frac{\\theta}{360^\\circ}\\pi r^2$" },
-      { label: "Volume cylinder", value: "$V = \\pi r^2h$" },
+      {
+        id: "pythagoras",
+        label: "Pythagoras",
+        fields: [
+          { key: "a", label: "side 1", defaultValue: "AB" },
+          { key: "b", label: "side 2", defaultValue: "BC" },
+          { key: "c", label: "hyp", defaultValue: "AC" },
+        ],
+        build: (values) => `$${getValue(values, "a", "AB")}^2 + ${getValue(values, "b", "BC")}^2 = ${getValue(values, "c", "AC")}^2$`,
+      },
+      {
+        id: "circle-area",
+        label: "Circle area",
+        fields: [
+          { key: "area", label: "area", defaultValue: "A" },
+          { key: "r", label: "r", defaultValue: "r" },
+        ],
+        build: (values) => `$${getValue(values, "area", "A")} = \\pi ${getValue(values, "r", "r")}^2$`,
+      },
+      {
+        id: "sector-area",
+        label: "Sector area",
+        fields: [
+          { key: "theta", label: "theta", defaultValue: "\\theta" },
+          { key: "r", label: "r", defaultValue: "r" },
+        ],
+        build: (values) => `$\\frac{${getValue(values, "theta", "\\theta")}}{360^\\circ}\\pi ${getValue(values, "r", "r")}^2$`,
+      },
     ],
   },
   {
     label: "Stats",
     items: [
-      { label: "Mean", value: "$\\bar{x} = \\frac{\\sum f_i x_i}{\\sum f_i}$" },
-      { label: "Median", value: "$\\text{Median} = l + \\frac{\\frac{N}{2} - cf}{f} \\times h$" },
-      { label: "Probability", value: "$P(E)=\\frac{\\text{favourable outcomes}}{\\text{total outcomes}}$" },
+      {
+        id: "mean",
+        label: "Mean",
+        fields: [
+          { key: "x", label: "mean", defaultValue: "\\bar{x}" },
+          { key: "f", label: "freq", defaultValue: "f_i" },
+          { key: "xi", label: "value", defaultValue: "x_i" },
+        ],
+        build: (values) => `$${getValue(values, "x", "\\bar{x}")} = \\frac{\\sum ${getValue(values, "f", "f_i")} ${getValue(values, "xi", "x_i")}}{\\sum ${getValue(values, "f", "f_i")}}$`,
+      },
+      {
+        id: "probability",
+        label: "Probability",
+        fields: [
+          { key: "event", label: "event", defaultValue: "E" },
+          { key: "fav", label: "fav", defaultValue: "\\text{favourable outcomes}" },
+          { key: "total", label: "total", defaultValue: "\\text{total outcomes}" },
+        ],
+        build: (values) => `$P(${getValue(values, "event", "E")})=\\frac{${getValue(values, "fav", "\\text{favourable outcomes}")}}{${getValue(values, "total", "\\text{total outcomes}")}}$`,
+      },
     ],
   },
   {
     label: "Science",
     items: [
-      { label: "Chemical equation", value: "$\\mathrm{Reactants \\rightarrow Products}$" },
-      { label: "Balanced equation", value: "$\\mathrm{2H_2 + O_2 \\rightarrow 2H_2O}$" },
-      { label: "Ohm law", value: "$V = IR$" },
-      { label: "Power", value: "$P = VI = I^2R$" },
-      { label: "Lens formula", value: "$\\frac{1}{v} - \\frac{1}{u} = \\frac{1}{f}$" },
-      { label: "Magnification", value: "$m = \\frac{h'}{h} = \\frac{v}{u}$" },
+      {
+        id: "chemical-equation",
+        label: "Chemical equation",
+        fields: [
+          { key: "reactants", label: "reactants", defaultValue: "Reactants" },
+          { key: "products", label: "products", defaultValue: "Products" },
+        ],
+        build: (values) => `$\\mathrm{${getValue(values, "reactants", "Reactants")} \\rightarrow ${getValue(values, "products", "Products")}}$`,
+      },
+      {
+        id: "ohm-law",
+        label: "Ohm law",
+        fields: [
+          { key: "v", label: "V", defaultValue: "V" },
+          { key: "i", label: "I", defaultValue: "I" },
+          { key: "r", label: "R", defaultValue: "R" },
+        ],
+        build: (values) => `$${getValue(values, "v", "V")} = ${getValue(values, "i", "I")}${getValue(values, "r", "R")}$`,
+      },
+      {
+        id: "lens-formula",
+        label: "Lens formula",
+        fields: [
+          { key: "v", label: "v", defaultValue: "v" },
+          { key: "u", label: "u", defaultValue: "u" },
+          { key: "f", label: "f", defaultValue: "f" },
+        ],
+        build: (values) => `$\\frac{1}{${getValue(values, "v", "v")}} - \\frac{1}{${getValue(values, "u", "u")}} = \\frac{1}{${getValue(values, "f", "f")}}$`,
+      },
     ],
   },
 ];
