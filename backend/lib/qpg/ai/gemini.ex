@@ -174,6 +174,7 @@ defmodule Qpg.AI.Gemini do
     with {:ok, response} <- gemini_loop(model, payload),
          {:ok, json} <- extract_json(response),
          {:ok, normalized} <- normalize_generation_json(json, request),
+         {:ok, normalized} <- repair_generation_totals(normalized, request),
          :ok <- validate_generation(normalized, request) do
       normalized = normalize_single_variant_identity(normalized, variant_index)
 
@@ -591,6 +592,7 @@ defmodule Qpg.AI.Gemini do
   defp retryable_generation_error?({:invalid_gemini_json, _metadata}), do: true
   defp retryable_generation_error?({:incomplete_gemini_json, _finish_reason}), do: true
   defp retryable_generation_error?({:gemini_connection_closed, _message}), do: true
+  defp retryable_generation_error?({:generation_marks_mismatch, _metadata}), do: true
 
   defp retryable_generation_error?(%Finch.TransportError{} = reason),
     do: retryable_transport_error?(reason)
@@ -966,7 +968,7 @@ defmodule Qpg.AI.Gemini do
 
   defp normalize_summary(summary, sections) do
     questions = Enum.flat_map(sections, & &1["questions"])
-    total_marks = Enum.reduce(questions, 0, &(&2 + int_value(&1["marks"], 0)))
+    total_marks = sum_question_marks(questions)
 
     %{
       "total_marks" => int_value(summary["total_marks"], total_marks),
@@ -1031,6 +1033,121 @@ defmodule Qpg.AI.Gemini do
     |> String.replace(~r/^\s*\(?[A-D]\)?[.)]?\s*/i, "")
   end
 
+  defp repair_generation_totals(%{"variants" => variants} = normalized, request) do
+    target_marks = int_value(request["total_marks"], 0)
+
+    repaired_variants = Enum.map(variants, &repair_variant_total(&1, target_marks))
+    repaired = %{normalized | "variants" => repaired_variants}
+
+    mismatch =
+      Enum.find(repaired_variants, fn variant ->
+        get_in(variant, ["summary", "total_marks"]) != target_marks
+      end)
+
+    if mismatch do
+      actual = get_in(mismatch, ["summary", "total_marks"])
+      {:error, {:generation_marks_mismatch, %{expected: target_marks, actual: actual}}}
+    else
+      {:ok, repaired}
+    end
+  end
+
+  defp repair_generation_totals(normalized, _request), do: {:ok, normalized}
+
+  defp repair_variant_total(variant, target_marks) when is_map(variant) and target_marks > 0 do
+    sections = List.wrap(variant["sections"])
+    actual_marks = sections_total_marks(sections)
+    delta = target_marks - actual_marks
+
+    repaired_sections =
+      cond do
+        delta == 0 -> sections
+        delta > 0 -> add_marks_to_last_question(sections, delta)
+        delta < 0 -> remove_marks_from_questions(sections, abs(delta))
+      end
+
+    repaired_total = sections_total_marks(repaired_sections)
+    question_count = repaired_sections |> Enum.flat_map(&List.wrap(&1["questions"])) |> length()
+
+    variant
+    |> Map.put("sections", repaired_sections)
+    |> Map.put(
+      "summary",
+      (variant["summary"] || %{})
+      |> Map.put("total_marks", repaired_total)
+      |> Map.put("question_count", question_count)
+    )
+    |> append_warning_if(
+      delta != 0,
+      "Adjusted question marks by #{delta} to match requested total #{target_marks}."
+    )
+  end
+
+  defp repair_variant_total(variant, _target_marks), do: variant
+
+  defp add_marks_to_last_question(sections, delta) do
+    {sections, _remaining} =
+      sections
+      |> Enum.reverse()
+      |> Enum.map_reduce(delta, fn section, remaining ->
+        questions = List.wrap(section["questions"])
+
+        if remaining > 0 and questions != [] do
+          {updated_questions, updated_remaining} =
+            add_marks_to_last_in_questions(questions, remaining)
+
+          {Map.put(section, "questions", updated_questions), updated_remaining}
+        else
+          {section, remaining}
+        end
+      end)
+
+    Enum.reverse(sections)
+  end
+
+  defp add_marks_to_last_in_questions(questions, delta) do
+    [last | rest_reversed] = Enum.reverse(questions)
+    updated = Map.put(last, "marks", int_value(last["marks"], 1) + delta)
+    {Enum.reverse([updated | rest_reversed]), 0}
+  end
+
+  defp remove_marks_from_questions(sections, delta) do
+    {sections, _remaining} =
+      Enum.map_reduce(sections, delta, fn section, remaining ->
+        {questions, next_remaining} =
+          reduce_question_marks(List.wrap(section["questions"]), remaining)
+
+        {Map.put(section, "questions", questions), next_remaining}
+      end)
+
+    sections
+  end
+
+  defp reduce_question_marks(questions, remaining) do
+    Enum.map_reduce(questions, remaining, fn question, marks_to_remove ->
+      current_marks = int_value(question["marks"], 1)
+      removable = max(current_marks - 1, 0)
+      remove = min(removable, marks_to_remove)
+      {Map.put(question, "marks", current_marks - remove), marks_to_remove - remove}
+    end)
+  end
+
+  defp sections_total_marks(sections) do
+    sections
+    |> Enum.flat_map(&List.wrap(&1["questions"]))
+    |> sum_question_marks()
+  end
+
+  defp sum_question_marks(questions) do
+    Enum.reduce(questions, 0, &(&2 + int_value(&1["marks"], 0)))
+  end
+
+  defp append_warning_if(variant, false, _warning), do: variant
+
+  defp append_warning_if(variant, true, warning) do
+    Map.update(variant, "warnings", [warning], fn warnings -> List.wrap(warnings) ++ [warning] end)
+  end
+
   defp validate_generation(%{"variants" => variants}, request) do
     target_marks = int_value(request["total_marks"], 0)
     target_variants = int_value(request["variant_count"], 1)
@@ -1046,7 +1163,12 @@ defmodule Qpg.AI.Gemini do
         {:error, :generation_returned_no_sections}
 
       Enum.any?(variants, &(get_in(&1, ["summary", "total_marks"]) != target_marks)) ->
-        {:error, :generation_marks_mismatch}
+        mismatch =
+          Enum.find(variants, &(get_in(&1, ["summary", "total_marks"]) != target_marks))
+
+        {:error,
+         {:generation_marks_mismatch,
+          %{expected: target_marks, actual: get_in(mismatch, ["summary", "total_marks"])}}}
 
       true ->
         :ok
