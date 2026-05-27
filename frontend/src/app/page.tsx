@@ -1767,11 +1767,16 @@ function normalizeVersionPayload(payload: Record<string, unknown>, paperId?: str
 function normalizeQuestion(record: Record<string, unknown>): PaperQuestion {
   const optionalChoice = asRecord(record.optionalChoice ?? record.optional_choice);
   const sourceCitations = record.sourceCitations ?? record.source_citations;
+  const rawText = String(record.text ?? "");
+  const providedOptions = normalizeQuestionOptions(record.options);
+  const extractedOptions = providedOptions.length > 0 ? providedOptions : extractInlineOptions(rawText);
+  const text = extractedOptions.length > 0 && providedOptions.length === 0 ? stripInlineOptions(rawText) : rawText;
 
   return {
     id: String(record.id ?? crypto.randomUUID()),
-    text: String(record.text ?? ""),
+    text,
     richText: String(record.richText ?? record.rich_text ?? ""),
+    options: extractedOptions.length > 0 ? extractedOptions : undefined,
     marks: Number(record.marks ?? 0),
     type: String(record.type ?? record.question_type ?? ""),
     difficulty: String(record.difficulty ?? ""),
@@ -1799,6 +1804,38 @@ function normalizeQuestion(record: Record<string, unknown>): PaperQuestion {
     answer: String(record.answer ?? ""),
     answerRichText: String(record.answerRichText ?? record.answer_rich_text ?? ""),
   };
+}
+
+function normalizeQuestionOptions(value: unknown): NonNullable<PaperQuestion["options"]> {
+  if (!Array.isArray(value)) return [];
+
+  return value.map((item, index) => {
+    const record = asRecord(item);
+    return {
+      id: stringOrUndefined(record.id),
+      label: stringOrUndefined(record.label) ?? String.fromCharCode(65 + index),
+      text: String(record.text ?? record.value ?? item ?? ""),
+      richText: stringOrUndefined(record.richText ?? record.rich_text),
+      isCorrect: Boolean(record.isCorrect ?? record.is_correct ?? false),
+    };
+  });
+}
+
+function extractInlineOptions(text: string): NonNullable<PaperQuestion["options"]> {
+  const pattern = /(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*(.*?)(?=\s+(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*|$)/giu;
+  const matches = Array.from(text.matchAll(pattern));
+  if (matches.length < 2) return [];
+
+  return matches.map((match) => ({
+    id: crypto.randomUUID(),
+    label: match[1],
+    text: match[2].trim(),
+  }));
+}
+
+function stripInlineOptions(text: string) {
+  const firstOption = text.search(/\s(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*/iu);
+  return firstOption >= 0 ? text.slice(0, firstOption).trim() : text;
 }
 
 function normalizeSubparts(value: unknown): PaperQuestion["subparts"] {

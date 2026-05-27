@@ -749,7 +749,8 @@ defmodule Qpg.AI.Gemini do
 
       %{
         "id" => safe_text(question["id"], "q#{index}"),
-        "text" => question_text(stem, options),
+        "text" => safe_text(stem, ""),
+        "options" => normalize_options(options),
         "marks" => int_value(question["marks"], 1),
         "type" => safe_text(question["type"] || question["question_type"], ""),
         "difficulty" => safe_text(question["difficulty"], ""),
@@ -761,6 +762,20 @@ defmodule Qpg.AI.Gemini do
   end
 
   defp normalize_questions(_questions), do: []
+
+  defp normalize_options(options) when is_list(options) do
+    options
+    |> Enum.with_index(?A)
+    |> Enum.map(fn {option, label} ->
+      %{
+        "label" => <<label::utf8>>,
+        "text" => option_text(option)
+      }
+    end)
+    |> Enum.reject(&(&1["text"] == ""))
+  end
+
+  defp normalize_options(_options), do: []
 
   defp normalize_imported_question(question, request) when is_map(question) do
     %{
@@ -777,35 +792,6 @@ defmodule Qpg.AI.Gemini do
         safe_text(question["answerRichText"] || question["answer_rich_text"], ""),
       "tags" => List.wrap(question["tags"])
     }
-  end
-
-  defp question_text(text, options) when is_binary(text) and is_list(options) do
-    cond do
-      options == [] ->
-        text
-
-      Regex.match?(~r/(^|\n)\s*(?:\(?A\)?[.)]|A\.)\s+/i, text) ->
-        text
-
-      true ->
-        append_options(text, options)
-    end
-  end
-
-  defp question_text(text, []), do: safe_text(text, "")
-
-  defp question_text(text, options), do: append_options(safe_text(text, ""), options)
-
-  defp append_options(text, options) do
-    option_lines =
-      options
-      |> Enum.with_index(?A)
-      |> Enum.map(fn {option, label} -> "#{<<label::utf8>>}. #{option_text(option)}" end)
-      |> Enum.join("\n")
-
-    [text, option_lines]
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.join("\n")
   end
 
   defp normalize_summary(summary, sections) do

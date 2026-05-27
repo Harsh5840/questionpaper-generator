@@ -95,10 +95,13 @@ export function RichTextEditor({
     const nextContent = editorContent(value, htmlValue);
     const currentText = documentToPlainText(editor.getJSON()).trim();
 
-    if (editor.getHTML() !== nextContent && currentText !== value.trim()) {
+    if (editor.getHTML() !== nextContent) {
       editor.commands.setContent(nextContent, { emitUpdate: false });
+      const upgradedText = documentToPlainText(editor.getJSON()).trim();
+      if (upgradedText !== currentText) onChange(upgradedText);
+      onHtmlChange?.(editor.getHTML());
     }
-  }, [editor, htmlValue, value]);
+  }, [editor, htmlValue, onChange, onHtmlChange, value]);
 
   if (!editor) {
     return (
@@ -713,7 +716,7 @@ function renderImplicitMath(value: string) {
 function renderVisualScripts(value: string) {
   return value
     .replace(/\(([A-Za-z0-9\s+\-−–*/=.,]+)\)([23])(?=\b|[^A-Za-z0-9])/g, "($1)<sup>$2</sup>")
-    .replace(/\b([a-z])([23])\b/g, "$1<sup>$2</sup>")
+    .replace(/([a-z])([23])(?=\b|[^A-Za-z0-9])/g, "$1<sup>$2</sup>")
     .replace(/\b([A-Z][a-z]?)(\d+)(?=[A-Z]|$)/g, "$1<sub>$2</sub>");
 }
 

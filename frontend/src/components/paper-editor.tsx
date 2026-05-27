@@ -88,6 +88,21 @@ export function PaperEditor({
     }));
   };
 
+  const updateQuestionOption = (
+    sectionId: string,
+    questionId: string,
+    optionIndex: number,
+    patch: Partial<NonNullable<PaperQuestion["options"]>[number]>,
+  ) => {
+    const section = paper.sections.find((item) => item.id === sectionId);
+    const question = section?.questions.find((item) => item.id === questionId);
+    const options = question?.options ?? [];
+
+    updateQuestion(sectionId, questionId, {
+      options: options.map((option, index) => (index === optionIndex ? { ...option, ...patch } : option)),
+    });
+  };
+
   const deleteQuestion = (sectionId: string, questionId: string) => {
     updatePaper((current) => ({
       ...current,
@@ -533,6 +548,30 @@ export function PaperEditor({
                             onChange={(text) => updateQuestion(section.id, question.id, { text })}
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
+
+                          {question.options && question.options.length > 0 && (
+                            <div className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
+                              {question.options.map((option, optionIndex) => (
+                                <div key={option.id ?? `${question.id}-option-${optionIndex}`} className="grid grid-cols-[44px_1fr] gap-2">
+                                  <input
+                                    aria-label={`Question ${questionNumber} option ${optionIndex + 1} label`}
+                                    className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-center text-xs font-black text-slate-700"
+                                    value={option.label ?? String.fromCharCode(65 + optionIndex)}
+                                    onChange={(event) => updateQuestionOption(section.id, question.id, optionIndex, { label: event.target.value })}
+                                  />
+                                  <RichTextEditor
+                                    label={`Question ${questionNumber} option ${option.label ?? optionIndex + 1}`}
+                                    minHeight="compact"
+                                    placeholder="Write option..."
+                                    value={option.text}
+                                    htmlValue={option.richText}
+                                    onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
+                                    onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           {question.subparts && question.subparts.length > 0 && (
                             <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">

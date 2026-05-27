@@ -594,11 +594,16 @@ function normalizeQuestion(questionRecord: Record<string, unknown>): PaperQuesti
   const optionalChoice = asRecord(questionRecord.optionalChoice ?? questionRecord.optional_choice);
   const sourceCitations = questionRecord.sourceCitations ?? questionRecord.source_citations;
   const imageAssets = questionRecord.imageAssets ?? questionRecord.image_assets;
+  const rawText = String(questionRecord.text ?? "");
+  const providedOptions = normalizeQuestionOptions(questionRecord.options);
+  const extractedOptions = providedOptions.length > 0 ? providedOptions : extractInlineOptions(rawText);
+  const text = extractedOptions.length > 0 && providedOptions.length === 0 ? stripInlineOptions(rawText) : rawText;
 
   return {
     id: String(questionRecord.id ?? crypto.randomUUID()),
-    text: String(questionRecord.text ?? ""),
+    text,
     richText: String(questionRecord.richText ?? questionRecord.rich_text ?? ""),
+    options: extractedOptions.length > 0 ? extractedOptions : undefined,
     marks: Number(questionRecord.marks ?? 0),
     type: String(questionRecord.type ?? questionRecord.question_type ?? ""),
     difficulty: String(questionRecord.difficulty ?? ""),
@@ -637,6 +642,38 @@ function normalizeQuestion(questionRecord: Record<string, unknown>): PaperQuesti
     answer: String(questionRecord.answer ?? ""),
     answerRichText: String(questionRecord.answerRichText ?? questionRecord.answer_rich_text ?? ""),
   };
+}
+
+function normalizeQuestionOptions(value: unknown): NonNullable<PaperQuestion["options"]> {
+  if (!Array.isArray(value)) return [];
+
+  return value.map((item, index) => {
+    const record = asRecord(item);
+    return {
+      id: record.id ? String(record.id) : undefined,
+      label: record.label ? String(record.label) : String.fromCharCode(65 + index),
+      text: String(record.text ?? record.value ?? item ?? ""),
+      richText: record.richText || record.rich_text ? String(record.richText ?? record.rich_text) : undefined,
+      isCorrect: Boolean(record.isCorrect ?? record.is_correct ?? false),
+    };
+  });
+}
+
+function extractInlineOptions(text: string): NonNullable<PaperQuestion["options"]> {
+  const pattern = /(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*(.*?)(?=\s+(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*|$)/giu;
+  const matches = Array.from(text.matchAll(pattern));
+  if (matches.length < 2) return [];
+
+  return matches.map((match) => ({
+    id: crypto.randomUUID(),
+    label: match[1],
+    text: match[2].trim(),
+  }));
+}
+
+function stripInlineOptions(text: string) {
+  const firstOption = text.search(/\s(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*/iu);
+  return firstOption >= 0 ? text.slice(0, firstOption).trim() : text;
 }
 
 function normalizeSubparts(value: unknown): PaperQuestion["subparts"] {

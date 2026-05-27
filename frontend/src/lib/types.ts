@@ -43,6 +43,7 @@ export type PaperQuestion = {
   id: string;
   text: string;
   richText?: string;
+  options?: PaperQuestionOption[];
   marks: number;
   type: string;
   difficulty: string;
@@ -72,6 +73,14 @@ export type PaperQuestion = {
   }[];
   answer: string;
   answerRichText?: string;
+};
+
+export type PaperQuestionOption = {
+  id?: string;
+  label?: string;
+  text: string;
+  richText?: string;
+  isCorrect?: boolean;
 };
 
 export type PaperSubpart = {
