@@ -68,6 +68,8 @@ defmodule Qpg.Papers do
     # Every accepted AI edit and manual editor save becomes a new immutable
     # version. These logs let us trace whether the UI save button actually
     # reached the backend and what version number was assigned.
+    payload = normalize_payload_inline_options(payload)
+
     Logging.info("papers.version.create.started", %{
       paper_id: paper.id,
       change_source: change_source,
@@ -212,6 +214,81 @@ defmodule Qpg.Papers do
   end
 
   defp sync_version_structure!(_paper, _version, _payload), do: :ok
+
+  defp normalize_payload_inline_options(payload) when is_map(payload) do
+    Map.update(payload, "sections", [], fn sections ->
+      sections
+      |> List.wrap()
+      |> Enum.map(fn section ->
+        if is_map(section) do
+          Map.update(section, "questions", [], fn questions ->
+            questions
+            |> List.wrap()
+            |> Enum.map(&normalize_question_inline_options/1)
+          end)
+        else
+          section
+        end
+      end)
+    end)
+  end
+
+  defp normalize_payload_inline_options(payload), do: payload
+
+  defp normalize_question_inline_options(question) when is_map(question) do
+    provided_options = question |> value(["options"], []) |> List.wrap()
+
+    if provided_options == [] do
+      case split_inline_options(value(question, ["text"], "")) do
+        nil ->
+          question
+
+        %{stem: stem, options: options} ->
+          question
+          |> Map.put("text", stem)
+          |> Map.put("richText", "")
+          |> Map.put("options", options)
+      end
+    else
+      question
+    end
+    |> Map.update("subparts", [], fn subparts ->
+      subparts
+      |> List.wrap()
+      |> Enum.map(&normalize_question_inline_options/1)
+    end)
+    |> Map.update("optionalChoice", nil, fn
+      choice when is_map(choice) -> normalize_question_inline_options(choice)
+      choice -> choice
+    end)
+  end
+
+  defp normalize_question_inline_options(question), do: question
+
+  defp split_inline_options(text) when is_binary(text) do
+    options = extract_inline_options(text)
+
+    if length(options) < 2 do
+      nil
+    else
+      first =
+        Regex.run(
+          ~r/(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*/iu,
+          text,
+          return: :index
+        )
+
+      case first do
+        [{start, _length} | _] ->
+          %{stem: text |> String.slice(0, start) |> String.trim(), options: options}
+
+        _ ->
+          nil
+      end
+    end
+  end
+
+  defp split_inline_options(_text), do: nil
 
   defp insert_section!(paper, version, section_payload, position) do
     %PaperSection{}

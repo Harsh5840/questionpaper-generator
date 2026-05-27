@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Copy,
   GripVertical,
@@ -45,6 +45,13 @@ export function PaperEditor({
   const [replacingChoices, setReplacingChoices] = useState<Record<string, boolean>>({});
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
+
+  useEffect(() => {
+    if (!paper) return;
+
+    const normalized = normalizeInlineOptionsInPaper(paper);
+    if (normalized !== paper) onPaperChange(recalculatePaper(normalized));
+  }, [onPaperChange, paper]);
 
   if (!paper) {
     return (
@@ -822,6 +829,51 @@ export function PaperEditor({
       </div>
     </article>
   );
+}
+
+function normalizeInlineOptionsInPaper(paper: Paper): Paper {
+  let changed = false;
+
+  const sections = paper.sections.map((section) => ({
+    ...section,
+    questions: section.questions.map((question) => {
+      if (question.options && question.options.length > 0) return question;
+
+      const split = splitInlineOptions(question.text);
+      if (!split) return question;
+
+      changed = true;
+      return {
+        ...question,
+        text: split.stem,
+        richText: "",
+        options: split.options,
+      };
+    }),
+  }));
+
+  return changed ? { ...paper, sections } : paper;
+}
+
+function splitInlineOptions(text: string) {
+  const matches = Array.from(text.matchAll(/(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*/giu));
+  if (matches.length < 2) return null;
+
+  const firstIndex = matches[0].index ?? 0;
+  const stem = text.slice(0, firstIndex).trim();
+  const options = matches.map((match, index) => {
+    const start = (match.index ?? 0) + match[0].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index ?? text.length : text.length;
+
+    return {
+      id: crypto.randomUUID(),
+      label: match[1],
+      text: text.slice(start, end).trim(),
+      richText: "",
+    };
+  });
+
+  return { stem, options };
 }
 
 function templateToneFor(templateName: string) {
