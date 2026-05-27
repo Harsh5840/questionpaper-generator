@@ -672,26 +672,36 @@ function renderParagraph(value: string) {
 }
 
 function renderInlineContent(value: string) {
+  const separatedValue = separateOptionEntries(value);
   const parts: string[] = [];
   const mathPattern = /\$\$([^$]+)\$\$|\$([^$\n]+)\$/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = mathPattern.exec(value)) !== null) {
-    parts.push(renderImplicitMath(value.slice(cursor, match.index)));
+  while ((match = mathPattern.exec(separatedValue)) !== null) {
+    parts.push(renderImplicitMath(separatedValue.slice(cursor, match.index)));
     parts.push(renderMathNode(match[1] ?? match[2] ?? ""));
     cursor = match.index + match[0].length;
   }
 
-  parts.push(renderImplicitMath(value.slice(cursor)));
+  parts.push(renderImplicitMath(separatedValue.slice(cursor)));
   return parts.join("");
+}
+
+function separateOptionEntries(value: string) {
+  const optionMarker = /\s+(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*/gi;
+  const matches = Array.from(value.matchAll(optionMarker));
+
+  if (matches.length < 2) return value;
+
+  return value.replace(optionMarker, "<br>$1 ");
 }
 
 function renderImplicitMath(value: string) {
   if (!value) return "";
   if (isMostlyFormula(value)) return renderMathNode(value.trim());
 
-  return renderVisualScripts(escapeHtml(value))
+  return renderVisualScripts(escapeHtml(value).replaceAll("&lt;br&gt;", "<br>"))
     .replace(/\\frac\{[^{}]+\}\{[^{}]+\}/g, (match) => renderMathNode(unescapeHtml(match)))
     .replace(/\\sqrt\{[^{}]+\}/g, (match) => renderMathNode(unescapeHtml(match)))
     .replace(/\\(?:sin|cos|tan|theta|pi|triangle|rho|sum|bar|mathrm|text)(?:\{[^{}]*\})?(?:\^\{?[\w+\-]+\}?)?(?:\s+[A-Za-z0-9_\\{}^'+\-]+)?/g, (match) =>

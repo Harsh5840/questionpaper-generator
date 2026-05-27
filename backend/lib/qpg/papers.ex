@@ -315,9 +315,16 @@ defmodule Qpg.Papers do
   end
 
   defp insert_options!(%PaperQuestion{} = question, question_payload) do
-    question_payload
-    |> value(["options"], [])
-    |> List.wrap()
+    options =
+      question_payload
+      |> value(["options"], [])
+      |> List.wrap()
+      |> case do
+        [] -> extract_inline_options(value(question_payload, ["text"], ""))
+        provided_options -> provided_options
+      end
+
+    options
     |> Enum.with_index(1)
     |> Enum.each(fn {option_payload, position} ->
       option = option_map(option_payload, position)
@@ -349,6 +356,26 @@ defmodule Qpg.Papers do
   end
 
   defp option_label(position), do: <<64 + position::utf8>>
+
+  defp extract_inline_options(text) when is_binary(text) do
+    option_pattern =
+      ~r/(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*(.*?)(?=\s+(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*|$)/iu
+
+    matches = Regex.scan(option_pattern, text)
+
+    if length(matches) < 2 do
+      []
+    else
+      Enum.map(matches, fn [_full, label, option_text] ->
+        %{
+          "label" => String.trim(label),
+          "text" => String.trim(option_text)
+        }
+      end)
+    end
+  end
+
+  defp extract_inline_options(_text), do: []
 
   defp value(map, keys, default) when is_map(map) do
     Enum.find_value(keys, default, fn key ->
