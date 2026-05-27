@@ -32,6 +32,7 @@ import {
 
 interface RichTextEditorProps {
   value: string;
+  htmlValue?: string;
   onChange: (value: string) => void;
   onHtmlChange?: (value: string) => void;
   label: string;
@@ -41,6 +42,7 @@ interface RichTextEditorProps {
 
 export function RichTextEditor({
   value,
+  htmlValue,
   onChange,
   onHtmlChange,
   label,
@@ -82,7 +84,7 @@ export function RichTextEditor({
       },
     },
     onUpdate({ editor: activeEditor }) {
-      onChange(activeEditor.getText({ blockSeparator: "\n" }).trim());
+      onChange(documentToPlainText(activeEditor.getJSON()).trim());
       onHtmlChange?.(activeEditor.getHTML());
     },
   });
@@ -90,11 +92,13 @@ export function RichTextEditor({
   useEffect(() => {
     if (!editor) return;
 
-    const currentText = editor.getText({ blockSeparator: "\n" }).trim();
-    if (currentText !== value.trim()) {
-      editor.commands.setContent(textToHtml(value), { emitUpdate: false });
+    const nextContent = htmlValue?.trim() ? htmlValue : textToHtml(value);
+    const currentText = documentToPlainText(editor.getJSON()).trim();
+
+    if (editor.getHTML() !== nextContent && currentText !== value.trim()) {
+      editor.commands.setContent(nextContent, { emitUpdate: false });
     }
-  }, [editor, value]);
+  }, [editor, htmlValue, value]);
 
   if (!editor) {
     return (
@@ -117,7 +121,7 @@ export function RichTextEditor({
             }}
             onChange={(key, value) => setFormulaValues((current) => ({ ...current, [key]: value }))}
             onInsert={() => {
-              editor.chain().focus().insertContent(activeFormula.build(formulaValues)).run();
+              editor.chain().focus().insertInlineMath({ latex: activeFormula.build(formulaValues) }).run();
               setActiveFormulaId(null);
               setFormulaValues({});
             }}
@@ -200,36 +204,43 @@ export function RichTextEditor({
         )}
         {!activeFormula && (
           <>
-            <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)] hover:bg-white">
-              <Sigma size={14} />
-              <span>Math</span>
-              <select
-                aria-label="Insert math or science notation"
-                className="max-w-28 bg-transparent text-xs font-bold outline-none"
-                defaultValue=""
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (value) {
-                    setActiveFormulaId(value);
-                    const formula = formulaSnippets.flatMap((group) => group.items).find((item) => item.id === value);
-                    setFormulaValues(formula ? Object.fromEntries(formula.fields.map((field) => [field.key, field.defaultValue])) : {});
-                  }
-                  event.currentTarget.value = "";
-                }}
-              >
-                <option value="">Insert...</option>
-                {formulaSnippets.map((group) => (
-                  <optgroup key={group.label} label={group.label}>
-                    {group.items.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <ChevronDown size={13} />
-            </label>
+            {/*
+              Math snippet dropdown is paused for now. LaTeX still renders from
+              pasted/generated text, and the hidden builder code stays nearby so
+              we can bring it back once the UX is redesigned.
+            */}
+            {false && (
+              <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)] hover:bg-white">
+                <Sigma size={14} />
+                <span>Math</span>
+                <select
+                  aria-label="Insert math or science notation"
+                  className="max-w-28 bg-transparent text-xs font-bold outline-none"
+                  defaultValue=""
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value) {
+                      setActiveFormulaId(value);
+                      const formula = formulaSnippets.flatMap((group) => group.items).find((item) => item.id === value);
+                      setFormulaValues(formula ? Object.fromEntries(formula.fields.map((field) => [field.key, field.defaultValue])) : {});
+                    }
+                    event.currentTarget.value = "";
+                  }}
+                >
+                  <option value="">Insert...</option>
+                  {formulaSnippets.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.items.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <ChevronDown size={13} />
+              </label>
+            )}
             <label className="inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-semibold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)]">
               <span className="sr-only">Text color</span>
               <input
@@ -630,14 +641,98 @@ const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
 ];
 
 function textToHtml(value: string) {
+  if (value.trim().startsWith("<")) return value;
+
   return value
     .split(/\n{2,}/)
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replaceAll("\n", "<br>") || "<br>"}</p>`)
+    .map((paragraph) => `<p>${renderParagraph(paragraph) || "<br>"}</p>`)
     .join("");
+}
+
+function renderParagraph(value: string) {
+  return value
+    .split("\n")
+    .map((line) => renderInlineContent(line))
+    .join("<br>");
+}
+
+function renderInlineContent(value: string) {
+  const parts: string[] = [];
+  const mathPattern = /\$\$([^$]+)\$\$|\$([^$\n]+)\$/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = mathPattern.exec(value)) !== null) {
+    parts.push(renderImplicitMath(value.slice(cursor, match.index)));
+    parts.push(renderMathNode(match[1] ?? match[2] ?? ""));
+    cursor = match.index + match[0].length;
+  }
+
+  parts.push(renderImplicitMath(value.slice(cursor)));
+  return parts.join("");
+}
+
+function renderImplicitMath(value: string) {
+  if (!value) return "";
+  if (isMostlyFormula(value)) return renderMathNode(value.trim());
+
+  return escapeHtml(value)
+    .replace(/\\frac\{[^{}]+\}\{[^{}]+\}/g, (match) => renderMathNode(unescapeHtml(match)))
+    .replace(/\\sqrt\{[^{}]+\}/g, (match) => renderMathNode(unescapeHtml(match)))
+    .replace(/\\(?:sin|cos|tan|theta|pi|triangle|rho|sum|bar|mathrm|text)(?:\{[^{}]*\})?(?:\^\{?[\w+\-]+\}?)?(?:\s+[A-Za-z0-9_\\{}^'+\-]+)?/g, (match) =>
+      renderMathNode(unescapeHtml(match)),
+    )
+    .replace(/[A-Za-z0-9)]+(?:\^\{?[\w+\-]+\}?|_\{?[\w+\-]+\}?)+/g, (match) => renderMathNode(unescapeHtml(match)));
+}
+
+function isMostlyFormula(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  const hasMathSignal = /\\|[_^=]|[+\-*/]|π|√|∑|≤|≥|≠|→/.test(trimmed);
+  if (!hasMathSignal) return false;
+
+  const words = trimmed.match(/[A-Za-z]{4,}/g) ?? [];
+  const formulaCharacters = trimmed.replace(/[A-Za-z0-9_\\{}()[\]\s+\-*/=.,^'π√∑≤≥≠→]/g, "");
+
+  return formulaCharacters.length === 0 && words.length <= 2;
+}
+
+function renderMathNode(latex: string) {
+  const normalized = latex.trim();
+  if (!normalized) return "";
+
+  return `<span data-type="inline-math" data-latex="${escapeAttribute(normalized)}"></span>`;
+}
+
+interface RichTextJsonNode {
+  type?: string;
+  text?: string;
+  attrs?: Record<string, unknown>;
+  content?: RichTextJsonNode[];
+}
+
+function documentToPlainText(node: RichTextJsonNode | null | undefined): string {
+  if (!node) return "";
+  if (node.type === "text") return node.text ?? "";
+  if (node.type === "hardBreak") return "\n";
+  if (node.type === "inlineMath" || node.type === "blockMath") return String(node.attrs?.latex ?? "");
+
+  const children = node.content?.map(documentToPlainText).join("") ?? "";
+  if (["paragraph", "heading", "listItem"].includes(node.type ?? "")) return `${children}\n`;
+  return children;
 }
 
 function escapeHtml(value: string) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function escapeAttribute(value: string) {
+  return escapeHtml(value).replaceAll("'", "&#39;");
+}
+
+function unescapeHtml(value: string) {
+  return value.replaceAll("&quot;", '"').replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
 }
 
 function heightClass(height: RichTextEditorProps["minHeight"]) {

@@ -466,6 +466,25 @@ button:disabled {
   margin-top: 0.25rem;
 }
 
+.rich-text-surface .tiptap-mathematics-render {
+  display: inline-flex;
+  min-height: 1.2em;
+  align-items: center;
+  vertical-align: -0.12em;
+}
+
+.rich-text-surface .tiptap-mathematics-render--editable {
+  cursor: text;
+}
+
+.rich-text-surface .inline-math-error,
+.rich-text-surface .block-math-error {
+  border-radius: 0.2rem;
+  background: #fee2e2;
+  color: #991b1b;
+  font-family: var(--font-mono), Consolas, monospace;
+}
+
 .rich-text-surface .is-editor-empty:first-child::before {
   color: var(--outline);
   content: attr(data-placeholder);

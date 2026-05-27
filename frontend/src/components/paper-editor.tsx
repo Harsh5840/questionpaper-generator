@@ -529,6 +529,7 @@ export function PaperEditor({
                             minHeight="normal"
                             placeholder="Write the question..."
                             value={question.text}
+                            htmlValue={question.richText}
                             onChange={(text) => updateQuestion(section.id, question.id, { text })}
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
@@ -560,6 +561,7 @@ export function PaperEditor({
                                     minHeight="compact"
                                     placeholder="Write this subpart..."
                                     value={subpart.text}
+                                    htmlValue={subpart.richText}
                                     onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
                                     onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
                                   />
@@ -576,6 +578,7 @@ export function PaperEditor({
                                         minHeight="compact"
                                         placeholder="Write the OR alternative for this subpart..."
                                         value={subpart.optionalChoice.text}
+                                        htmlValue={subpart.optionalChoice.richText}
                                         onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
                                         onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
                                       />
@@ -597,6 +600,7 @@ export function PaperEditor({
                                     minHeight="compact"
                                     placeholder="Write the internal choice..."
                                     value={question.optionalChoice.text}
+                                    htmlValue={question.optionalChoice.richText}
                                     onChange={(text) => updateInternalChoice(section.id, question.id, { text })}
                                     onHtmlChange={(richText) => updateInternalChoice(section.id, question.id, { richText })}
                                   />
@@ -642,6 +646,7 @@ export function PaperEditor({
                                       minHeight="answer"
                                       placeholder="Write OR answer / marking scheme..."
                                       value={question.optionalChoice.answer ?? ""}
+                                      htmlValue={question.optionalChoice.answerRichText}
                                       onChange={(answer) => updateInternalChoice(section.id, question.id, { answer })}
                                       onHtmlChange={(answerRichText) => updateInternalChoice(section.id, question.id, { answerRichText })}
                                     />
@@ -730,6 +735,7 @@ export function PaperEditor({
                               minHeight="answer"
                               placeholder="Write answer / marking scheme..."
                               value={question.answer}
+                              htmlValue={question.answerRichText}
                               onChange={(answer) => updateQuestion(section.id, question.id, { answer })}
                               onHtmlChange={(answerRichText) => updateQuestion(section.id, question.id, { answerRichText })}
                             />
