@@ -76,7 +76,7 @@ export function RichTextEditor({
         placeholder,
       }),
     ],
-    content: textToHtml(value),
+    content: editorContent(value, htmlValue),
     editorProps: {
       attributes: {
         "aria-label": label,
@@ -92,7 +92,7 @@ export function RichTextEditor({
   useEffect(() => {
     if (!editor) return;
 
-    const nextContent = htmlValue?.trim() ? htmlValue : textToHtml(value);
+    const nextContent = editorContent(value, htmlValue);
     const currentText = documentToPlainText(editor.getJSON()).trim();
 
     if (editor.getHTML() !== nextContent && currentText !== value.trim()) {
@@ -649,6 +649,21 @@ function textToHtml(value: string) {
     .join("");
 }
 
+function editorContent(value: string, htmlValue?: string) {
+  const content = htmlValue?.trim() ? htmlValue : textToHtml(value);
+  return enhanceMathMarkup(content);
+}
+
+function enhanceMathMarkup(html: string) {
+  return html
+    .split(/(<[^>]+>)/g)
+    .map((part) => {
+      if (!part || part.startsWith("<")) return part;
+      return renderInlineContent(unescapeHtml(part));
+    })
+    .join("");
+}
+
 function renderParagraph(value: string) {
   return value
     .split("\n")
@@ -676,13 +691,20 @@ function renderImplicitMath(value: string) {
   if (!value) return "";
   if (isMostlyFormula(value)) return renderMathNode(value.trim());
 
-  return escapeHtml(value)
+  return renderVisualScripts(escapeHtml(value))
     .replace(/\\frac\{[^{}]+\}\{[^{}]+\}/g, (match) => renderMathNode(unescapeHtml(match)))
     .replace(/\\sqrt\{[^{}]+\}/g, (match) => renderMathNode(unescapeHtml(match)))
     .replace(/\\(?:sin|cos|tan|theta|pi|triangle|rho|sum|bar|mathrm|text)(?:\{[^{}]*\})?(?:\^\{?[\w+\-]+\}?)?(?:\s+[A-Za-z0-9_\\{}^'+\-]+)?/g, (match) =>
       renderMathNode(unescapeHtml(match)),
     )
     .replace(/[A-Za-z0-9)]+(?:\^\{?[\w+\-]+\}?|_\{?[\w+\-]+\}?)+/g, (match) => renderMathNode(unescapeHtml(match)));
+}
+
+function renderVisualScripts(value: string) {
+  return value
+    .replace(/\(([A-Za-z0-9\s+\-−–*/=.,]+)\)([23])(?=\b|[^A-Za-z0-9])/g, "($1)<sup>$2</sup>")
+    .replace(/\b([a-z])([23])\b/g, "$1<sup>$2</sup>")
+    .replace(/\b([A-Z][a-z]?)(\d+)(?=[A-Z]|$)/g, "$1<sub>$2</sub>");
 }
 
 function isMostlyFormula(value: string) {

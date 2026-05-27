@@ -12,6 +12,8 @@ defmodule Qpg.Papers.PaperVersion do
     field(:marks_total, :integer)
 
     belongs_to(:paper, Qpg.Papers.Paper)
+    has_many(:sections, Qpg.Papers.PaperSection)
+    has_many(:questions, Qpg.Papers.PaperQuestion)
 
     timestamps(type: :utc_datetime)
   end

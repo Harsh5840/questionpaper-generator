@@ -14,6 +14,8 @@ defmodule Qpg.Papers.Paper do
     field(:source_mode, :string)
 
     has_many(:versions, Qpg.Papers.PaperVersion)
+    has_many(:sections, Qpg.Papers.PaperSection)
+    has_many(:questions, Qpg.Papers.PaperQuestion)
 
     timestamps(type: :utc_datetime)
   end
