@@ -22,6 +22,7 @@ defmodule QpgWeb.Router do
     get("/generation-runs/:id", GenerationRunController, :show)
     get("/generation-runs/:id/usage", GenerationRunController, :usage)
     get("/papers", PaperController, :index)
+    get("/papers/:id/structured", PaperController, :structured)
     get("/papers/:id", PaperController, :show)
     delete("/papers/:id", PaperController, :delete)
     post("/papers/:id/versions", PaperVersionController, :create)

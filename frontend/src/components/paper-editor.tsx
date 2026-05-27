@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Copy,
   GripVertical,
@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { DocumentStyle, Paper, PaperQuestion, PaperSection, PaperSubpart } from "@/lib/types";
+import { normalizePaperStructure } from "@/lib/normalize-paper-structure";
 import { RichTextEditor } from "./rich-text-editor";
 
 interface PaperEditorProps {
@@ -46,13 +47,6 @@ export function PaperEditor({
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
 
-  useEffect(() => {
-    if (!paper) return;
-
-    const normalized = normalizeInlineOptionsInPaper(paper);
-    if (normalized !== paper) onPaperChange(recalculatePaper(normalized));
-  }, [onPaperChange, paper]);
-
   if (!paper) {
     return (
       <div
@@ -71,7 +65,7 @@ export function PaperEditor({
   }
 
   const updatePaper = (updater: (current: Paper) => Paper) => {
-    onPaperChange(recalculatePaper(updater(paper)));
+    onPaperChange(recalculatePaper(normalizePaperStructure(updater(paper))));
   };
 
   const updateSection = (sectionId: string, patch: Partial<PaperSection>) => {
@@ -107,6 +101,29 @@ export function PaperEditor({
 
     updateQuestion(sectionId, questionId, {
       options: options.map((option, index) => (index === optionIndex ? { ...option, ...patch } : option)),
+    });
+  };
+
+  const deleteQuestionOption = (sectionId: string, questionId: string, optionIndex: number) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.options ?? [];
+    updateQuestion(sectionId, questionId, {
+      options: options.filter((_option, index) => index !== optionIndex).map((option, index) => ({ ...option, label: option.label || String.fromCharCode(65 + index) })),
+    });
+  };
+
+  const duplicateQuestionOption = (sectionId: string, questionId: string, optionIndex: number) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.options ?? [];
+    const option = options[optionIndex];
+    if (!option) return;
+
+    updateQuestion(sectionId, questionId, {
+      options: [
+        ...options.slice(0, optionIndex + 1),
+        { ...option, id: crypto.randomUUID(), label: String.fromCharCode(65 + optionIndex + 1) },
+        ...options.slice(optionIndex + 1),
+      ].map((item, index) => ({ ...item, label: item.label && /^[([]?[ivx]+[)]?$/i.test(item.label) ? item.label : String.fromCharCode(65 + index) })),
     });
   };
 
@@ -218,7 +235,7 @@ export function PaperEditor({
         ...subparts,
         {
           id: crypto.randomUUID(),
-          label: String.fromCharCode(97 + subparts.length),
+          label: nextSubpartLabel(subparts),
           text: "",
           richText: "",
           marks: 1,
@@ -244,6 +261,51 @@ export function PaperEditor({
     updateQuestion(sectionId, questionId, {
       subparts: question.subparts
         .filter((subpart) => subpart.id !== subpartId)
+        .map((subpart, index) => ({ ...subpart, label: String.fromCharCode(97 + index) })),
+    });
+  };
+
+  const duplicateSubpart = (sectionId: string, questionId: string, subpartId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    if (!question?.subparts) return;
+    const sourceIndex = question.subparts.findIndex((subpart) => subpart.id === subpartId);
+    const source = question.subparts[sourceIndex];
+    if (!source) return;
+
+    updateQuestion(sectionId, questionId, {
+      subparts: [
+        ...question.subparts.slice(0, sourceIndex + 1),
+        { ...source, id: crypto.randomUUID(), optionalChoice: source.optionalChoice ? { ...source.optionalChoice, id: crypto.randomUUID() } : undefined },
+        ...question.subparts.slice(sourceIndex + 1),
+      ].map((subpart, index) => ({ ...subpart, label: String.fromCharCode(97 + index) })),
+    });
+  };
+
+  const moveSubpartToChoice = (sectionId: string, questionId: string, sourceSubpartId: string, targetSubpartId: string) => {
+    if (sourceSubpartId === targetSubpartId) return;
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    if (!question?.subparts) return;
+    const source = question.subparts.find((subpart) => subpart.id === sourceSubpartId);
+    if (!source) return;
+
+    updateQuestion(sectionId, questionId, {
+      subparts: question.subparts
+        .filter((subpart) => subpart.id !== sourceSubpartId)
+        .map((subpart) =>
+          subpart.id === targetSubpartId
+            ? {
+                ...subpart,
+                optionalChoice: {
+                  id: crypto.randomUUID(),
+                  text: source.text,
+                  richText: source.richText,
+                  marks: source.marks,
+                  answer: source.answer,
+                  answerRichText: source.answerRichText,
+                },
+              }
+            : subpart,
+        )
         .map((subpart, index) => ({ ...subpart, label: String.fromCharCode(97 + index) })),
     });
   };
@@ -559,7 +621,7 @@ export function PaperEditor({
                           {question.options && question.options.length > 0 && (
                             <div className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
                               {question.options.map((option, optionIndex) => (
-                                <div key={option.id ?? `${question.id}-option-${optionIndex}`} className="grid grid-cols-[44px_1fr] gap-2">
+                                <div key={option.id ?? `${question.id}-option-${optionIndex}`} className="group/option grid grid-cols-[44px_1fr_auto] gap-2">
                                   <input
                                     aria-label={`Question ${questionNumber} option ${optionIndex + 1} label`}
                                     className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-center text-xs font-black text-slate-700"
@@ -575,6 +637,11 @@ export function PaperEditor({
                                     onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
                                     onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
                                   />
+                                  <TextBlockActions
+                                    className="opacity-100 lg:opacity-0 lg:group-hover/option:opacity-100"
+                                    onDuplicate={() => duplicateQuestionOption(section.id, question.id, optionIndex)}
+                                    onDelete={() => deleteQuestionOption(section.id, question.id, optionIndex)}
+                                  />
                                 </div>
                               ))}
                             </div>
@@ -583,7 +650,7 @@ export function PaperEditor({
                           {question.subparts && question.subparts.length > 0 && (
                             <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
                               {question.subparts.map((subpart) => (
-                                <div key={subpart.id} className="rounded-md border border-slate-200 bg-white p-2">
+                                <div key={subpart.id} className="group/subpart rounded-md border border-slate-200 bg-white p-2">
                                   <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
                                     <span className="rounded bg-slate-100 px-2 py-1 font-black text-slate-800">({subpart.label})</span>
                                     <input
@@ -598,19 +665,46 @@ export function PaperEditor({
                                     <button className="editor-mini-button" onClick={() => addSubpartChoice(section.id, question.id, subpart.id)} type="button">
                                       OR in part
                                     </button>
+                                    <select
+                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                      defaultValue=""
+                                      title="Move this part into another part's OR slot"
+                                      onChange={(event) => {
+                                        const targetSubpartId = event.target.value;
+                                        if (targetSubpartId) moveSubpartToChoice(section.id, question.id, subpart.id, targetSubpartId);
+                                        event.currentTarget.value = "";
+                                      }}
+                                    >
+                                      <option value="">Move to part OR...</option>
+                                      {(question.subparts ?? [])
+                                        .filter((target) => target.id !== subpart.id)
+                                        .map((target) => (
+                                          <option key={target.id} value={target.id}>
+                                            ({target.label})
+                                          </option>
+                                        ))}
+                                    </select>
                                     <button className="editor-mini-button text-red-600" onClick={() => deleteSubpart(section.id, question.id, subpart.id)} type="button">
                                       Delete part
                                     </button>
                                   </div>
-                                  <RichTextEditor
-                                    label={`Question ${questionNumber} subpart ${subpart.label}`}
-                                    minHeight="compact"
-                                    placeholder="Write this subpart..."
-                                    value={subpart.text}
-                                    htmlValue={subpart.richText}
-                                    onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
-                                    onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
-                                  />
+                                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                                    <RichTextEditor
+                                      label={`Question ${questionNumber} subpart ${subpart.label}`}
+                                      minHeight="compact"
+                                      placeholder="Write this subpart..."
+                                      value={subpart.text}
+                                      htmlValue={subpart.richText}
+                                      onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
+                                      onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
+                                    />
+                                    <TextBlockActions
+                                      className="opacity-100 lg:opacity-0 lg:group-hover/subpart:opacity-100"
+                                      onDuplicate={() => duplicateSubpart(section.id, question.id, subpart.id)}
+                                      onAddChoice={() => addSubpartChoice(section.id, question.id, subpart.id)}
+                                      onDelete={() => deleteSubpart(section.id, question.id, subpart.id)}
+                                    />
+                                  </div>
                                   {subpart.optionalChoice && (
                                     <div className="mt-2 rounded-md border border-dashed border-blue-200 bg-blue-50/60 p-2">
                                       <div className="mb-2 flex items-center justify-between text-xs font-black text-blue-700">
@@ -619,15 +713,20 @@ export function PaperEditor({
                                           Remove OR
                                         </button>
                                       </div>
-                                      <RichTextEditor
-                                        label={`Question ${questionNumber} subpart ${subpart.label} OR`}
-                                        minHeight="compact"
-                                        placeholder="Write the OR alternative for this subpart..."
-                                        value={subpart.optionalChoice.text}
-                                        htmlValue={subpart.optionalChoice.richText}
-                                        onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
-                                        onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
-                                      />
+                                      <div className="grid grid-cols-[1fr_auto] gap-2">
+                                        <RichTextEditor
+                                          label={`Question ${questionNumber} subpart ${subpart.label} OR`}
+                                          minHeight="compact"
+                                          placeholder="Write the OR alternative for this subpart..."
+                                          value={subpart.optionalChoice.text}
+                                          htmlValue={subpart.optionalChoice.richText}
+                                          onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
+                                          onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
+                                        />
+                                        <TextBlockActions
+                                          onDelete={() => removeSubpartChoice(section.id, question.id, subpart.id)}
+                                        />
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -698,23 +797,15 @@ export function PaperEditor({
                                     />
                                   )}
                                 </div>
-                                <div className="flex shrink-0 flex-col gap-1 opacity-100 lg:opacity-0 lg:transition lg:group-hover/choice:opacity-100">
-                                  <button className="editor-icon-button" disabled={isChoiceReplacing} title="Replace OR with AI" onClick={() => void replaceInternalChoice(section.id, question.id, questionNumber)} type="button">
-                                    <RefreshCcw className={isChoiceReplacing ? "animate-spin" : ""} size={15} />
-                                  </button>
-                                  <button className="editor-icon-button" title="Duplicate OR into a normal question" onClick={() => duplicateOptionalChoiceAsQuestion(section.id, question.id)} type="button">
-                                    <Copy size={15} />
-                                  </button>
-                                  <button className="editor-icon-button" title="Show OR answer" onClick={() => setExpandedAnswers((current) => ({ ...current, [`${question.id}:choice`]: !(current[`${question.id}:choice`] ?? false) }))} type="button">
-                                    A
-                                  </button>
-                                  <button className="editor-icon-button" title="Save OR to question bank" onClick={() => onSaveQuestionToBank(choiceToQuestion(question))} type="button">
-                                    <Save size={15} />
-                                  </button>
-                                  <button className="editor-icon-button text-red-600 hover:bg-red-50" title="Remove OR" onClick={() => removeInternalChoice(section.id, question.id)} type="button">
-                                    <Trash2 size={15} />
-                                  </button>
-                                </div>
+                                <TextBlockActions
+                                  className="opacity-100 lg:opacity-0 lg:group-hover/choice:opacity-100"
+                                  isReplacing={isChoiceReplacing}
+                                  onReplace={() => void replaceInternalChoice(section.id, question.id, questionNumber)}
+                                  onDuplicate={() => duplicateOptionalChoiceAsQuestion(section.id, question.id)}
+                                  onAnswer={() => setExpandedAnswers((current) => ({ ...current, [`${question.id}:choice`]: !(current[`${question.id}:choice`] ?? false) }))}
+                                  onSave={() => onSaveQuestionToBank(choiceToQuestion(question))}
+                                  onDelete={() => removeInternalChoice(section.id, question.id)}
+                                />
                               </div>
                             </div>
                           )}
@@ -788,29 +879,17 @@ export function PaperEditor({
                           )}
                         </div>
 
-                        <div className="flex shrink-0 flex-col gap-1 opacity-100 lg:opacity-0 lg:transition lg:group-hover:opacity-100">
-                          <button className="editor-icon-button" disabled={isReplacing} title="Replace with AI" onClick={() => void replaceQuestion(section.id, question.id, questionNumber)} type="button">
-                            <RefreshCcw className={isReplacing ? "animate-spin" : ""} size={15} />
-                          </button>
-                          <button className="editor-icon-button" title="Duplicate" onClick={() => duplicateQuestion(section.id, question.id)} type="button">
-                            <Copy size={15} />
-                          </button>
-                          <button className="editor-icon-button" title="Add internal choice" onClick={() => addInternalChoice(section.id, question.id)} type="button">
-                            OR
-                          </button>
-                          <button className="editor-icon-button" title="Add subpart" onClick={() => addSubpart(section.id, question.id)} type="button">
-                            (a)
-                          </button>
-                          <button className="editor-icon-button" title="Show answer" onClick={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))} type="button">
-                            A
-                          </button>
-                          <button className="editor-icon-button" title="Save to question bank" onClick={() => onSaveQuestionToBank(question)} type="button">
-                            <Save size={15} />
-                          </button>
-                          <button className="editor-icon-button text-red-600 hover:bg-red-50" title="Delete" onClick={() => deleteQuestion(section.id, question.id)} type="button">
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                        <TextBlockActions
+                          className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+                          isReplacing={isReplacing}
+                          onReplace={() => void replaceQuestion(section.id, question.id, questionNumber)}
+                          onDuplicate={() => duplicateQuestion(section.id, question.id)}
+                          onAddChoice={() => addInternalChoice(section.id, question.id)}
+                          onAddSubpart={() => addSubpart(section.id, question.id)}
+                          onAnswer={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))}
+                          onSave={() => onSaveQuestionToBank(question)}
+                          onDelete={() => deleteQuestion(section.id, question.id)}
+                        />
                       </div>
                       {isReplacing && (
                         <div className="pointer-events-none absolute inset-0 rounded-lg border border-blue-300 bg-blue-50/55">
@@ -831,49 +910,77 @@ export function PaperEditor({
   );
 }
 
-function normalizeInlineOptionsInPaper(paper: Paper): Paper {
-  let changed = false;
-
-  const sections = paper.sections.map((section) => ({
-    ...section,
-    questions: section.questions.map((question) => {
-      if (question.options && question.options.length > 0) return question;
-
-      const split = splitInlineOptions(question.text);
-      if (!split) return question;
-
-      changed = true;
-      return {
-        ...question,
-        text: split.stem,
-        richText: "",
-        options: split.options,
-      };
-    }),
-  }));
-
-  return changed ? { ...paper, sections } : paper;
+interface TextBlockActionsProps {
+  className?: string;
+  isReplacing?: boolean;
+  onReplace?: () => void;
+  onDuplicate?: () => void;
+  onAddChoice?: () => void;
+  onAddSubpart?: () => void;
+  onAnswer?: () => void;
+  onSave?: () => void;
+  onDelete?: () => void;
 }
 
-function splitInlineOptions(text: string) {
-  const matches = Array.from(text.matchAll(/(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*/giu));
-  if (matches.length < 2) return null;
+function TextBlockActions({
+  className = "",
+  isReplacing = false,
+  onReplace,
+  onDuplicate,
+  onAddChoice,
+  onAddSubpart,
+  onAnswer,
+  onSave,
+  onDelete,
+}: TextBlockActionsProps) {
+  return (
+    <div className={`flex shrink-0 flex-col gap-1 transition ${className}`}>
+      {onReplace && (
+        <button className="editor-icon-button" disabled={isReplacing} title="Replace with AI" onClick={onReplace} type="button">
+          <RefreshCcw className={isReplacing ? "animate-spin" : ""} size={15} />
+        </button>
+      )}
+      {onDuplicate && (
+        <button className="editor-icon-button" title="Duplicate" onClick={onDuplicate} type="button">
+          <Copy size={15} />
+        </button>
+      )}
+      {onAddChoice && (
+        <button className="editor-icon-button" title="Add internal choice" onClick={onAddChoice} type="button">
+          OR
+        </button>
+      )}
+      {onAddSubpart && (
+        <button className="editor-icon-button" title="Add subpart" onClick={onAddSubpart} type="button">
+          (a)
+        </button>
+      )}
+      {onAnswer && (
+        <button className="editor-icon-button" title="Show answer" onClick={onAnswer} type="button">
+          A
+        </button>
+      )}
+      {onSave && (
+        <button className="editor-icon-button" title="Save to question bank" onClick={onSave} type="button">
+          <Save size={15} />
+        </button>
+      )}
+      {onDelete && (
+        <button className="editor-icon-button text-red-600 hover:bg-red-50" title="Delete" onClick={onDelete} type="button">
+          <Trash2 size={15} />
+        </button>
+      )}
+    </div>
+  );
+}
 
-  const firstIndex = matches[0].index ?? 0;
-  const stem = text.slice(0, firstIndex).trim();
-  const options = matches.map((match, index) => {
-    const start = (match.index ?? 0) + match[0].length;
-    const end = index + 1 < matches.length ? matches[index + 1].index ?? text.length : text.length;
-
-    return {
-      id: crypto.randomUUID(),
-      label: match[1],
-      text: text.slice(start, end).trim(),
-      richText: "",
-    };
-  });
-
-  return { stem, options };
+function nextSubpartLabel(subparts: PaperSubpart[]) {
+  const used = new Set(subparts.map((subpart) => subpart.label));
+  for (let index = 0; index < 26; index += 1) {
+    const label = String.fromCharCode(97 + index);
+    if (!used.has(label)) return label;
+  }
+  return String.fromCharCode(97 + subparts.length);
 }
 
 function templateToneFor(templateName: string) {

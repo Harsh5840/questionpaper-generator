@@ -33,6 +33,7 @@ import {
   fetchUsageViaApi,
   generateViaApi,
   getPaperViaApi,
+  getStructuredPaperViaApi,
   importQuestionFromImageViaApi,
   importQuestionFromSourceViaApi,
   refineViaApi,
@@ -40,6 +41,7 @@ import {
   saveVersionViaApi,
 } from "@/lib/api";
 import { defaultRequest, requestFromPrompt } from "@/lib/request-defaults";
+import { normalizePaperStructure, normalizeRawQuestion, richTextFromText } from "@/lib/normalize-paper-structure";
 import {
   AiUsageSummary,
   DashboardSummary,
@@ -253,15 +255,16 @@ export default function Home() {
   }
 
   async function loadPaperFromLibrary(paperId: string) {
-    const paper = await getPaperViaApi(paperId);
-    const latestVersion = paper?.versions?.[0];
+    const structured = await getStructuredPaperViaApi(paperId);
+    const paper = structured?.paper ? null : await getPaperViaApi(paperId);
+    const latestVersion = structured?.version ?? paper?.versions?.[0];
 
-    if (!latestVersion) {
+    if (!structured?.paper && !latestVersion) {
       addAssistantMessage("I could not load that paper. It has no saved version payload yet.");
       return;
     }
 
-    const restored = normalizeVersionPayload(latestVersion.payload, paperId);
+    const restored = structured?.paper ?? normalizeVersionPayload(latestVersion?.payload ?? {}, paperId);
     const mergedStyle = { ...documentStyle, ...restored.documentStyle };
     setSelectedPaper(applyDocumentStyle(restored, mergedStyle));
     setDocumentStyle(mergedStyle);
@@ -1547,17 +1550,17 @@ function appendQuestionToPaper(paper: Paper, question: PaperQuestion, sectionId?
   const targetSectionId = sectionId ?? paper.sections[0]?.id;
   if (!targetSectionId) return paper;
 
-  return {
+  return normalizePaperStructure({
     ...paper,
     sections: paper.sections.map((section) =>
       section.id === targetSectionId
         ? {
             ...section,
-            questions: [...section.questions, { ...question, id: crypto.randomUUID() }],
+            questions: [...section.questions, normalizeRawQuestion({ ...question, id: crypto.randomUUID() })],
           }
         : section,
     ),
-  };
+  });
 }
 
 function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
@@ -1566,6 +1569,13 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     .map((section) => {
       const questions = section.questions
         .map((question) => {
+          const optionsHtml = (question.options ?? [])
+            .map(
+              (option) => `
+                <div class="option"><strong>${escapeHtml(option.label || "")}</strong><div>${option.richText || textToHtml(option.text)}</div></div>
+              `,
+            )
+            .join("");
           const subpartsHtml = (question.subparts ?? [])
             .map(
               (subpart) => `
@@ -1577,6 +1587,7 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
           const html = `
             <div class="question">
               <div class="q-main"><strong>${questionNumber++}.</strong><div>${question.richText || textToHtml(question.text)}</div><span>[${question.marks} marks]</span></div>
+              ${optionsHtml}
               ${subpartsHtml}
               ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>` : ""}
             </div>`;
@@ -1595,13 +1606,14 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     h2{font-family:Arial,sans-serif;font-size:14px;text-transform:uppercase;margin-top:24px}
     .meta{display:flex;justify-content:center;gap:16px;font-family:Arial,sans-serif;font-size:12px;color:#475569}
     .question{margin:16px 0}.q-main,.subpart{display:grid;grid-template-columns:32px 1fr auto;gap:12px;align-items:start}
+    .option{display:grid;grid-template-columns:32px 1fr;gap:12px;margin:6px 0 6px 44px}
     .subpart{margin:8px 0 8px 32px}
     .instructions{font-size:14px;color:#475569}.or{text-align:center;font-family:Arial,sans-serif;font-weight:bold;color:#1d4ed8;margin:10px 0}
   </style></head><body><header><div>Series: QPG/${escapeHtml(paper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(paper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(paper.title)}</h1><div class="meta"><span>${escapeHtml(paper.metadata.board)} Class ${escapeHtml(paper.metadata.classLevel)}</span><span>${escapeHtml(paper.metadata.subject)}</span><span>Time: ${formatDuration(paper.metadata.durationMinutes)}</span><span>Max Marks: ${paper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
 }
 
 function textToHtml(text: string) {
-  return escapeHtml(text).replaceAll("\n", "<br>");
+  return richTextFromText(text) || escapeHtml(text).replaceAll("\n", "<br>");
 }
 
 function parseTemplate(name: string, text: string): PaperTemplate {
@@ -1725,7 +1737,7 @@ function normalizeVersionPayload(payload: Record<string, unknown>, paperId?: str
   const metadata = asRecord(payload.metadata);
   const summary = asRecord(payload.summary);
 
-  return recalculatePaper({
+  return recalculatePaper(normalizePaperStructure({
     id: String(payload.id ?? crypto.randomUUID()),
     paperId,
     title: String(payload.title ?? "Restored Question Paper"),
@@ -1755,117 +1767,13 @@ function normalizeVersionPayload(payload: Record<string, unknown>, paperId?: str
             instructions: String(sectionRecord.instructions ?? ""),
             difficulty: stringOrUndefined(sectionRecord.difficulty),
             targetMarks: numberOrUndefined(sectionRecord.targetMarks ?? sectionRecord.target_marks),
-            questions: Array.isArray(sectionRecord.questions) ? sectionRecord.questions.map((question) => normalizeQuestion(asRecord(question))) : [],
+            questions: Array.isArray(sectionRecord.questions) ? sectionRecord.questions.map((question) => normalizeRawQuestion(asRecord(question))) : [],
           };
         })
       : [],
     documentStyle: asRecord(payload.documentStyle ?? payload.document_style),
     warnings: Array.isArray(payload.warnings) ? payload.warnings.map(String) : [],
-  });
-}
-
-function normalizeQuestion(record: Record<string, unknown>): PaperQuestion {
-  const optionalChoice = asRecord(record.optionalChoice ?? record.optional_choice);
-  const sourceCitations = record.sourceCitations ?? record.source_citations;
-  const rawText = String(record.text ?? "");
-  const providedOptions = normalizeQuestionOptions(record.options);
-  const extractedOptions = providedOptions.length > 0 ? providedOptions : extractInlineOptions(rawText);
-  const text = extractedOptions.length > 0 && providedOptions.length === 0 ? stripInlineOptions(rawText) : rawText;
-
-  return {
-    id: String(record.id ?? crypto.randomUUID()),
-    text,
-    richText: String(record.richText ?? record.rich_text ?? ""),
-    options: extractedOptions.length > 0 ? extractedOptions : undefined,
-    marks: Number(record.marks ?? 0),
-    type: String(record.type ?? record.question_type ?? ""),
-    difficulty: String(record.difficulty ?? ""),
-    source: String(record.source ?? ""),
-    topic: stringOrUndefined(record.topic),
-    tags: Array.isArray(record.tags) ? record.tags.map(String) : undefined,
-    sourceCitations: Array.isArray(sourceCitations) ? sourceCitations.map(String) : undefined,
-    subparts: normalizeSubparts(record.subparts ?? record.sub_parts),
-    optionalChoice:
-      optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
-        ? {
-            id: stringOrUndefined(optionalChoice.id),
-            text: String(optionalChoice.text ?? ""),
-            richText: String(optionalChoice.richText ?? optionalChoice.rich_text ?? ""),
-            marks: optionalChoice.marks ? Number(optionalChoice.marks) : undefined,
-            type: stringOrUndefined(optionalChoice.type ?? optionalChoice.question_type),
-            difficulty: stringOrUndefined(optionalChoice.difficulty),
-            source: stringOrUndefined(optionalChoice.source),
-            topic: stringOrUndefined(optionalChoice.topic),
-            tags: Array.isArray(optionalChoice.tags) ? optionalChoice.tags.map(String) : undefined,
-            answer: stringOrUndefined(optionalChoice.answer),
-            answerRichText: stringOrUndefined(optionalChoice.answerRichText ?? optionalChoice.answer_rich_text),
-          }
-        : undefined,
-    answer: String(record.answer ?? ""),
-    answerRichText: String(record.answerRichText ?? record.answer_rich_text ?? ""),
-  };
-}
-
-function normalizeQuestionOptions(value: unknown): NonNullable<PaperQuestion["options"]> {
-  if (!Array.isArray(value)) return [];
-
-  return value.map((item, index) => {
-    const record = asRecord(item);
-    return {
-      id: stringOrUndefined(record.id),
-      label: stringOrUndefined(record.label) ?? String.fromCharCode(65 + index),
-      text: String(record.text ?? record.value ?? item ?? ""),
-      richText: stringOrUndefined(record.richText ?? record.rich_text),
-      isCorrect: Boolean(record.isCorrect ?? record.is_correct ?? false),
-    };
-  });
-}
-
-function extractInlineOptions(text: string): NonNullable<PaperQuestion["options"]> {
-  const pattern = /(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*(.*?)(?=\s+(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*|$)/giu;
-  const matches = Array.from(text.matchAll(pattern));
-  if (matches.length < 2) return [];
-
-  return matches.map((match) => ({
-    id: crypto.randomUUID(),
-    label: match[1],
-    text: match[2].trim(),
   }));
-}
-
-function stripInlineOptions(text: string) {
-  const firstOption = text.search(/\s(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*/iu);
-  return firstOption >= 0 ? text.slice(0, firstOption).trim() : text;
-}
-
-function normalizeSubparts(value: unknown): PaperQuestion["subparts"] {
-  if (!Array.isArray(value)) return undefined;
-
-  return value.map((item, index) => {
-    const record = asRecord(item);
-    const optionalChoice = asRecord(record.optionalChoice ?? record.optional_choice);
-
-    return {
-      id: String(record.id ?? crypto.randomUUID()),
-      label: stringOrUndefined(record.label) ?? String.fromCharCode(97 + index),
-      text: String(record.text ?? ""),
-      richText: stringOrUndefined(record.richText ?? record.rich_text),
-      marks: record.marks === undefined ? undefined : Number(record.marks),
-      answer: stringOrUndefined(record.answer),
-      answerRichText: stringOrUndefined(record.answerRichText ?? record.answer_rich_text),
-      optionalChoice:
-        optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
-          ? {
-              id: stringOrUndefined(optionalChoice.id),
-              text: String(optionalChoice.text ?? ""),
-              richText: stringOrUndefined(optionalChoice.richText ?? optionalChoice.rich_text),
-              marks: optionalChoice.marks === undefined ? undefined : Number(optionalChoice.marks),
-              answer: stringOrUndefined(optionalChoice.answer),
-              answerRichText: stringOrUndefined(optionalChoice.answerRichText ?? optionalChoice.answer_rich_text),
-            }
-          : undefined,
-    };
-  });
 }
 
 function inferLayoutNotes(text: string) {

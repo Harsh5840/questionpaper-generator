@@ -12,6 +12,7 @@ import {
   RetrievalPreview,
   RetrievalResult,
 } from "./types";
+import { normalizePaperStructure, normalizeRawQuestion } from "./normalize-paper-structure";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4000/api";
 const SOCKET_BASE = API_BASE.replace(/\/api\/?$/, "").replace(/^http/, "ws");
@@ -156,6 +157,32 @@ export async function getPaperViaApi(paperId: string): Promise<{ versions: Paper
   }
 }
 
+export async function getStructuredPaperViaApi(paperId: string): Promise<{ version?: PaperVersion; paper?: Paper } | null> {
+  try {
+    const response = await fetch(`${API_BASE}/papers/${paperId}/structured`);
+    if (!response.ok) return null;
+    const data = asRecord(await response.json());
+    const versionRecord = asRecord(data.version);
+    const version = versionRecord.id
+      ? {
+          id: String(versionRecord.id),
+          versionNumber: Number(versionRecord.version_number ?? versionRecord.versionNumber ?? 0),
+          changeSource: String(versionRecord.change_source ?? versionRecord.changeSource ?? ""),
+          payload: asRecord(versionRecord.payload),
+          marksTotal: versionRecord.marks_total === undefined ? undefined : Number(versionRecord.marks_total),
+          insertedAt: versionRecord.inserted_at ? String(versionRecord.inserted_at) : undefined,
+        }
+      : undefined;
+
+    return {
+      version,
+      paper: data.payload ? normalizePaper(asRecord(data.payload), paperId) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchChaptersViaApi(request: Pick<PaperRequest, "board" | "classLevel" | "subject">): Promise<string[]> {
   try {
     const params = new URLSearchParams({
@@ -256,7 +283,7 @@ export async function importQuestionFromSourceViaApi(attrs: {
 
     if (!response.ok) throw new Error(await responseErrorMessage(response, "Source import failed"));
     const data = await response.json();
-    return normalizeQuestion(asRecord(data.question));
+    return normalizeRawQuestion(asRecord(data.question));
   } catch (error) {
     throw error instanceof TypeError ? new Error("Backend unavailable. Start Phoenix and retry import.") : error;
   }
@@ -282,7 +309,7 @@ export async function importQuestionFromImageViaApi(attrs: {
 
     if (!response.ok) throw new Error(await responseErrorMessage(response, "Image import failed"));
     const data = await response.json();
-    return normalizeQuestion(asRecord(data.question));
+    return normalizeRawQuestion(asRecord(data.question));
   } catch (error) {
     throw error instanceof TypeError ? new Error("Backend unavailable. Start Phoenix and retry image import.") : error;
   }
@@ -545,7 +572,7 @@ function normalizePaper(raw: Record<string, unknown>, paperId?: string): Paper {
   const summary = asRecord(raw.summary);
   const sourceCitations = raw.sourceCitations ?? raw.source_citations;
 
-  return {
+  return normalizePaperStructure({
     id: String(raw.id ?? crypto.randomUUID()),
     paperId,
     title: String(raw.title ?? "Generated Question Paper"),
@@ -587,154 +614,43 @@ function normalizePaper(raw: Record<string, unknown>, paperId?: string): Paper {
     retrievalTrace: raw.retrievalTrace || raw.retrieval_trace ? normalizeRetrievalPreview(raw.retrievalTrace ?? raw.retrieval_trace) : undefined,
     documentStyle: asRecord(raw.documentStyle ?? raw.document_style),
     warnings: Array.isArray(raw.warnings) ? raw.warnings.map(String) : [],
-  };
+  });
 }
 
 function normalizeQuestion(questionRecord: Record<string, unknown>): PaperQuestion {
-  const optionalChoice = asRecord(questionRecord.optionalChoice ?? questionRecord.optional_choice);
-  const sourceCitations = questionRecord.sourceCitations ?? questionRecord.source_citations;
-  const imageAssets = questionRecord.imageAssets ?? questionRecord.image_assets;
-  const rawText = String(questionRecord.text ?? "");
-  const providedOptions = normalizeQuestionOptions(questionRecord.options);
-  const extractedOptions = providedOptions.length > 0 ? providedOptions : extractInlineOptions(rawText);
-  const text = extractedOptions.length > 0 && providedOptions.length === 0 ? stripInlineOptions(rawText) : rawText;
-
-  return {
-    id: String(questionRecord.id ?? crypto.randomUUID()),
-    text,
-    richText: String(questionRecord.richText ?? questionRecord.rich_text ?? ""),
-    options: extractedOptions.length > 0 ? extractedOptions : undefined,
-    marks: Number(questionRecord.marks ?? 0),
-    type: String(questionRecord.type ?? questionRecord.question_type ?? ""),
-    difficulty: String(questionRecord.difficulty ?? ""),
-    source: String(questionRecord.source ?? ""),
-    topic: questionRecord.topic ? String(questionRecord.topic) : undefined,
-    tags: Array.isArray(questionRecord.tags) ? questionRecord.tags.map(String) : undefined,
-    sourceCitations: Array.isArray(sourceCitations) ? sourceCitations.map(String) : undefined,
-    subparts: normalizeSubparts(questionRecord.subparts ?? questionRecord.sub_parts),
-    optionalChoice:
-      optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
-        ? {
-            id: optionalChoice.id ? String(optionalChoice.id) : undefined,
-            text: String(optionalChoice.text ?? ""),
-            richText: String(optionalChoice.richText ?? optionalChoice.rich_text ?? ""),
-            marks: optionalChoice.marks ? Number(optionalChoice.marks) : undefined,
-            type: optionalChoice.type || optionalChoice.question_type ? String(optionalChoice.type ?? optionalChoice.question_type) : undefined,
-            difficulty: optionalChoice.difficulty ? String(optionalChoice.difficulty) : undefined,
-            source: optionalChoice.source ? String(optionalChoice.source) : undefined,
-            topic: optionalChoice.topic ? String(optionalChoice.topic) : undefined,
-            tags: Array.isArray(optionalChoice.tags) ? optionalChoice.tags.map(String) : undefined,
-            answer: optionalChoice.answer ? String(optionalChoice.answer) : undefined,
-            answerRichText: optionalChoice.answerRichText || optionalChoice.answer_rich_text ? String(optionalChoice.answerRichText ?? optionalChoice.answer_rich_text) : undefined,
-          }
-        : undefined,
-    imageAssets: Array.isArray(imageAssets)
-      ? imageAssets.map((asset) => {
-          const record = asRecord(asset);
-          return {
-            id: String(record.id ?? crypto.randomUUID()),
-            name: record.name ? String(record.name) : undefined,
-            url: record.url ? String(record.url) : undefined,
-            mimeType: record.mimeType || record.mime_type ? String(record.mimeType ?? record.mime_type) : undefined,
-          };
-        })
-      : undefined,
-    answer: String(questionRecord.answer ?? ""),
-    answerRichText: String(questionRecord.answerRichText ?? questionRecord.answer_rich_text ?? ""),
-  };
-}
-
-function normalizeQuestionOptions(value: unknown): NonNullable<PaperQuestion["options"]> {
-  if (!Array.isArray(value)) return [];
-
-  return value.map((item, index) => {
-    const record = asRecord(item);
-    return {
-      id: record.id ? String(record.id) : undefined,
-      label: record.label ? String(record.label) : String.fromCharCode(65 + index),
-      text: String(record.text ?? record.value ?? item ?? ""),
-      richText: record.richText || record.rich_text ? String(record.richText ?? record.rich_text) : undefined,
-      isCorrect: Boolean(record.isCorrect ?? record.is_correct ?? false),
-    };
-  });
-}
-
-function extractInlineOptions(text: string): NonNullable<PaperQuestion["options"]> {
-  const pattern = /(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*(.*?)(?=\s+(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*|$)/giu;
-  const matches = Array.from(text.matchAll(pattern));
-  if (matches.length < 2) return [];
-
-  return matches.map((match) => ({
-    id: crypto.randomUUID(),
-    label: match[1],
-    text: match[2].trim(),
-  }));
-}
-
-function stripInlineOptions(text: string) {
-  const firstOption = text.search(/\s(?:\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[A-D])\)|[A-D][.)])\s*/iu);
-  return firstOption >= 0 ? text.slice(0, firstOption).trim() : text;
-}
-
-function normalizeSubparts(value: unknown): PaperQuestion["subparts"] {
-  if (!Array.isArray(value)) return undefined;
-
-  return value.map((item, index) => {
-    const record = asRecord(item);
-    const optionalChoice = asRecord(record.optionalChoice ?? record.optional_choice);
-
-    return {
-      id: String(record.id ?? crypto.randomUUID()),
-      label: record.label ? String(record.label) : String.fromCharCode(97 + index),
-      text: String(record.text ?? ""),
-      richText: record.richText || record.rich_text ? String(record.richText ?? record.rich_text) : undefined,
-      marks: record.marks === undefined ? undefined : Number(record.marks),
-      answer: record.answer ? String(record.answer) : undefined,
-      answerRichText: record.answerRichText || record.answer_rich_text ? String(record.answerRichText ?? record.answer_rich_text) : undefined,
-      optionalChoice:
-        optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
-          ? {
-              id: optionalChoice.id ? String(optionalChoice.id) : undefined,
-              text: String(optionalChoice.text ?? ""),
-              richText: optionalChoice.richText || optionalChoice.rich_text ? String(optionalChoice.richText ?? optionalChoice.rich_text) : undefined,
-              marks: optionalChoice.marks === undefined ? undefined : Number(optionalChoice.marks),
-              answer: optionalChoice.answer ? String(optionalChoice.answer) : undefined,
-              answerRichText: optionalChoice.answerRichText || optionalChoice.answer_rich_text ? String(optionalChoice.answerRichText ?? optionalChoice.answer_rich_text) : undefined,
-            }
-          : undefined,
-    };
-  });
+  return normalizeRawQuestion(questionRecord);
 }
 
 function toBackendPaper(paper: Paper) {
+  const normalized = normalizePaperStructure(paper);
   return {
-    id: paper.id,
-    title: paper.title,
+    id: normalized.id,
+    title: normalized.title,
     metadata: {
-      board: paper.metadata.board,
-      class_level: paper.metadata.classLevel,
-      subject: paper.metadata.subject,
-      chapter: paper.metadata.chapter,
-      topic: paper.metadata.topic,
-      duration_minutes: paper.metadata.durationMinutes,
-      source: paper.metadata.source,
-      format: paper.metadata.format,
-      qp_code: paper.metadata.qpCode,
+      board: normalized.metadata.board,
+      class_level: normalized.metadata.classLevel,
+      subject: normalized.metadata.subject,
+      chapter: normalized.metadata.chapter,
+      topic: normalized.metadata.topic,
+      duration_minutes: normalized.metadata.durationMinutes,
+      source: normalized.metadata.source,
+      format: normalized.metadata.format,
+      qp_code: normalized.metadata.qpCode,
     },
     summary: {
-      total_marks: paper.summary.totalMarks,
-      question_count: paper.summary.questionCount,
-      difficulty: paper.summary.difficulty,
-      source_coverage: paper.summary.sourceCoverage,
+      total_marks: normalized.summary.totalMarks,
+      question_count: normalized.summary.questionCount,
+      difficulty: normalized.summary.difficulty,
+      source_coverage: normalized.summary.sourceCoverage,
       model_route: null,
     },
-    sections: paper.sections,
-    sets: paper.sets,
-    topic_weightage: paper.topicWeightage,
-    source_citations: paper.sourceCitations,
-    retrieval_trace: paper.retrievalTrace,
-    document_style: paper.documentStyle,
-    warnings: paper.warnings,
+    sections: normalized.sections,
+    sets: normalized.sets,
+    topic_weightage: normalized.topicWeightage,
+    source_citations: normalized.sourceCitations,
+    retrieval_trace: normalized.retrievalTrace,
+    document_style: normalized.documentStyle,
+    warnings: normalized.warnings,
   };
 }
 

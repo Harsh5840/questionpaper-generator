@@ -751,11 +751,18 @@ defmodule Qpg.AI.Gemini do
         "id" => safe_text(question["id"], "q#{index}"),
         "text" => safe_text(stem, ""),
         "options" => normalize_options(options),
+        "subparts" => normalize_subparts(question["subparts"] || question["sub_parts"]),
+        "optionalChoice" =>
+          normalize_choice(question["optionalChoice"] || question["optional_choice"]),
         "marks" => int_value(question["marks"], 1),
         "type" => safe_text(question["type"] || question["question_type"], ""),
         "difficulty" => safe_text(question["difficulty"], ""),
         "source" => safe_text(question["source"], "AI generated from retrieved context"),
-        "answer" => safe_text(question["answer"], "")
+        "answer" => safe_text(question["answer"], ""),
+        "answerRichText" =>
+          safe_text(question["answerRichText"] || question["answer_rich_text"], ""),
+        "sourceCitations" =>
+          List.wrap(question["sourceCitations"] || question["source_citations"])
       }
     end)
     |> Enum.reject(&blank_question?/1)
@@ -777,6 +784,48 @@ defmodule Qpg.AI.Gemini do
 
   defp normalize_options(_options), do: []
 
+  defp normalize_subparts(subparts) when is_list(subparts) do
+    subparts
+    |> Enum.with_index(1)
+    |> Enum.map(fn {subpart, index} ->
+      subpart = if is_map(subpart), do: subpart, else: %{}
+
+      %{
+        "id" => safe_text(subpart["id"], "part-#{index}"),
+        "label" => safe_text(subpart["label"], <<96 + index::utf8>>),
+        "text" => safe_text(subpart["text"] || subpart["question"], ""),
+        "richText" => safe_text(subpart["richText"] || subpart["rich_text"], ""),
+        "marks" => int_value(subpart["marks"], 1),
+        "answer" => safe_text(subpart["answer"], ""),
+        "answerRichText" =>
+          safe_text(subpart["answerRichText"] || subpart["answer_rich_text"], ""),
+        "optionalChoice" =>
+          normalize_choice(subpart["optionalChoice"] || subpart["optional_choice"])
+      }
+    end)
+    |> Enum.reject(&(&1["text"] == ""))
+  end
+
+  defp normalize_subparts(_subparts), do: []
+
+  defp normalize_choice(choice) when is_map(choice) do
+    %{
+      "id" => safe_text(choice["id"], Ecto.UUID.generate()),
+      "text" => safe_text(choice["text"] || choice["question"], ""),
+      "richText" => safe_text(choice["richText"] || choice["rich_text"], ""),
+      "options" => normalize_options(List.wrap(choice["options"])),
+      "marks" => int_value(choice["marks"], 1),
+      "type" => safe_text(choice["type"] || choice["question_type"], ""),
+      "difficulty" => safe_text(choice["difficulty"], ""),
+      "source" => safe_text(choice["source"], ""),
+      "topic" => safe_text(choice["topic"], ""),
+      "answer" => safe_text(choice["answer"], ""),
+      "answerRichText" => safe_text(choice["answerRichText"] || choice["answer_rich_text"], "")
+    }
+  end
+
+  defp normalize_choice(_choice), do: nil
+
   defp normalize_imported_question(question, request) when is_map(question) do
     %{
       "id" => safe_text(question["id"], Ecto.UUID.generate()),
@@ -787,6 +836,10 @@ defmodule Qpg.AI.Gemini do
       "difficulty" => safe_text(question["difficulty"], "Medium"),
       "source" => safe_text(question["source"], "Image import"),
       "topic" => safe_text(question["topic"] || request["topic"] || request["chapter"], ""),
+      "options" => normalize_options(List.wrap(question["options"])),
+      "subparts" => normalize_subparts(question["subparts"] || question["sub_parts"]),
+      "optionalChoice" =>
+        normalize_choice(question["optionalChoice"] || question["optional_choice"]),
       "answer" => safe_text(question["answer"], ""),
       "answerRichText" =>
         safe_text(question["answerRichText"] || question["answer_rich_text"], ""),
@@ -1009,6 +1062,35 @@ defmodule Qpg.AI.Gemini do
         id: %{type: "string"},
         text: %{type: "string"},
         richText: %{type: "string"},
+        options: %{
+          type: "array",
+          items: %{
+            type: "object",
+            properties: %{
+              label: %{type: "string"},
+              text: %{type: "string"},
+              richText: %{type: "string"},
+              isCorrect: %{type: "boolean"}
+            }
+          }
+        },
+        subparts: %{
+          type: "array",
+          items: %{
+            type: "object",
+            properties: %{
+              id: %{type: "string"},
+              label: %{type: "string"},
+              text: %{type: "string"},
+              richText: %{type: "string"},
+              marks: %{type: "integer"},
+              answer: %{type: "string"},
+              answerRichText: %{type: "string"},
+              optionalChoice: %{type: "object"}
+            }
+          }
+        },
+        optionalChoice: %{type: "object"},
         marks: %{type: "integer"},
         type: %{type: "string"},
         difficulty: %{type: "string"},

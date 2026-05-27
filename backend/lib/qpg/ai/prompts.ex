@@ -72,10 +72,12 @@ defmodule Qpg.AI.Prompts do
     - `tool_trace` must be an empty array or contain only tiny summaries with
       tool, summary, and count. Never include tool_result, tool_code, raw
       excerpts, context blocks, or retrieved source text in the final JSON.
-    - In every section, each question must use the key "text" for the actual
-      question stem. MCQs must include the stem inside "text" and may include
-      options either appended to text or in an "options" array. Never return only
-      options without a stem.
+    - In every section, each question must be structured. Use "text" for the
+      question stem only. Put MCQ/list choices in "options". Put real parts such
+      as (a), (b), (c) in "subparts". Put whole-question OR choices in
+      "optionalChoice". Put one-part OR choices inside
+      "subparts[].optionalChoice". Never append options or subparts into
+      "text".
     - Every question must be a complete, exam-ready question with concrete
       numbers, expressions, options, diagrams described in text when needed, and
       answer-key data when requested. Never output placeholders such as
@@ -97,7 +99,8 @@ defmodule Qpg.AI.Prompts do
       answer-key placement, marking-scheme placement, and any image-derived
       layout notes.
     - Balance MCQ, short, and long questions according to the marking scheme.
-    - Return a strict JSON paper model with sections, questions, marks, and metadata.
+    - Return a strict JSON paper model with sections, questions, options,
+      subparts, OR choices, marks, answers, citations, and metadata.
     - Produce warnings when coverage or marks drift from the target.
     """
   end

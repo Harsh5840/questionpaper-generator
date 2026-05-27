@@ -21,6 +21,22 @@ defmodule QpgWeb.PaperController do
     json(conn, serialize(paper))
   end
 
+  def structured(conn, %{"id" => id}) do
+    %{paper: paper, version: version, payload: payload} = Papers.get_structured_paper!(id)
+
+    Logging.info("api.papers.structured.completed", %{
+      paper_id: id,
+      version_id: version && version.id
+    })
+
+    json(conn, %{
+      id: paper.id,
+      title: paper.title,
+      version: version && serialize_version(version),
+      payload: payload
+    })
+  end
+
   def delete(conn, %{"id" => id}) do
     paper = Papers.get_paper!(id)
     {:ok, _} = Papers.delete_paper(paper)

@@ -30,6 +30,25 @@ defmodule Qpg.Papers do
     paper
   end
 
+  def get_structured_paper!(id) do
+    paper = get_paper!(id)
+    latest_version = List.first(paper.versions || [])
+
+    payload =
+      case latest_version do
+        nil -> %{}
+        version -> structured_payload_for_version(version) || version.payload || %{}
+      end
+
+    Logging.info("papers.structured.get.completed", %{
+      paper_id: id,
+      version_id: latest_version && latest_version.id,
+      section_count: payload |> Map.get("sections", []) |> List.wrap() |> length()
+    })
+
+    %{paper: paper, version: latest_version, payload: payload}
+  end
+
   def create_paper_from_variant(variant, request, source) do
     Logging.info("papers.create_from_variant.started", %{
       variant_id: variant["id"],
@@ -172,6 +191,140 @@ defmodule Qpg.Papers do
   end
 
   defp payload_summary(_payload), do: %{payload: "non-map"}
+
+  defp structured_payload_for_version(%PaperVersion{} = version) do
+    sections =
+      PaperSection
+      |> where([s], s.paper_version_id == ^version.id)
+      |> order_by([s], asc: s.position)
+      |> Repo.all()
+
+    if sections == [] do
+      nil
+    else
+      questions =
+        PaperQuestion
+        |> where([q], q.paper_version_id == ^version.id)
+        |> order_by([q], asc: q.position)
+        |> preload(:options)
+        |> Repo.all()
+
+      questions_by_section = Enum.group_by(questions, & &1.paper_section_id)
+      questions_by_parent = Enum.group_by(questions, & &1.parent_question_id)
+
+      version.payload
+      |> normalize_payload_inline_options()
+      |> Map.put(
+        "sections",
+        Enum.map(sections, fn section ->
+          serialize_structured_section(
+            section,
+            Map.get(questions_by_section, section.id, []),
+            questions_by_parent
+          )
+        end)
+      )
+    end
+  end
+
+  defp serialize_structured_section(section, section_questions, questions_by_parent) do
+    root_questions =
+      section_questions
+      |> Enum.filter(&(&1.relation_type == "root"))
+      |> Enum.sort_by(& &1.position)
+      |> Enum.map(&serialize_structured_question(&1, questions_by_parent))
+
+    %{
+      "id" => section.section_key || section.id,
+      "title" => section.title,
+      "instructions" => section.instructions || "",
+      "difficulty" => section.difficulty,
+      "targetMarks" => section.target_marks,
+      "questions" => root_questions
+    }
+  end
+
+  defp serialize_structured_question(question, questions_by_parent) do
+    children = Map.get(questions_by_parent, question.id, [])
+
+    subparts =
+      children
+      |> Enum.filter(&(&1.relation_type == "subpart"))
+      |> Enum.sort_by(& &1.position)
+      |> Enum.map(&serialize_structured_subpart(&1, questions_by_parent))
+
+    internal_choice =
+      children
+      |> Enum.find(&(&1.relation_type == "internal_choice"))
+      |> case do
+        nil -> nil
+        choice -> serialize_structured_choice(choice, questions_by_parent)
+      end
+
+    question
+    |> base_question_payload()
+    |> Map.put("options", serialize_structured_options(question.options || []))
+    |> put_if_present("subparts", subparts)
+    |> put_if_present("optionalChoice", internal_choice)
+  end
+
+  defp serialize_structured_subpart(question, questions_by_parent) do
+    subpart_choice =
+      questions_by_parent
+      |> Map.get(question.id, [])
+      |> Enum.find(&(&1.relation_type == "subpart_choice"))
+      |> case do
+        nil -> nil
+        choice -> serialize_structured_choice(choice, questions_by_parent)
+      end
+
+    question
+    |> base_question_payload()
+    |> Map.put("label", question.part_label)
+    |> Map.put("options", serialize_structured_options(question.options || []))
+    |> put_if_present("optionalChoice", subpart_choice)
+  end
+
+  defp serialize_structured_choice(question, _questions_by_parent) do
+    question
+    |> base_question_payload()
+    |> Map.put("options", serialize_structured_options(question.options || []))
+  end
+
+  defp base_question_payload(question) do
+    %{
+      "id" => question.question_key || question.id,
+      "text" => question.text || "",
+      "richText" => question.rich_text || "",
+      "marks" => question.marks || 0,
+      "type" => question.question_type || "",
+      "difficulty" => question.difficulty || "",
+      "source" => question.source || "",
+      "topic" => question.topic,
+      "answer" => question.answer || "",
+      "answerRichText" => question.answer_rich_text || "",
+      "sourceCitations" => question.source_citations || [],
+      "tags" => question.tags || []
+    }
+  end
+
+  defp serialize_structured_options(options) do
+    options
+    |> Enum.sort_by(& &1.position)
+    |> Enum.map(fn option ->
+      %{
+        "id" => option.id,
+        "label" => option.label,
+        "text" => option.text || "",
+        "richText" => option.rich_text || "",
+        "isCorrect" => option.is_correct || false
+      }
+    end)
+  end
+
+  defp put_if_present(map, _key, nil), do: map
+  defp put_if_present(map, _key, []), do: map
+  defp put_if_present(map, key, value), do: Map.put(map, key, value)
 
   defp sync_version_structure!(%Paper{} = paper, %PaperVersion{} = version, payload)
        when is_map(payload) do
