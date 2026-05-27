@@ -329,6 +329,22 @@ export default function Home() {
     );
   }
 
+  async function replaceOptionalChoiceWithAi(sectionId: string, questionId: string, questionNumber: number) {
+    const section = selectedPaper?.sections.find((item) => item.id === sectionId);
+    const question = section?.questions.find((item) => item.id === questionId);
+
+    await askAi(
+      [
+        `Replace the OR internal choice of global question ${questionNumber} in ${section?.title ?? "the paper"}.`,
+        `Question id: ${questionId}.`,
+        `Main question: ${question?.text ?? ""}`,
+        `Current OR choice: ${question?.optionalChoice?.text ?? ""}`,
+        `Preserve ${question?.marks ?? "the same"} marks, ${question?.type ?? "same"} type, ${question?.difficulty ?? "same"} difficulty, and the paper total.`,
+        "Only change the optionalChoice branch, not the main question.",
+      ].join("\n"),
+    );
+  }
+
   async function saveCurrentVersion() {
     if (!selectedPaper?.paperId) {
       addAssistantMessage("Generate or select a saved paper before saving a version.");
@@ -799,6 +815,7 @@ export default function Home() {
               onImportImage={(sectionId) => void importQuestionImage(sectionId)}
               onPaperChange={updateSelectedPaper}
               onReplaceQuestion={(sectionId, questionId, questionNumber) => void replaceQuestionWithAi(sectionId, questionId, questionNumber)}
+              onReplaceOptionalChoice={(sectionId, questionId, questionNumber) => void replaceOptionalChoiceWithAi(sectionId, questionId, questionNumber)}
               onSaveQuestionToBank={(question) => void saveQuestionToBank(question)}
             />
           ) : (
@@ -1552,7 +1569,7 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
           const html = `
             <div class="question">
               <div class="q-main"><strong>${questionNumber++}.</strong><div>${question.richText || textToHtml(question.text)}</div><span>[${question.marks} marks]</span></div>
-              ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}</div><span>[${question.marks} marks]</span></div>` : ""}
+              ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>` : ""}
             </div>`;
           return html;
         })
@@ -1753,8 +1770,15 @@ function normalizeQuestion(record: Record<string, unknown>): PaperQuestion {
     optionalChoice:
       optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
         ? {
+            id: stringOrUndefined(optionalChoice.id),
             text: String(optionalChoice.text ?? ""),
             richText: String(optionalChoice.richText ?? optionalChoice.rich_text ?? ""),
+            marks: optionalChoice.marks ? Number(optionalChoice.marks) : undefined,
+            type: stringOrUndefined(optionalChoice.type ?? optionalChoice.question_type),
+            difficulty: stringOrUndefined(optionalChoice.difficulty),
+            source: stringOrUndefined(optionalChoice.source),
+            topic: stringOrUndefined(optionalChoice.topic),
+            tags: Array.isArray(optionalChoice.tags) ? optionalChoice.tags.map(String) : undefined,
             answer: stringOrUndefined(optionalChoice.answer),
             answerRichText: stringOrUndefined(optionalChoice.answerRichText ?? optionalChoice.answer_rich_text),
           }

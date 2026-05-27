@@ -18,6 +18,7 @@ import {
   AlignCenter,
   AlignLeft,
   Bold,
+  ChevronDown,
   Highlighter,
   Italic,
   List,
@@ -177,6 +178,32 @@ export function RichTextEditor({
         >
           <Sigma size={15} />
         </ToolbarButton>
+        <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)] hover:bg-white">
+          <Sigma size={14} />
+          <span>Math</span>
+          <select
+            aria-label="Insert math or science notation"
+            className="max-w-28 bg-transparent text-xs font-bold outline-none"
+            defaultValue=""
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value) editor.chain().focus().insertContent(value).run();
+              event.currentTarget.value = "";
+            }}
+          >
+            <option value="">Insert...</option>
+            {mathSnippets.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.items.map((item) => (
+                  <option key={item.label} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <ChevronDown size={13} />
+        </label>
         <label className="inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-semibold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)]">
           <span className="sr-only">Text color</span>
           <input
@@ -223,6 +250,49 @@ function ToolbarButton({ active = false, children, label, onClick }: ToolbarButt
     </button>
   );
 }
+
+const mathSnippets = [
+  {
+    label: "Algebra",
+    items: [
+      { label: "Quadratic", value: "$ax^2 + bx + c = 0$" },
+      { label: "Formula", value: "$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$" },
+      { label: "Linear pair", value: "$a_1x + b_1y + c_1 = 0,\\ a_2x + b_2y + c_2 = 0$" },
+      { label: "Ratio", value: "$\\frac{a_1}{a_2} = \\frac{b_1}{b_2} \\ne \\frac{c_1}{c_2}$" },
+      { label: "AP nth term", value: "$a_n = a + (n - 1)d$" },
+      { label: "AP sum", value: "$S_n = \\frac{n}{2}[2a + (n - 1)d]$" },
+    ],
+  },
+  {
+    label: "Geometry",
+    items: [
+      { label: "Similarity", value: "$\\triangle ABC \\sim \\triangle PQR$" },
+      { label: "Pythagoras", value: "$AB^2 + BC^2 = AC^2$" },
+      { label: "Circle area", value: "$A = \\pi r^2$" },
+      { label: "Sector area", value: "$\\frac{\\theta}{360^\\circ}\\pi r^2$" },
+      { label: "Volume cylinder", value: "$V = \\pi r^2h$" },
+    ],
+  },
+  {
+    label: "Stats",
+    items: [
+      { label: "Mean", value: "$\\bar{x} = \\frac{\\sum f_i x_i}{\\sum f_i}$" },
+      { label: "Median", value: "$\\text{Median} = l + \\frac{\\frac{N}{2} - cf}{f} \\times h$" },
+      { label: "Probability", value: "$P(E)=\\frac{\\text{favourable outcomes}}{\\text{total outcomes}}$" },
+    ],
+  },
+  {
+    label: "Science",
+    items: [
+      { label: "Chemical equation", value: "$\\mathrm{Reactants \\rightarrow Products}$" },
+      { label: "Balanced equation", value: "$\\mathrm{2H_2 + O_2 \\rightarrow 2H_2O}$" },
+      { label: "Ohm law", value: "$V = IR$" },
+      { label: "Power", value: "$P = VI = I^2R$" },
+      { label: "Lens formula", value: "$\\frac{1}{v} - \\frac{1}{u} = \\frac{1}{f}$" },
+      { label: "Magnification", value: "$m = \\frac{h'}{h} = \\frac{v}{u}$" },
+    ],
+  },
+];
 
 function textToHtml(value: string) {
   return value

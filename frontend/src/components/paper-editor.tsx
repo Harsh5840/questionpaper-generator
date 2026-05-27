@@ -19,6 +19,7 @@ interface PaperEditorProps {
   isGenerating?: boolean;
   onPaperChange: (paper: Paper) => void;
   onReplaceQuestion: (sectionId: string, questionId: string, questionNumber: number) => Promise<void> | void;
+  onReplaceOptionalChoice: (sectionId: string, questionId: string, questionNumber: number) => Promise<void> | void;
   onSaveQuestionToBank: (question: PaperQuestion) => void;
   onImportImage: (sectionId: string) => void;
 }
@@ -34,12 +35,14 @@ export function PaperEditor({
   isGenerating = false,
   onPaperChange,
   onReplaceQuestion,
+  onReplaceOptionalChoice,
   onSaveQuestionToBank,
   onImportImage,
 }: PaperEditorProps) {
   const [draggedQuestion, setDraggedQuestion] = useState<DraggedQuestion | null>(null);
   const [expandedAnswers, setExpandedAnswers] = useState<Record<string, boolean>>({});
   const [replacingQuestions, setReplacingQuestions] = useState<Record<string, boolean>>({});
+  const [replacingChoices, setReplacingChoices] = useState<Record<string, boolean>>({});
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
 
@@ -113,6 +116,26 @@ export function PaperEditor({
     }));
   };
 
+  const duplicateOptionalChoiceAsQuestion = (sectionId: string, questionId: string) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) => {
+        if (section.id !== sectionId) return section;
+
+        const nextQuestions: PaperQuestion[] = [];
+        section.questions.forEach((question) => {
+          nextQuestions.push(question);
+
+          if (question.id === questionId && question.optionalChoice) {
+            nextQuestions.push(choiceToQuestion(question));
+          }
+        });
+
+        return { ...section, questions: nextQuestions };
+      }),
+    }));
+  };
+
   const addBlankQuestion = (sectionId: string) => {
     updatePaper((current) => ({
       ...current,
@@ -141,12 +164,62 @@ export function PaperEditor({
   };
 
   const addInternalChoice = (sectionId: string, questionId: string) => {
+    const section = paper.sections.find((item) => item.id === sectionId);
+    const question = section?.questions.find((item) => item.id === questionId);
+
     updateQuestion(sectionId, questionId, {
-      optionalChoice: {
-        text: "",
-        richText: "",
-        answer: "",
-      },
+      optionalChoice: questionToChoice(question),
+    });
+  };
+
+  const updateInternalChoice = (sectionId: string, questionId: string, patch: Partial<PaperQuestion>) => {
+    const section = paper.sections.find((item) => item.id === sectionId);
+    const question = section?.questions.find((item) => item.id === questionId);
+    if (!question?.optionalChoice) return;
+
+    updateQuestion(sectionId, questionId, {
+      optionalChoice: { ...question.optionalChoice, ...patch },
+    });
+  };
+
+  const removeInternalChoice = (sectionId: string, questionId: string) => {
+    updateQuestion(sectionId, questionId, { optionalChoice: undefined });
+  };
+
+  const moveQuestionToInternalChoice = (sourceSectionId: string, sourceQuestionId: string, targetQuestionId: string) => {
+    if (sourceQuestionId === targetQuestionId) return;
+
+    updatePaper((current) => {
+      let movingQuestion: PaperQuestion | null = null;
+
+      const sectionsWithoutSource = current.sections.map((section) => ({
+        ...section,
+        questions: section.questions.filter((question) => {
+          if (section.id === sourceSectionId && question.id === sourceQuestionId) {
+            movingQuestion = question;
+            return false;
+          }
+
+          return true;
+        }),
+      }));
+
+      if (!movingQuestion) return current;
+
+      return {
+        ...current,
+        sections: sectionsWithoutSource.map((section) => ({
+          ...section,
+          questions: section.questions.map((question) =>
+            question.id === targetQuestionId
+              ? {
+                  ...question,
+                  optionalChoice: questionToChoice(movingQuestion as PaperQuestion),
+                }
+              : question,
+          ),
+        })),
+      };
     });
   };
 
@@ -208,8 +281,26 @@ export function PaperEditor({
     }
   };
 
+  const replaceInternalChoice = async (sectionId: string, questionId: string, questionNumber: number) => {
+    setReplacingChoices((current) => ({ ...current, [questionId]: true }));
+
+    try {
+      await onReplaceOptionalChoice(sectionId, questionId, questionNumber);
+    } finally {
+      setReplacingChoices((current) => ({ ...current, [questionId]: false }));
+    }
+  };
+
   const templateName = paper.metadata.format || (paper.metadata.source?.toLowerCase().includes("pyq") ? "Full Syllabus" : "Default");
   const templateTone = templateToneFor(templateName);
+  const questionTargets =
+    stats &&
+    paper.sections.flatMap((section) =>
+      section.questions.map((question) => ({
+        id: question.id,
+        label: `Q${stats.questionNumberById[question.id] ?? "?"}`,
+      })),
+    );
 
   return (
     <article
@@ -341,6 +432,7 @@ export function PaperEditor({
                   const questionNumber = stats?.questionNumberById[question.id] ?? 0;
                   const isAnswerOpen = expandedAnswers[question.id] ?? false;
                   const isReplacing = replacingQuestions[question.id] ?? false;
+                  const isChoiceReplacing = replacingChoices[question.id] ?? false;
 
                   return (
                     <div
@@ -371,24 +463,84 @@ export function PaperEditor({
                           />
 
                           {question.optionalChoice && (
-                            <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3">
+                            <div className={`choice-row group/choice relative rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 ${isChoiceReplacing ? "ai-replacing border-blue-300 bg-blue-100/70" : ""}`}>
                               <div className="mb-2 text-center text-xs font-black text-blue-700">OR</div>
-                              <RichTextEditor
-                                label={`Question ${questionNumber} internal choice`}
-                                minHeight="compact"
-                                placeholder="Write the internal choice..."
-                                value={question.optionalChoice.text}
-                                onChange={(text) =>
-                                  updateQuestion(section.id, question.id, {
-                                    optionalChoice: { ...question.optionalChoice!, text },
-                                  })
-                                }
-                                onHtmlChange={(richText) =>
-                                  updateQuestion(section.id, question.id, {
-                                    optionalChoice: { ...question.optionalChoice!, richText },
-                                  })
-                                }
-                              />
+                              <div className="flex items-start gap-3">
+                                <div className="pt-2 font-display text-sm font-black text-blue-700">Alt</div>
+                                <div className="min-w-0 flex-1 space-y-3">
+                                  <RichTextEditor
+                                    label={`Question ${questionNumber} internal choice`}
+                                    minHeight="compact"
+                                    placeholder="Write the internal choice..."
+                                    value={question.optionalChoice.text}
+                                    onChange={(text) => updateInternalChoice(section.id, question.id, { text })}
+                                    onHtmlChange={(richText) => updateInternalChoice(section.id, question.id, { richText })}
+                                  />
+                                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                                    <input
+                                      aria-label={`Question ${questionNumber} OR marks`}
+                                      className="w-16 rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-800"
+                                      min={0}
+                                      type="number"
+                                      value={question.optionalChoice.marks ?? question.marks}
+                                      onChange={(event) => updateInternalChoice(section.id, question.id, { marks: Number(event.target.value) })}
+                                    />
+                                    <span>Marks</span>
+                                    <select
+                                      className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                      value={question.optionalChoice.type ?? question.type}
+                                      onChange={(event) => updateInternalChoice(section.id, question.id, { type: event.target.value })}
+                                    >
+                                      {["MCQ", "VSA", "SA", "LA", "Case Study"].map((type) => (
+                                        <option key={type}>{type}</option>
+                                      ))}
+                                    </select>
+                                    <select
+                                      className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                      value={question.optionalChoice.difficulty ?? question.difficulty}
+                                      onChange={(event) => updateInternalChoice(section.id, question.id, { difficulty: event.target.value })}
+                                    >
+                                      {["Low", "Medium", "High", "Easy", "Hard"].map((difficulty) => (
+                                        <option key={difficulty}>{difficulty}</option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      className="min-w-28 rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                      placeholder="Topic"
+                                      value={question.optionalChoice.topic ?? question.topic ?? ""}
+                                      onChange={(event) => updateInternalChoice(section.id, question.id, { topic: event.target.value })}
+                                    />
+                                    <span className="rounded bg-white px-2 py-1 text-blue-700">{question.optionalChoice.source || question.source || "Manual OR"}</span>
+                                  </div>
+                                  {(expandedAnswers[`${question.id}:choice`] ?? false) && (
+                                    <RichTextEditor
+                                      label={`Question ${questionNumber} OR answer`}
+                                      minHeight="answer"
+                                      placeholder="Write OR answer / marking scheme..."
+                                      value={question.optionalChoice.answer ?? ""}
+                                      onChange={(answer) => updateInternalChoice(section.id, question.id, { answer })}
+                                      onHtmlChange={(answerRichText) => updateInternalChoice(section.id, question.id, { answerRichText })}
+                                    />
+                                  )}
+                                </div>
+                                <div className="flex shrink-0 flex-col gap-1 opacity-100 lg:opacity-0 lg:transition lg:group-hover/choice:opacity-100">
+                                  <button className="editor-icon-button" disabled={isChoiceReplacing} title="Replace OR with AI" onClick={() => void replaceInternalChoice(section.id, question.id, questionNumber)} type="button">
+                                    <RefreshCcw className={isChoiceReplacing ? "animate-spin" : ""} size={15} />
+                                  </button>
+                                  <button className="editor-icon-button" title="Duplicate OR into a normal question" onClick={() => duplicateOptionalChoiceAsQuestion(section.id, question.id)} type="button">
+                                    <Copy size={15} />
+                                  </button>
+                                  <button className="editor-icon-button" title="Show OR answer" onClick={() => setExpandedAnswers((current) => ({ ...current, [`${question.id}:choice`]: !(current[`${question.id}:choice`] ?? false) }))} type="button">
+                                    A
+                                  </button>
+                                  <button className="editor-icon-button" title="Save OR to question bank" onClick={() => onSaveQuestionToBank(choiceToQuestion(question))} type="button">
+                                    <Save size={15} />
+                                  </button>
+                                  <button className="editor-icon-button text-red-600 hover:bg-red-50" title="Remove OR" onClick={() => removeInternalChoice(section.id, question.id)} type="button">
+                                    <Trash2 size={15} />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           )}
 
@@ -427,6 +579,25 @@ export function PaperEditor({
                               onChange={(event) => updateQuestion(section.id, question.id, { topic: event.target.value })}
                             />
                             <span className="rounded bg-blue-50 px-2 py-1 text-blue-700">{question.source || "Manual"}</span>
+                            <select
+                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                              defaultValue=""
+                              title="Move this question into another question's OR slot"
+                              onChange={(event) => {
+                                const targetQuestionId = event.target.value;
+                                if (targetQuestionId) moveQuestionToInternalChoice(section.id, question.id, targetQuestionId);
+                                event.currentTarget.value = "";
+                              }}
+                            >
+                              <option value="">Move to OR...</option>
+                              {(questionTargets || [])
+                                .filter((target) => target.id !== question.id)
+                                .map((target) => (
+                                  <option key={target.id} value={target.id}>
+                                    {target.label}
+                                  </option>
+                                ))}
+                            </select>
                           </div>
 
                           {isAnswerOpen && (
@@ -530,6 +701,39 @@ function templateToneFor(templateName: string) {
       "This question paper contains {questionCount} questions. All questions are compulsory unless an internal choice is provided.",
       "This question paper is divided into {sectionCount} sections. Use of calculator is not allowed unless specified by the teacher.",
     ],
+  };
+}
+
+function questionToChoice(question?: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
+  return {
+    id: crypto.randomUUID(),
+    text: "",
+    richText: "",
+    marks: question?.marks ?? 1,
+    type: question?.type ?? "SA",
+    difficulty: question?.difficulty ?? "Medium",
+    source: "Manual OR",
+    topic: question?.topic,
+    answer: "",
+    answerRichText: "",
+  };
+}
+
+function choiceToQuestion(question: PaperQuestion): PaperQuestion {
+  const choice = question.optionalChoice;
+
+  return {
+    id: choice?.id || crypto.randomUUID(),
+    text: choice?.text || "",
+    richText: choice?.richText || "",
+    marks: Number(choice?.marks ?? question.marks ?? 1),
+    type: choice?.type || question.type || "SA",
+    difficulty: choice?.difficulty || question.difficulty || "Medium",
+    source: choice?.source || question.source || "Manual OR",
+    topic: choice?.topic || question.topic,
+    tags: choice?.tags || question.tags,
+    answer: choice?.answer || "",
+    answerRichText: choice?.answerRichText || "",
   };
 }
 

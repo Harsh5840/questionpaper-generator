@@ -51,8 +51,15 @@ export type PaperQuestion = {
   tags?: string[];
   sourceCitations?: string[];
   optionalChoice?: {
+    id?: string;
     text: string;
     richText?: string;
+    marks?: number;
+    type?: string;
+    difficulty?: string;
+    source?: string;
+    topic?: string;
+    tags?: string[];
     answer?: string;
     answerRichText?: string;
   };

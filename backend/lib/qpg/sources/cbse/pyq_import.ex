@@ -143,9 +143,14 @@ defmodule Qpg.Sources.Cbse.PyqImport do
       Regex.run(~r/class-(\d+)/, normalized) |> match_at(1, Keyword.get(opts, :class_level, "10"))
 
     subject =
-      if String.contains?(normalized, "/maths/"),
-        do: "Maths",
-        else: Keyword.get(opts, :subject, "Maths")
+      cond do
+        String.contains?(normalized, "/maths/") -> "Maths"
+        String.contains?(normalized, "/science/") -> "Science"
+        String.contains?(normalized, "/physics/") -> "Physics"
+        String.contains?(normalized, "/chemistry/") -> "Chemistry"
+        String.contains?(normalized, "/biology/") -> "Biology"
+        true -> Keyword.get(opts, :subject, "Maths")
+      end
 
     %{
       title: Keyword.get(opts, :title, Path.basename(path, Path.extname(path))),

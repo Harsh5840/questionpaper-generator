@@ -91,23 +91,27 @@ defmodule Qpg.AI.Orchestrator do
          {:ok, question_number} <- question_number_from_instruction(instruction),
          {:ok, target} <- question_at_global_number(paper_payload, question_number),
          {:ok, replacement} <- generate_replacement_question(paper_payload, target) do
-      preview = put_json_pointer(paper_payload, target.path, replacement)
+      choice_replacement? = optional_choice_instruction?(instruction)
+      replacement_path = replacement_path(target, choice_replacement?)
+      replacement_value = replacement_value(replacement, target.question, choice_replacement?)
+      preview = put_json_pointer(paper_payload, replacement_path, replacement_value)
 
       Logging.info("ai.orchestrator.replace_question.completed", %{
         paper_id: paper_id,
         question_number: question_number,
-        path: "/" <> Enum.join(target.path, "/")
+        optional_choice: choice_replacement?,
+        path: "/" <> Enum.join(replacement_path, "/")
       })
 
       {:ok,
        %{
-         "message" => "Replaced question #{question_number}.",
+         "message" => replacement_message(question_number, choice_replacement?),
          "base_version_id" => "",
          "patch_ops" => [
            %{
              "op" => "replace",
-             "path" => "/" <> Enum.join(target.path, "/"),
-             "value" => replacement
+             "path" => "/" <> Enum.join(replacement_path, "/"),
+             "value" => replacement_value
            }
          ],
          "preview" => preview
@@ -124,6 +128,40 @@ defmodule Qpg.AI.Orchestrator do
     lower = String.downcase(instruction || "")
     String.contains?(lower, "replace") or String.contains?(lower, "change")
   end
+
+  defp optional_choice_instruction?(instruction) do
+    lower = String.downcase(instruction || "")
+
+    String.contains?(lower, "optionalchoice") or
+      String.contains?(lower, "optional choice") or
+      String.contains?(lower, "internal choice") or
+      String.contains?(lower, "or choice") or
+      Regex.match?(~r/\bor\b/, lower)
+  end
+
+  defp replacement_path(target, true), do: target.path ++ ["optionalChoice"]
+  defp replacement_path(target, false), do: target.path
+
+  defp replacement_message(question_number, true), do: "Replaced OR choice for question #{question_number}."
+  defp replacement_message(question_number, false), do: "Replaced question #{question_number}."
+
+  defp replacement_value(replacement, original_question, true) do
+    %{
+      "id" => Ecto.UUID.generate(),
+      "text" => replacement["text"] || "",
+      "richText" => replacement["richText"] || replacement["rich_text"] || "",
+      "marks" => replacement["marks"] || original_question["marks"] || 1,
+      "type" => replacement["type"] || replacement["question_type"] || original_question["type"] || "SA",
+      "difficulty" => replacement["difficulty"] || original_question["difficulty"] || "Medium",
+      "source" => replacement["source"] || "AI replacement",
+      "topic" => replacement["topic"] || original_question["topic"],
+      "tags" => replacement["tags"] || original_question["tags"] || [],
+      "answer" => replacement["answer"] || "",
+      "answerRichText" => replacement["answerRichText"] || replacement["answer_rich_text"] || ""
+    }
+  end
+
+  defp replacement_value(replacement, _original_question, false), do: replacement
 
   defp question_number_from_instruction(instruction) do
     lower = String.downcase(instruction || "")

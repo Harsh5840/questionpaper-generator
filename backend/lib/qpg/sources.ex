@@ -220,7 +220,7 @@ defmodule Qpg.Sources do
       )
 
     case rows do
-      [[chapter_id]] ->
+      [[chapter_id]] when is_binary(chapter_id) ->
         Logging.debug("sources.catalog.ensure_entry.completed", %{
           chapter: chapter,
           chapter_id: chapter_id
@@ -229,8 +229,7 @@ defmodule Qpg.Sources do
         chapter_id
 
       _ ->
-        Logging.warning("sources.catalog.ensure_entry.no_chapter_id", %{chapter: chapter})
-        nil
+        fetch_catalog_chapter_id(board, class_level, subject, chapter)
     end
   rescue
     error ->
@@ -246,6 +245,44 @@ defmodule Qpg.Sources do
   end
 
   def ensure_catalog_entry(_metadata), do: nil
+
+  defp fetch_catalog_chapter_id(_board, _class_level, _subject, chapter)
+       when chapter in [nil, ""],
+       do: nil
+
+  defp fetch_catalog_chapter_id(board, class_level, subject, chapter) do
+    %Postgrex.Result{rows: rows} =
+      SQL.query!(
+        Repo,
+        """
+        SELECT c.id::text
+        FROM boards b
+        JOIN school_classes sc ON sc.board_id = b.id
+        JOIN subjects s ON s.school_class_id = sc.id
+        JOIN chapters c ON c.subject_id = s.id
+        WHERE lower(b.code) = lower($1)
+          AND sc.level = $2
+          AND lower(s.name) = lower($3)
+          AND lower(c.name) = lower($4)
+        LIMIT 1
+        """,
+        [board, to_string(class_level), subject, chapter]
+      )
+
+    case rows do
+      [[chapter_id]] when is_binary(chapter_id) ->
+        Logging.debug("sources.catalog.ensure_entry.fetched_existing", %{
+          chapter: chapter,
+          chapter_id: chapter_id
+        })
+
+        chapter_id
+
+      _ ->
+        Logging.warning("sources.catalog.ensure_entry.no_chapter_id", %{chapter: chapter})
+        nil
+    end
+  end
 
   def replace_chapter_sections(nil, _sections), do: :ok
 

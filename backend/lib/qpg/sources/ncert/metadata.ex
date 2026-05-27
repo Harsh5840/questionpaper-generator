@@ -24,20 +24,46 @@ defmodule Qpg.Sources.Ncert.Metadata do
     "jemh1ps" => "Prelims"
   }
 
+  @class_10_science %{
+    "jesc101" => "Chemical Reactions And Equations",
+    "jesc102" => "Acids Bases And Salts",
+    "jesc103" => "Metals And Non-Metals",
+    "jesc104" => "Carbon And Its Compounds",
+    "jesc105" => "Life Processes",
+    "jesc106" => "Control And Coordination",
+    "jesc107" => "How Do Organisms Reproduce",
+    "jesc108" => "Heredity",
+    "jesc109" => "Light Reflection And Refraction",
+    "jesc110" => "The Human Eye And The Colourful World",
+    "jesc111" => "Electricity",
+    "jesc112" => "Magnetic Effects Of Electric Current",
+    "jesc113" => "Our Environment",
+    "jesc114" => "Sources Of Energy",
+    "jesc115" => "Management Of Natural Resources",
+    "jesc1an" => "Appendix",
+    "jesc1ps" => "Prelims"
+  }
+
   def from_path(path) do
     parts = path |> Path.expand() |> Path.split() |> Enum.map(&slug_to_title/1)
     lowered = Enum.map(parts, &String.downcase/1)
     file_code = path |> Path.rootname() |> Path.basename() |> String.downcase()
-    title = Map.get(@class_10_maths, file_code, slug_to_title(file_code))
+    title = official_title(file_code)
 
     %{
       title: title,
       board: detect_one(lowered, ["cbse", "icse"], "CBSE"),
       class_level: detect_class_level(lowered),
-      subject: detect_one(lowered, ["maths", "physics", "chemistry", "biology"], "Maths"),
+      subject: detect_one(lowered, ["maths", "science", "physics", "chemistry", "biology"], "Maths"),
       chapter: title,
       topic: title
     }
+  end
+
+  defp official_title(file_code) do
+    Map.get(@class_10_maths, file_code) ||
+      Map.get(@class_10_science, file_code) ||
+      slug_to_title(file_code)
   end
 
   defp detect_class_level(parts) do
@@ -57,6 +83,7 @@ defmodule Qpg.Sources.Ncert.Metadata do
       "cbse" -> "CBSE"
       "icse" -> "ICSE"
       "maths" -> "Maths"
+      "science" -> "Science"
       other -> String.capitalize(other)
     end
   end

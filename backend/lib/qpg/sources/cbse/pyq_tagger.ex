@@ -133,6 +133,113 @@ defmodule Qpg.Sources.Cbse.PyqTagger do
        ~r/random/i,
        ~r/event/i,
        ~r/favourable outcomes?/i
+    ]}
+  ]
+
+  @class_10_science_chapter_rules [
+    {"Chemical Reactions And Equations",
+     [
+       ~r/chemical reaction|chemical equation/i,
+       ~r/balanc(e|ing).*equation/i,
+       ~r/oxidation|reduction|redox/i,
+       ~r/decomposition|displacement|precipitation/i,
+       ~r/rancidity|corrosion/i
+     ]},
+    {"Acids Bases And Salts",
+     [
+       ~r/\bacid|base|salt\b/i,
+       ~r/ph\b|indicator/i,
+       ~r/neutralisation|neutralization/i,
+       ~r/sodium carbonate|baking soda|washing soda|bleaching powder/i,
+       ~r/plaster of paris/i
+     ]},
+    {"Metals And Non-Metals",
+     [
+       ~r/metals?|non[- ]?metals?/i,
+       ~r/reactivity series/i,
+       ~r/ionic compound|electrovalent/i,
+       ~r/ore|mineral|roasting|calcination|smelting/i,
+       ~r/corrosion|alloy/i
+     ]},
+    {"Carbon And Its Compounds",
+     [
+       ~r/carbon compound|covalent bond/i,
+       ~r/hydrocarbon|alkane|alkene|alkyne/i,
+       ~r/ethanol|ethanoic acid/i,
+       ~r/soap|detergent|saponification/i,
+       ~r/functional group|homologous series/i
+     ]},
+    {"Life Processes",
+     [
+       ~r/life processes|nutrition|respiration/i,
+       ~r/photosynthesis|chlorophyll/i,
+       ~r/digestion|stomata|transpiration/i,
+       ~r/transportation|excretion/i,
+       ~r/nephron|alveoli|haemoglobin|hemoglobin/i
+     ]},
+    {"Control And Coordination",
+     [
+       ~r/control and coordination/i,
+       ~r/nervous system|neuron|reflex action/i,
+       ~r/brain|spinal cord/i,
+       ~r/hormone|endocrine|adrenaline|thyroxine|insulin/i,
+       ~r/phototropism|geotropism|auxin/i
+     ]},
+    {"How Do Organisms Reproduce",
+     [
+       ~r/reproduce|reproduction/i,
+       ~r/asexual|sexual reproduction/i,
+       ~r/budding|fragmentation|spore formation/i,
+       ~r/pollination|fertilisation|fertilization/i,
+       ~r/contraception|menstruation|placenta/i
+     ]},
+    {"Heredity",
+     [
+       ~r/heredity|inheritance/i,
+       ~r/mendel|monohybrid|dihybrid/i,
+       ~r/dominant|recessive|trait/i,
+       ~r/gene|chromosome|dna/i,
+       ~r/sex determination/i
+     ]},
+    {"Light Reflection And Refraction",
+     [
+       ~r/reflection|refraction/i,
+       ~r/mirror|lens|focal length|principal focus/i,
+       ~r/ray diagram|spherical mirror/i,
+       ~r/magnification|refractive index/i,
+       ~r/snell/i
+     ]},
+    {"The Human Eye And The Colourful World",
+     [
+       ~r/human eye|retina|iris|pupil/i,
+       ~r/accommodation|ciliary muscles/i,
+       ~r/myopia|hypermetropia|presbyopia/i,
+       ~r/dispersion|prism|spectrum|rainbow/i,
+       ~r/scattering|tyndall/i
+     ]},
+    {"Electricity",
+     [
+       ~r/electric current|potential difference/i,
+       ~r/ohm'?s law|resistance|resistor/i,
+       ~r/series|parallel circuit/i,
+       ~r/electric power|joule'?s heating/i,
+       ~r/ammeter|voltmeter/i
+     ]},
+    {"Magnetic Effects Of Electric Current",
+     [
+       ~r/magnetic effect|magnetic field/i,
+       ~r/solenoid|electromagnet/i,
+       ~r/fleming'?s left hand|right hand/i,
+       ~r/electric motor|generator/i,
+       ~r/electromagnetic induction|domestic electric circuit/i
+     ]},
+    {"Our Environment",
+     [
+       ~r/environment|ecosystem/i,
+       ~r/food chain|food web|trophic/i,
+       ~r/biodegradable|non[- ]?biodegradable/i,
+       ~r/ozone|depletion/i,
+       ~r/waste management/i
      ]}
   ]
 
@@ -212,7 +319,7 @@ defmodule Qpg.Sources.Cbse.PyqTagger do
       true ->
         text = to_string(text)
 
-        @class_10_maths_chapter_rules
+        chapter_rules_for(metadata)
         |> Enum.map(fn {chapter, regexes} ->
           score = Enum.count(regexes, &Regex.match?(&1, text))
           {chapter, score}
@@ -222,6 +329,13 @@ defmodule Qpg.Sources.Cbse.PyqTagger do
           {_chapter, 0} -> nil
           {chapter, _score} -> chapter
         end
+    end
+  end
+
+  defp chapter_rules_for(metadata) do
+    case String.downcase(to_string(Map.get(metadata, :subject) || Map.get(metadata, "subject"))) do
+      "science" -> @class_10_science_chapter_rules
+      _ -> @class_10_maths_chapter_rules
     end
   end
 

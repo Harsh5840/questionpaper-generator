@@ -573,8 +573,15 @@ function normalizeQuestion(questionRecord: Record<string, unknown>): PaperQuesti
     optionalChoice:
       optionalChoice.text || optionalChoice.richText || optionalChoice.rich_text
         ? {
+            id: optionalChoice.id ? String(optionalChoice.id) : undefined,
             text: String(optionalChoice.text ?? ""),
             richText: String(optionalChoice.richText ?? optionalChoice.rich_text ?? ""),
+            marks: optionalChoice.marks ? Number(optionalChoice.marks) : undefined,
+            type: optionalChoice.type || optionalChoice.question_type ? String(optionalChoice.type ?? optionalChoice.question_type) : undefined,
+            difficulty: optionalChoice.difficulty ? String(optionalChoice.difficulty) : undefined,
+            source: optionalChoice.source ? String(optionalChoice.source) : undefined,
+            topic: optionalChoice.topic ? String(optionalChoice.topic) : undefined,
+            tags: Array.isArray(optionalChoice.tags) ? optionalChoice.tags.map(String) : undefined,
             answer: optionalChoice.answer ? String(optionalChoice.answer) : undefined,
             answerRichText: optionalChoice.answerRichText || optionalChoice.answer_rich_text ? String(optionalChoice.answerRichText ?? optionalChoice.answer_rich_text) : undefined,
           }
