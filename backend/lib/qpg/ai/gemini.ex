@@ -747,11 +747,14 @@ defmodule Qpg.AI.Gemini do
       options = List.wrap(question["options"])
       stem = question["text"] || question["question"]
 
+      repaired =
+        repair_question_text(stem, options, question["subparts"] || question["sub_parts"])
+
       %{
         "id" => safe_text(question["id"], "q#{index}"),
-        "text" => safe_text(stem, ""),
-        "options" => normalize_options(options),
-        "subparts" => normalize_subparts(question["subparts"] || question["sub_parts"]),
+        "text" => repaired.text,
+        "options" => repaired.options,
+        "subparts" => repaired.subparts,
         "optionalChoice" =>
           normalize_choice(question["optionalChoice"] || question["optional_choice"]),
         "marks" => int_value(question["marks"], 1),
@@ -783,6 +786,28 @@ defmodule Qpg.AI.Gemini do
   end
 
   defp normalize_options(_options), do: []
+
+  defp repair_question_text(text, provided_options, provided_subparts) do
+    normalized_options = normalize_options(provided_options)
+    normalized_subparts = normalize_subparts(provided_subparts)
+
+    cond do
+      normalized_options != [] or normalized_subparts != [] ->
+        %{text: safe_text(text, ""), options: normalized_options, subparts: normalized_subparts}
+
+      true ->
+        case split_inline_blocks(safe_text(text, "")) do
+          %{kind: :options, stem: stem, blocks: blocks} ->
+            %{text: stem, options: normalize_options(blocks), subparts: []}
+
+          %{kind: :subparts, stem: stem, blocks: blocks} ->
+            %{text: stem, options: [], subparts: normalize_subparts(blocks)}
+
+          nil ->
+            %{text: safe_text(text, ""), options: [], subparts: []}
+        end
+    end
+  end
 
   defp normalize_subparts(subparts) when is_list(subparts) do
     subparts
@@ -825,6 +850,51 @@ defmodule Qpg.AI.Gemini do
   end
 
   defp normalize_choice(_choice), do: nil
+
+  defp split_inline_blocks(text) when is_binary(text) do
+    pattern = ~r/(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[a-eA-E])\)|[A-D][.)])\s*/iu
+    matches = Regex.scan(pattern, text, return: :index)
+
+    if length(matches) < 2 do
+      nil
+    else
+      labels =
+        Regex.scan(pattern, text)
+        |> Enum.map(fn [_full, label] -> String.trim(label) end)
+
+      [{first_start, _} | _] = List.first(matches)
+      stem = text |> String.slice(0, first_start) |> String.trim()
+
+      blocks =
+        matches
+        |> Enum.with_index()
+        |> Enum.map(fn {[{start, full_length}, {_label_start, _label_length}], index} ->
+          content_start = start + full_length
+
+          content_end =
+            case Enum.at(matches, index + 1) do
+              [{next_start, _} | _] -> next_start
+              _ -> String.length(text)
+            end
+
+          %{
+            "label" => Enum.at(labels, index),
+            "text" =>
+              text |> String.slice(content_start, content_end - content_start) |> String.trim()
+          }
+        end)
+        |> Enum.reject(&(&1["text"] == ""))
+
+      kind =
+        if Enum.all?(labels, &Regex.match?(~r/^\([a-e]\)$/i, &1)),
+          do: :subparts,
+          else: :options
+
+      %{kind: kind, stem: stem, blocks: blocks}
+    end
+  end
+
+  defp split_inline_blocks(_text), do: nil
 
   defp normalize_imported_question(question, request) when is_map(question) do
     %{

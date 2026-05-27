@@ -185,15 +185,21 @@ export async function getStructuredPaperViaApi(paperId: string): Promise<{ versi
 
 export async function fetchChaptersViaApi(request: Pick<PaperRequest, "board" | "classLevel" | "subject">): Promise<string[]> {
   try {
-    const params = new URLSearchParams({
-      board: request.board,
-      class_level: request.classLevel,
-      subject: sourceSubjectFor(request.subject),
-    });
-    const response = await fetch(`${API_BASE}/catalog/chapters?${params.toString()}`);
-    if (!response.ok) throw new Error("Could not load chapters");
-    const data = await response.json();
-    const chapters = Array.isArray(data.chapters) ? data.chapters.map(String) : [];
+    const subjects = Array.from(new Set([sourceSubjectFor(request.subject), request.subject].filter(Boolean)));
+    const chapterLists = await Promise.all(
+      subjects.map(async (subject) => {
+        const params = new URLSearchParams({
+          board: request.board,
+          class_level: request.classLevel,
+          subject,
+        });
+        const response = await fetch(`${API_BASE}/catalog/chapters?${params.toString()}`);
+        if (!response.ok) return [];
+        const data = await response.json();
+        return Array.isArray(data.chapters) ? data.chapters.map(String) : [];
+      }),
+    );
+    const chapters = Array.from(new Set(chapterLists.flat()));
     return filterChaptersForSubject(request.subject, chapters);
   } catch {
     return [];
@@ -552,6 +558,7 @@ function toBackendRequest(request: PaperRequest) {
     board: request.board,
     class_level: request.classLevel,
     subject: sourceSubjectFor(request.subject),
+    subject_focus: request.subject,
     chapter: request.chapter,
     chapter_scope: request.chapterScope,
     chapters: request.chapters,

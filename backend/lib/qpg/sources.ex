@@ -501,7 +501,12 @@ defmodule Qpg.Sources do
       marking_scheme: marking_scheme,
       section_sources: section_sources,
       warnings:
-        retrieval_warnings(ncert_questions ++ ncert, pyq_questions ++ pyq_chunks, question_bank, marking_scheme)
+        retrieval_warnings(
+          ncert_questions ++ ncert,
+          pyq_questions ++ pyq_chunks,
+          question_bank,
+          marking_scheme
+        )
     }
 
     record_retrieval_preview(filters, preview)
@@ -536,7 +541,10 @@ defmodule Qpg.Sources do
 
     case result do
       {:ok, question} ->
-        merged = merge_question_defaults(question, request)
+        merged =
+          question
+          |> repair_question_structure()
+          |> merge_question_defaults(request)
 
         Logging.info("sources.import_question_from_source.completed", %{
           source_type: source_type,
@@ -772,7 +780,8 @@ defmodule Qpg.Sources do
           |> Enum.join(" / "),
         excerpt: excerpt,
         content_excerpt: excerpt,
-        citation: "NCERT / #{chapter || "unknown"} / #{section_label || "section"} / Q#{question_number || "?"}",
+        citation:
+          "NCERT / #{chapter || "unknown"} / #{section_label || "section"} / Q#{question_number || "?"}",
         metadata: %{
           board: board,
           class_level: class_level,
@@ -956,7 +965,7 @@ defmodule Qpg.Sources do
              section_names_for_chapter(ncert_by_section, chapter_name) ++
              section_names_for_chapter(pyq_by_section, chapter_name))
           |> Enum.reject(&(&1 in [nil, ""]))
-          |> Enum.uniq_by(&(String.downcase(to_string(&1))))
+          |> Enum.uniq_by(&String.downcase(to_string(&1)))
 
         %{
           name: chapter_name,
@@ -965,7 +974,8 @@ defmodule Qpg.Sources do
             Enum.map(section_names, fn section_name ->
               catalog_section =
                 Enum.find(catalog_sections, fn section ->
-                  String.downcase(to_string(section["name"])) == String.downcase(to_string(section_name))
+                  String.downcase(to_string(section["name"])) ==
+                    String.downcase(to_string(section_name))
                 end)
 
               section_type = catalog_section && catalog_section["section_type"]
@@ -1004,7 +1014,11 @@ defmodule Qpg.Sources do
     Enum.group_by(questions, fn question ->
       metadata = question[:metadata] || %{}
       chapter = metadata[:chapter] || metadata["chapter"]
-      section = metadata[:section_label] || metadata["section_label"] || get_in(question, [:signals, :section_label])
+
+      section =
+        metadata[:section_label] || metadata["section_label"] ||
+          get_in(question, [:signals, :section_label])
+
       section_key(chapter, section)
     end)
   end
@@ -1018,7 +1032,8 @@ defmodule Qpg.Sources do
     |> Enum.map(fn {_chapter, section} -> section end)
   end
 
-  defp has_chapter_sources?(grouped, chapter), do: section_names_for_chapter(grouped, chapter) != []
+  defp has_chapter_sources?(grouped, chapter),
+    do: section_names_for_chapter(grouped, chapter) != []
 
   defp section_key(chapter, section) do
     {chapter, section || "Direct questions"}
@@ -1256,6 +1271,98 @@ defmodule Qpg.Sources do
     |> Map.put_new("topic", request["topic"] || request["chapter"])
     |> Map.put_new("difficulty", request["difficulty"] || "Medium")
   end
+
+  defp repair_question_structure(question) when is_map(question) do
+    text = to_string(question["text"] || "")
+    options = question["options"] |> List.wrap() |> Enum.reject(&(&1 in [nil, ""]))
+    subparts = question["subparts"] || question["sub_parts"] || []
+
+    cond do
+      options != [] or subparts != [] ->
+        question
+
+      true ->
+        case split_inline_blocks(text) do
+          %{kind: :options, stem: stem, blocks: blocks} ->
+            question
+            |> Map.put("text", stem)
+            |> Map.put("richText", "")
+            |> Map.put("options", blocks)
+
+          %{kind: :subparts, stem: stem, blocks: blocks} ->
+            question
+            |> Map.put("text", stem)
+            |> Map.put("richText", "")
+            |> Map.put("subparts", blocks)
+
+          nil ->
+            question
+        end
+    end
+  end
+
+  defp repair_question_structure(question), do: question
+
+  defp split_inline_blocks(text) when is_binary(text) do
+    pattern = ~r/(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[a-eA-E])\)|[A-D][.)])\s*/iu
+    matches = Regex.scan(pattern, text, return: :index)
+
+    if length(matches) < 2 do
+      nil
+    else
+      labels =
+        Regex.scan(pattern, text)
+        |> Enum.map(fn [_full, label] -> String.trim(label) end)
+
+      [{first_start, _} | _] = List.first(matches)
+      stem = text |> String.slice(0, first_start) |> String.trim()
+
+      blocks =
+        matches
+        |> Enum.with_index()
+        |> Enum.map(fn {[{start, full_length}, {_label_start, _label_length}], index} ->
+          content_start = start + full_length
+
+          content_end =
+            case Enum.at(matches, index + 1) do
+              [{next_start, _} | _] -> next_start
+              _ -> String.length(text)
+            end
+
+          %{
+            "id" => Ecto.UUID.generate(),
+            "label" => Enum.at(labels, index),
+            "text" =>
+              text |> String.slice(content_start, content_end - content_start) |> String.trim(),
+            "richText" => ""
+          }
+        end)
+        |> Enum.reject(&(&1["text"] == ""))
+
+      kind =
+        if Enum.all?(labels, &Regex.match?(~r/^\([a-e]\)$/i, &1)),
+          do: :subparts,
+          else: :options
+
+      blocks =
+        if kind == :subparts do
+          blocks
+          |> Enum.with_index()
+          |> Enum.map(fn {block, index} ->
+            block
+            |> Map.put("label", <<97 + index::utf8>>)
+            |> Map.put("marks", 1)
+            |> Map.put("answer", "")
+          end)
+        else
+          blocks
+        end
+
+      %{kind: kind, stem: stem, blocks: blocks}
+    end
+  end
+
+  defp split_inline_blocks(_text), do: nil
 
   defp difficulty_from_marks(marks) when is_integer(marks) and marks <= 1, do: "Low"
   defp difficulty_from_marks(marks) when is_integer(marks) and marks <= 3, do: "Medium"

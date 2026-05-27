@@ -67,6 +67,10 @@ defmodule Qpg.AI.Prompts do
 
     Requirements:
     - Match the requested board, class, subject, marks, and difficulty.
+    - If subject_focus is Physics, Chemistry, or Biology inside a broader
+      Science corpus, generate only that subject's chapter concepts. Do not mix
+      unrelated Science chapters unless the user selected Science as the broad
+      subject.
     - Return this exact top-level shape:
       {"variants":[{"id":"...","title":"...","metadata":{...},"summary":{...},"sections":[...],"warnings":[]}],"warnings":[],"tool_trace":[]}
     - `tool_trace` must be an empty array or contain only tiny summaries with

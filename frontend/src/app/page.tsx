@@ -912,9 +912,24 @@ export default function Home() {
 }
 
 function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPreview | null; onImport: (result: RetrievalResult) => void; onRefresh: () => void }) {
+  const [sourceTab, setSourceTab] = useState<"all" | "ncert" | "pyq" | "bank">("all");
   const results = [...(preview?.ncert ?? []), ...(preview?.pyq ?? []), ...(preview?.questionBank ?? [])];
+  const tabResults =
+    sourceTab === "ncert"
+      ? preview?.ncert ?? []
+      : sourceTab === "pyq"
+        ? preview?.pyq ?? []
+        : sourceTab === "bank"
+          ? preview?.questionBank ?? []
+          : results;
   const sectionChapters = preview?.sectionSources?.chapters ?? [];
   const hasSectionSources = sectionChapters.some((chapter) => chapter.sections.some((section) => section.ncert.length > 0 || section.pyq.length > 0));
+  const tabCounts = {
+    all: results.length,
+    ncert: preview?.ncert.length ?? 0,
+    pyq: preview?.pyq.length ?? 0,
+    bank: preview?.questionBank.length ?? 0,
+  };
 
   return (
     <div className="space-y-3">
@@ -922,12 +937,24 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
         <Database size={15} />
         Refresh retrieval
       </button>
+      <div className="grid grid-cols-4 gap-1 rounded-lg bg-[var(--surface-container-low)] p-1">
+        {(["all", "ncert", "pyq", "bank"] as const).map((tab) => (
+          <button
+            key={tab}
+            className={`rounded-md px-2 py-1.5 text-[11px] font-black uppercase transition ${sourceTab === tab ? "bg-[var(--surface-container-lowest)] text-[var(--primary)] shadow-sm" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)]"}`}
+            onClick={() => setSourceTab(tab)}
+            type="button"
+          >
+            {tab} {tabCounts[tab]}
+          </button>
+        ))}
+      </div>
       {preview?.warnings.map((warning) => (
         <div key={warning} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
           {warning}
         </div>
       ))}
-      {hasSectionSources ? (
+      {sourceTab === "all" && hasSectionSources ? (
         <div className="space-y-4">
           {sectionChapters.map((chapter) => (
             <div key={chapter.name} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
@@ -964,10 +991,10 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
             </div>
           ))}
         </div>
-      ) : results.length === 0 ? (
+      ) : tabResults.length === 0 ? (
         <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No retrieval results yet. Add NCERT/PYQ data or generate a preview.</div>
       ) : (
-        results.map((result) => <SourceResultButton key={`${result.sourceType}-${result.id}`} result={result} onImport={onImport} />)
+        tabResults.map((result) => <SourceResultButton key={`${result.sourceType}-${result.id}`} result={result} onImport={onImport} />)
       )}
     </div>
   );
