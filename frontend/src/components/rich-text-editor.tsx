@@ -380,11 +380,67 @@ const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
         ],
         build: (values) => `$${getValue(values, "an", "a_n")} = ${getValue(values, "a", "a")} + (${getValue(values, "n", "n")} - 1)${getValue(values, "d", "d")}$`,
       },
+      {
+        id: "ap-sum",
+        label: "AP sum",
+        fields: [
+          { key: "sn", label: "sum", defaultValue: "S_n" },
+          { key: "n", label: "n", defaultValue: "n" },
+          { key: "a", label: "a", defaultValue: "a" },
+          { key: "d", label: "d", defaultValue: "d" },
+        ],
+        build: (values) => `$${getValue(values, "sn", "S_n")} = \\frac{${getValue(values, "n", "n")}}{2}[2${getValue(values, "a", "a")} + (${getValue(values, "n", "n")} - 1)${getValue(values, "d", "d")}]$`,
+      },
+      {
+        id: "ratio-condition",
+        label: "Linear ratio",
+        fields: [
+          { key: "a1", label: "a1", defaultValue: "a_1" },
+          { key: "a2", label: "a2", defaultValue: "a_2" },
+          { key: "b1", label: "b1", defaultValue: "b_1" },
+          { key: "b2", label: "b2", defaultValue: "b_2" },
+          { key: "c1", label: "c1", defaultValue: "c_1" },
+          { key: "c2", label: "c2", defaultValue: "c_2" },
+        ],
+        build: (values) => `$\\frac{${getValue(values, "a1", "a_1")}}{${getValue(values, "a2", "a_2")}} = \\frac{${getValue(values, "b1", "b_1")}}{${getValue(values, "b2", "b_2")}} \\ne \\frac{${getValue(values, "c1", "c_1")}}{${getValue(values, "c2", "c_2")}}$`,
+      },
+    ],
+  },
+  {
+    label: "Trigonometry",
+    items: [
+      {
+        id: "trig-identity",
+        label: "Identity",
+        fields: [
+          { key: "theta", label: "angle", defaultValue: "\\theta" },
+        ],
+        build: (values) => `$\\sin^2 ${getValue(values, "theta", "\\theta")} + \\cos^2 ${getValue(values, "theta", "\\theta")} = 1$`,
+      },
+      {
+        id: "tan-ratio",
+        label: "Tan ratio",
+        fields: [
+          { key: "theta", label: "angle", defaultValue: "\\theta" },
+          { key: "perp", label: "perp", defaultValue: "P" },
+          { key: "base", label: "base", defaultValue: "B" },
+        ],
+        build: (values) => `$\\tan ${getValue(values, "theta", "\\theta")} = \\frac{${getValue(values, "perp", "P")}}{${getValue(values, "base", "B")}}$`,
+      },
     ],
   },
   {
     label: "Geometry",
     items: [
+      {
+        id: "similarity",
+        label: "Similarity",
+        fields: [
+          { key: "tri1", label: "tri 1", defaultValue: "ABC" },
+          { key: "tri2", label: "tri 2", defaultValue: "PQR" },
+        ],
+        build: (values) => `$\\triangle ${getValue(values, "tri1", "ABC")} \\sim \\triangle ${getValue(values, "tri2", "PQR")}$`,
+      },
       {
         id: "pythagoras",
         label: "Pythagoras",
@@ -413,6 +469,26 @@ const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
         ],
         build: (values) => `$\\frac{${getValue(values, "theta", "\\theta")}}{360^\\circ}\\pi ${getValue(values, "r", "r")}^2$`,
       },
+      {
+        id: "cylinder-volume",
+        label: "Cylinder volume",
+        fields: [
+          { key: "volume", label: "vol", defaultValue: "V" },
+          { key: "r", label: "r", defaultValue: "r" },
+          { key: "h", label: "h", defaultValue: "h" },
+        ],
+        build: (values) => `$${getValue(values, "volume", "V")} = \\pi ${getValue(values, "r", "r")}^2${getValue(values, "h", "h")}$`,
+      },
+      {
+        id: "cone-volume",
+        label: "Cone volume",
+        fields: [
+          { key: "volume", label: "vol", defaultValue: "V" },
+          { key: "r", label: "r", defaultValue: "r" },
+          { key: "h", label: "h", defaultValue: "h" },
+        ],
+        build: (values) => `$${getValue(values, "volume", "V")} = \\frac{1}{3}\\pi ${getValue(values, "r", "r")}^2${getValue(values, "h", "h")}$`,
+      },
     ],
   },
   {
@@ -437,6 +513,18 @@ const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
           { key: "total", label: "total", defaultValue: "\\text{total outcomes}" },
         ],
         build: (values) => `$P(${getValue(values, "event", "E")})=\\frac{${getValue(values, "fav", "\\text{favourable outcomes}")}}{${getValue(values, "total", "\\text{total outcomes}")}}$`,
+      },
+      {
+        id: "median",
+        label: "Median",
+        fields: [
+          { key: "l", label: "l", defaultValue: "l" },
+          { key: "n", label: "N", defaultValue: "N" },
+          { key: "cf", label: "cf", defaultValue: "cf" },
+          { key: "f", label: "f", defaultValue: "f" },
+          { key: "h", label: "h", defaultValue: "h" },
+        ],
+        build: (values) => `$\\text{Median} = ${getValue(values, "l", "l")} + \\frac{\\frac{${getValue(values, "n", "N")}}{2} - ${getValue(values, "cf", "cf")}}{${getValue(values, "f", "f")}} \\times ${getValue(values, "h", "h")}$`,
       },
     ],
   },
@@ -463,6 +551,28 @@ const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
         build: (values) => `$${getValue(values, "v", "V")} = ${getValue(values, "i", "I")}${getValue(values, "r", "R")}$`,
       },
       {
+        id: "electric-power",
+        label: "Electric power",
+        fields: [
+          { key: "p", label: "P", defaultValue: "P" },
+          { key: "v", label: "V", defaultValue: "V" },
+          { key: "i", label: "I", defaultValue: "I" },
+          { key: "r", label: "R", defaultValue: "R" },
+        ],
+        build: (values) => `$${getValue(values, "p", "P")} = ${getValue(values, "v", "V")}${getValue(values, "i", "I")} = ${getValue(values, "i", "I")}^2${getValue(values, "r", "R")}$`,
+      },
+      {
+        id: "resistance",
+        label: "Resistance",
+        fields: [
+          { key: "r", label: "R", defaultValue: "R" },
+          { key: "rho", label: "rho", defaultValue: "\\rho" },
+          { key: "l", label: "l", defaultValue: "l" },
+          { key: "a", label: "A", defaultValue: "A" },
+        ],
+        build: (values) => `$${getValue(values, "r", "R")} = ${getValue(values, "rho", "\\rho")}\\frac{${getValue(values, "l", "l")}}{${getValue(values, "a", "A")}}$`,
+      },
+      {
         id: "lens-formula",
         label: "Lens formula",
         fields: [
@@ -471,6 +581,37 @@ const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
           { key: "f", label: "f", defaultValue: "f" },
         ],
         build: (values) => `$\\frac{1}{${getValue(values, "v", "v")}} - \\frac{1}{${getValue(values, "u", "u")}} = \\frac{1}{${getValue(values, "f", "f")}}$`,
+      },
+      {
+        id: "magnification",
+        label: "Magnification",
+        fields: [
+          { key: "m", label: "m", defaultValue: "m" },
+          { key: "hi", label: "h'", defaultValue: "h'" },
+          { key: "ho", label: "h", defaultValue: "h" },
+          { key: "v", label: "v", defaultValue: "v" },
+          { key: "u", label: "u", defaultValue: "u" },
+        ],
+        build: (values) => `$${getValue(values, "m", "m")} = \\frac{${getValue(values, "hi", "h'")}}{${getValue(values, "ho", "h")}} = \\frac{${getValue(values, "v", "v")}}{${getValue(values, "u", "u")}}$`,
+      },
+      {
+        id: "photosynthesis",
+        label: "Photosynthesis",
+        fields: [
+          { key: "co2", label: "CO2", defaultValue: "6CO_2" },
+          { key: "h2o", label: "H2O", defaultValue: "6H_2O" },
+          { key: "glucose", label: "glucose", defaultValue: "C_6H_{12}O_6" },
+          { key: "o2", label: "O2", defaultValue: "6O_2" },
+        ],
+        build: (values) => `$\\mathrm{${getValue(values, "co2", "6CO_2")} + ${getValue(values, "h2o", "6H_2O")} \\rightarrow ${getValue(values, "glucose", "C_6H_{12}O_6")} + ${getValue(values, "o2", "6O_2")}}$`,
+      },
+      {
+        id: "custom-latex",
+        label: "Custom LaTeX",
+        fields: [
+          { key: "latex", label: "latex", defaultValue: "x^2 + y^2 = r^2" },
+        ],
+        build: (values) => `$${getValue(values, "latex", "x^2 + y^2 = r^2")}$`,
       },
     ],
   },
