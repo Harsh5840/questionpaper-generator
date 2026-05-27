@@ -198,53 +198,57 @@ export function RichTextEditor({
             </ToolbarButton>
           </>
         )}
-        <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)] hover:bg-white">
-          <Sigma size={14} />
-          <span>Math</span>
-          <select
-            aria-label="Insert math or science notation"
-            className="max-w-28 bg-transparent text-xs font-bold outline-none"
-            defaultValue=""
-            onChange={(event) => {
-              const value = event.target.value;
-              if (value) {
-                setActiveFormulaId(value);
-                const formula = formulaSnippets.flatMap((group) => group.items).find((item) => item.id === value);
-                setFormulaValues(formula ? Object.fromEntries(formula.fields.map((field) => [field.key, field.defaultValue])) : {});
-              }
-              event.currentTarget.value = "";
-            }}
-          >
-            <option value="">Insert...</option>
-            {formulaSnippets.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
+        {!activeFormula && (
+          <>
+            <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)] hover:bg-white">
+              <Sigma size={14} />
+              <span>Math</span>
+              <select
+                aria-label="Insert math or science notation"
+                className="max-w-28 bg-transparent text-xs font-bold outline-none"
+                defaultValue=""
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value) {
+                    setActiveFormulaId(value);
+                    const formula = formulaSnippets.flatMap((group) => group.items).find((item) => item.id === value);
+                    setFormulaValues(formula ? Object.fromEntries(formula.fields.map((field) => [field.key, field.defaultValue])) : {});
+                  }
+                  event.currentTarget.value = "";
+                }}
+              >
+                <option value="">Insert...</option>
+                {formulaSnippets.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.items.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
-              </optgroup>
-            ))}
-          </select>
-          <ChevronDown size={13} />
-        </label>
-        <label className="inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-semibold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)]">
-          <span className="sr-only">Text color</span>
-          <input
-            aria-label="Text color"
-            className="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
-            type="color"
-            defaultValue="#141b2b"
-            onChange={(event) => editor.chain().focus().setColor(event.target.value).run()}
-          />
-        </label>
-        <ToolbarButton
-          active={editor.isActive("highlight")}
-          label="Highlight"
-          onClick={() => editor.chain().focus().toggleHighlight({ color: "#fff2a8" }).run()}
-        >
-          <Highlighter size={15} />
-        </ToolbarButton>
+              </select>
+              <ChevronDown size={13} />
+            </label>
+            <label className="inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-semibold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)]">
+              <span className="sr-only">Text color</span>
+              <input
+                aria-label="Text color"
+                className="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
+                type="color"
+                defaultValue="#141b2b"
+                onChange={(event) => editor.chain().focus().setColor(event.target.value).run()}
+              />
+            </label>
+            <ToolbarButton
+              active={editor.isActive("highlight")}
+              label="Highlight"
+              onClick={() => editor.chain().focus().toggleHighlight({ color: "#fff2a8" }).run()}
+            >
+              <Highlighter size={15} />
+            </ToolbarButton>
+          </>
+        )}
       </div>
       <EditorContent editor={editor} />
     </div>
@@ -300,27 +304,35 @@ function FormulaBuilder({ formula, values, onChange, onCancel, onInsert }: Formu
   const preview = formula.build(values);
 
   return (
-    <div className="flex min-h-8 flex-1 flex-wrap items-center gap-2 rounded-md border border-[var(--primary-container)] bg-white px-2 py-1">
+    <div className="grid min-h-8 flex-1 grid-cols-1 gap-2 rounded-md border border-[var(--primary-container)] bg-white px-2 py-1 lg:grid-cols-[auto_1fr_auto_auto] lg:items-center">
       <span className="inline-flex items-center gap-1 text-xs font-black text-[var(--primary)]">
         <Sigma size={14} />
         {formula.label}
       </span>
-      {formula.fields.map((field) => (
-        <label key={field.key} className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--on-surface-variant)]">
-          <span>{field.label}</span>
-          <input
-            aria-label={`${formula.label} ${field.label}`}
-            className="h-7 w-14 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-2 text-xs text-[var(--on-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
-            value={values[field.key] ?? field.defaultValue}
-            onChange={(event) => onChange(field.key, event.target.value)}
-          />
-        </label>
-      ))}
-      <code className="rounded bg-[var(--surface-container-low)] px-2 py-1 text-[11px] font-bold text-[var(--on-surface)]">{preview}</code>
-      <button className="rounded bg-[var(--primary)] px-2 py-1 text-xs font-black text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]" onClick={onInsert} type="button">
-        Insert
+      <div className="flex flex-wrap items-center gap-2">
+        {formula.fields.map((field) => (
+          <label key={field.key} className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--on-surface-variant)]">
+            <span>{field.label}</span>
+            <input
+              aria-label={`${formula.label} ${field.label}`}
+              className="h-7 w-16 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-2 text-xs text-[var(--on-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+              value={values[field.key] ?? field.defaultValue}
+              onChange={(event) => onChange(field.key, event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") onInsert();
+                if (event.key === "Escape") onCancel();
+              }}
+            />
+          </label>
+        ))}
+        <code className="min-w-0 rounded bg-[var(--surface-container-low)] px-2 py-1 text-[11px] font-bold text-[var(--on-surface)]">
+          Preview: {preview}
+        </code>
+      </div>
+      <button className="rounded bg-[var(--primary)] px-3 py-1.5 text-xs font-black text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]" onClick={onInsert} type="button">
+        Insert formula
       </button>
-      <button className="rounded px-2 py-1 text-xs font-black text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]" onClick={onCancel} type="button">
+      <button className="rounded px-3 py-1.5 text-xs font-black text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]" onClick={onCancel} type="button">
         Cancel
       </button>
     </div>
