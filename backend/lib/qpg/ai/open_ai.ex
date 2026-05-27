@@ -630,6 +630,31 @@ defmodule Qpg.AI.OpenAI do
         topic: %{type: ["string", "null"]},
         source: %{type: ["string", "null"]},
         question_types: %{type: "array", items: %{type: "string"}},
+        section_blueprint: %{
+          type: "array",
+          items: %{
+            type: "object",
+            additionalProperties: false,
+            properties: %{
+              id: %{type: ["string", "null"]},
+              title: %{type: "string"},
+              question_types: %{type: "array", items: %{type: "string"}},
+              question_count: %{type: "integer"},
+              marks_each: %{type: "integer"},
+              difficulty: %{type: "string"},
+              instructions: %{type: ["string", "null"]}
+            },
+            required: [
+              "id",
+              "title",
+              "question_types",
+              "question_count",
+              "marks_each",
+              "difficulty",
+              "instructions"
+            ]
+          }
+        },
         marking_scheme: %{type: ["string", "null"]},
         difficulty: %{type: ["string", "null"]},
         total_marks: %{type: ["integer", "null"]},
@@ -646,6 +671,7 @@ defmodule Qpg.AI.OpenAI do
         "topic",
         "source",
         "question_types",
+        "section_blueprint",
         "marking_scheme",
         "difficulty",
         "total_marks",

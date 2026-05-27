@@ -55,6 +55,7 @@ import {
   QuestionBankItem,
   RetrievalPreview,
   RetrievalResult,
+  SectionBlueprint,
 } from "@/lib/types";
 
 type Mode = "structured" | "prompt";
@@ -82,10 +83,13 @@ const defaultDocumentStyle: DocumentStyle = {
   pageColor: "#ffffff",
 };
 
+const questionTypeOptions = ["MCQ", "Fill in the Blanks", "True/False", "Very Short Answer", "Short Answer", "Long Answer", "Case Study"];
+
 export default function Home() {
   const [appView, setAppView] = useState<AppView>("studio");
   const [mode, setMode] = useState<Mode>("structured");
   const [rightPanel, setRightPanel] = useState<RightPanel>("chat");
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [request, setRequest] = useState<PaperRequest>({
     ...defaultRequest,
     chapter: "Quadratic Equations",
@@ -95,6 +99,8 @@ export default function Home() {
     totalMarks: 50,
     durationMinutes: 120,
     variantCount: 3,
+    questionTypes: ["MCQ", "Short Answer", "Long Answer"],
+    sectionBlueprint: [],
   });
   const [prompt, setPrompt] = useState("CBSE class 10 maths 50 marks from Quadratic Equations using NCERT and PYQ format");
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
@@ -147,6 +153,58 @@ export default function Home() {
 
   const updateRequest = <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => {
     setRequest((current) => ({ ...current, [key]: value }));
+  };
+
+  const toggleQuestionType = (questionType: string) => {
+    setRequest((current) => {
+      const exists = current.questionTypes.includes(questionType);
+      const nextTypes = exists ? current.questionTypes.filter((item) => item !== questionType) : [...current.questionTypes, questionType];
+      return { ...current, questionTypes: nextTypes.length > 0 ? nextTypes : [questionType] };
+    });
+  };
+
+  const addBlueprintSection = () => {
+    setRequest((current) => ({
+      ...current,
+      sectionBlueprint: [
+        ...(current.sectionBlueprint ?? []),
+        {
+          id: crypto.randomUUID(),
+          title: `Section ${String.fromCharCode(65 + (current.sectionBlueprint?.length ?? 0))}`,
+          questionTypes: current.questionTypes.slice(0, 1),
+          questionCount: 5,
+          marksEach: 1,
+          difficulty: "Mixed",
+          instructions: "Attempt all questions.",
+        },
+      ],
+    }));
+  };
+
+  const updateBlueprintSection = (sectionId: string, patch: Partial<SectionBlueprint>) => {
+    setRequest((current) => ({
+      ...current,
+      sectionBlueprint: (current.sectionBlueprint ?? []).map((section) => (section.id === sectionId ? { ...section, ...patch } : section)),
+    }));
+  };
+
+  const removeBlueprintSection = (sectionId: string) => {
+    setRequest((current) => ({
+      ...current,
+      sectionBlueprint: (current.sectionBlueprint ?? []).filter((section) => section.id !== sectionId),
+    }));
+  };
+
+  const toggleBlueprintType = (sectionId: string, questionType: string) => {
+    setRequest((current) => ({
+      ...current,
+      sectionBlueprint: (current.sectionBlueprint ?? []).map((section) => {
+        if (section.id !== sectionId) return section;
+        const exists = section.questionTypes.includes(questionType);
+        const questionTypes = exists ? section.questionTypes.filter((item) => item !== questionType) : [...section.questionTypes, questionType];
+        return { ...section, questionTypes: questionTypes.length > 0 ? questionTypes : [questionType] };
+      }),
+    }));
   };
 
   function applyDashboardTemplate(template: DashboardSummary["templates"][number]) {
@@ -722,6 +780,103 @@ export default function Home() {
                   </Select>
                 </Field>
               </div>
+
+              <Field label="Question mix">
+                <div className="grid grid-cols-2 gap-2">
+                  {questionTypeOptions.map((questionType) => {
+                    const selected = request.questionTypes.includes(questionType);
+                    return (
+                      <button
+                        key={questionType}
+                        className={`rounded-lg border px-2 py-2 text-left text-[11px] font-black transition ${selected ? "border-[var(--primary-container)] bg-[var(--primary-fixed)] text-[var(--primary)]" : "border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)]"}`}
+                        onClick={() => toggleQuestionType(questionType)}
+                        type="button"
+                      >
+                        {questionType}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+
+              <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
+                <button
+                  className="flex w-full items-center justify-between text-left text-xs font-black text-[var(--on-surface)]"
+                  onClick={() => setShowMoreOptions((current) => !current)}
+                  type="button"
+                >
+                  <span>More options: section blueprint</span>
+                  <span className="text-[var(--primary)]">{showMoreOptions ? "Hide" : "Show"}</span>
+                </button>
+                <p className="mt-1 text-[11px] font-semibold text-[var(--on-surface-variant)]">
+                  Optional. Leave empty to use the current CBSE/PYQ-style format.
+                </p>
+
+                {showMoreOptions && (
+                  <div className="mt-3 space-y-3">
+                    {(request.sectionBlueprint ?? []).map((section, index) => (
+                      <div key={section.id} className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <input
+                            className="input h-8 flex-1 text-xs font-black"
+                            value={section.title}
+                            onChange={(event) => updateBlueprintSection(section.id, { title: event.target.value })}
+                            aria-label={`Section ${index + 1} title`}
+                          />
+                          <button className="editor-mini-button text-red-600" onClick={() => removeBlueprintSection(section.id)} type="button">
+                            Remove
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <Field label="Questions">
+                            <input className="input" type="number" min={1} value={section.questionCount} onChange={(event) => updateBlueprintSection(section.id, { questionCount: Number(event.target.value) })} />
+                          </Field>
+                          <Field label="Marks each">
+                            <input className="input" type="number" min={1} value={section.marksEach} onChange={(event) => updateBlueprintSection(section.id, { marksEach: Number(event.target.value) })} />
+                          </Field>
+                          <Field label="Difficulty">
+                            <Select value={section.difficulty} onChange={(event) => updateBlueprintSection(section.id, { difficulty: event.target.value as SectionBlueprint["difficulty"] })}>
+                              <option>Mixed</option>
+                              <option>Easy</option>
+                              <option>Medium</option>
+                              <option>Hard</option>
+                            </Select>
+                          </Field>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-1">
+                          {questionTypeOptions.map((questionType) => {
+                            const selected = section.questionTypes.includes(questionType);
+                            return (
+                              <button
+                                key={`${section.id}-${questionType}`}
+                                className={`rounded-md border px-2 py-1.5 text-left text-[10px] font-black ${selected ? "border-[var(--primary-container)] bg-[var(--primary-fixed)] text-[var(--primary)]" : "border-[var(--outline-variant)] text-[var(--on-surface-variant)]"}`}
+                                onClick={() => toggleBlueprintType(section.id, questionType)}
+                                type="button"
+                              >
+                                {questionType}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <textarea
+                          className="input mt-2 min-h-16 resize-y text-xs"
+                          placeholder="Section-specific instructions..."
+                          value={section.instructions ?? ""}
+                          onChange={(event) => updateBlueprintSection(section.id, { instructions: event.target.value })}
+                        />
+                      </div>
+                    ))}
+                    <button className="secondary-button w-full justify-center" onClick={addBlueprintSection} type="button">
+                      Add section
+                    </button>
+                    {(request.sectionBlueprint ?? []).length > 0 && (
+                      <div className="rounded-md bg-[var(--surface-container-high)] px-3 py-2 text-[11px] font-bold text-[var(--on-surface-variant)]">
+                        Blueprint total: {(request.sectionBlueprint ?? []).reduce((total, section) => total + section.questionCount * section.marksEach, 0)} marks. Target paper total: {request.totalMarks} marks.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -731,6 +886,10 @@ export default function Home() {
               {requestPreview.board} Class {requestPreview.classLevel} {requestPreview.subject}, {requestPreview.totalMarks} marks
             </div>
             <div className="mt-1 truncate">{requestPreview.chapterScope === "full_syllabus" ? "Whole syllabus" : requestPreview.chapters.join(", ")}</div>
+            <div className="mt-1 truncate">Types: {requestPreview.questionTypes.join(", ")}</div>
+            {(requestPreview.sectionBlueprint ?? []).length > 0 && (
+              <div className="mt-1 truncate">Blueprint: {(requestPreview.sectionBlueprint ?? []).map((section) => `${section.title} ${section.questionCount}x${section.marksEach}`).join(" · ")}</div>
+            )}
           </div>
 
           {variantPapers.length > 0 && (
@@ -1439,7 +1598,10 @@ function viewSubtitle(view: AppView) {
 }
 
 function describeRequest(request: PaperRequest) {
-  return `${request.board} class ${request.classLevel} ${request.subject}, ${request.totalMarks} marks, ${request.chapters.join(", ") || "whole syllabus"}`;
+  const blueprint = request.sectionBlueprint?.length
+    ? ` Sections: ${request.sectionBlueprint.map((section) => `${section.title} ${section.questionCount}x${section.marksEach} ${section.questionTypes.join("/")}`).join("; ")}.`
+    : "";
+  return `${request.board} class ${request.classLevel} ${request.subject}, ${request.totalMarks} marks, ${request.chapters.join(", ") || "whole syllabus"}, types: ${request.questionTypes.join(", ")}.${blueprint}`;
 }
 
 function recalculatePaper(paper: Paper): Paper {

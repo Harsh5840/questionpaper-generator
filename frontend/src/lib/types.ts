@@ -8,6 +8,7 @@ export type PaperRequest = {
   topic: string;
   source: "NCERT" | "PYQ" | "NCERT + PYQ";
   questionTypes: string[];
+  sectionBlueprint?: SectionBlueprint[];
   markingScheme: string;
   difficulty: "Easy" | "Medium" | "Hard";
   totalMarks: number;
@@ -15,6 +16,16 @@ export type PaperRequest = {
   variantCount: number;
   freePrompt?: string;
   template?: PaperTemplate | null;
+};
+
+export type SectionBlueprint = {
+  id: string;
+  title: string;
+  questionTypes: string[];
+  questionCount: number;
+  marksEach: number;
+  difficulty: "Easy" | "Medium" | "Hard" | "Mixed";
+  instructions?: string;
 };
 
 export type PaperTemplate = {

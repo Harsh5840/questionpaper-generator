@@ -362,6 +362,7 @@ defmodule Qpg.Generation do
       "topic",
       "source",
       "question_types",
+      "section_blueprint",
       "difficulty",
       "total_marks",
       "duration_minutes",
@@ -400,7 +401,8 @@ defmodule Qpg.Generation do
       pyq: preview |> preview_value(:pyq, []) |> Enum.take(8),
       question_bank: preview |> preview_value(:question_bank, []) |> Enum.take(6),
       marking_scheme: preview_value(preview, :marking_scheme, %{}),
-      section_sources: preview |> preview_value(:section_sources, %{}) |> compact_section_sources(),
+      section_sources:
+        preview |> preview_value(:section_sources, %{}) |> compact_section_sources(),
       warnings: preview_value(preview, :warnings, [])
     }
   end
@@ -416,7 +418,8 @@ defmodule Qpg.Generation do
     }
   end
 
-  defp compact_section_sources(%{"chapters" => chapters} = section_sources) when is_list(chapters) do
+  defp compact_section_sources(%{"chapters" => chapters} = section_sources)
+       when is_list(chapters) do
     %{
       ncert_count: section_sources["ncert_count"] || section_sources["ncertCount"] || 0,
       pyq_count: section_sources["pyq_count"] || section_sources["pyqCount"] || 0,

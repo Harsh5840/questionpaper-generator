@@ -51,6 +51,8 @@ defmodule Qpg.AI.Prompts do
     - topic
     - source
     - question_types
+    - section_blueprint: optional array of section plans with title,
+      question_types, question_count, marks_each, difficulty, and instructions
     - marking_scheme
     - difficulty
     - total_marks
@@ -103,6 +105,14 @@ defmodule Qpg.AI.Prompts do
       answer-key placement, marking-scheme placement, and any image-derived
       layout notes.
     - Balance MCQ, short, and long questions according to the marking scheme.
+    - If section_blueprint is present and non-empty, treat it as the required
+      paper layout: create the requested number of sections, keep each section's
+      question types, question count, marks_each, difficulty, and instructions,
+      and make the total marks match the blueprint unless it conflicts with
+      total_marks. If it conflicts, preserve total_marks and return a warning.
+    - Include requested question types such as Fill in the Blanks, True/False,
+      MCQ, Very Short Answer, Short Answer, Long Answer, and Case Study only
+      when selected in question_types or section_blueprint.
     - Return a strict JSON paper model with sections, questions, options,
       subparts, OR choices, marks, answers, citations, and metadata.
     - Produce warnings when coverage or marks drift from the target.

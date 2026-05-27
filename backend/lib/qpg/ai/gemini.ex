@@ -1243,6 +1243,21 @@ defmodule Qpg.AI.Gemini do
         topic: %{type: "string"},
         source: %{type: "string"},
         question_types: %{type: "array", items: %{type: "string"}},
+        section_blueprint: %{
+          type: "array",
+          items: %{
+            type: "object",
+            properties: %{
+              id: %{type: "string"},
+              title: %{type: "string"},
+              question_types: %{type: "array", items: %{type: "string"}},
+              question_count: %{type: "integer"},
+              marks_each: %{type: "integer"},
+              difficulty: %{type: "string"},
+              instructions: %{type: "string"}
+            }
+          }
+        },
         marking_scheme: %{type: "string"},
         difficulty: %{type: "string"},
         total_marks: %{type: "integer"},
