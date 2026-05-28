@@ -592,6 +592,7 @@ export function PaperEditor({
                   return (
                     <div
                       key={question.id}
+                      id={`question-${question.id}`}
                       className={`question-row group relative rounded-lg border border-transparent bg-white/70 p-3 transition hover:border-slate-200 hover:bg-slate-50 ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
                       draggable
                       onDragStart={() => setDraggedQuestion({ sectionId: section.id, questionId: question.id })}

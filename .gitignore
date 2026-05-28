@@ -16,5 +16,6 @@ data/pyq/processed/*
 backend/_build/
 backend/deps/
 backend/*.log
+frontend/*.log
 frontend/.next/
 frontend/node_modules/

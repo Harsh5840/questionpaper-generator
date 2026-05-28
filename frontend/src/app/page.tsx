@@ -9,23 +9,16 @@ import {
   Download,
   FileText,
   FileUp,
-  HelpCircle,
   LayoutDashboard,
   LoaderCircle,
   RefreshCcw,
   Save,
   Send,
-  Search,
-  Settings,
   Sparkles,
   Square,
-  Archive,
-  BarChart3,
-  BookOpen,
 } from "lucide-react";
 import { PaperEditor } from "@/components/paper-editor";
 import {
-  exportToClassroomViaApi,
   fetchChaptersViaApi,
   fetchDashboardViaApi,
   fetchQuestionBankViaApi,
@@ -549,20 +542,6 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
-  async function exportToClassroom() {
-    if (!selectedPaper) return;
-
-    const courseId = window.prompt("Google Classroom course ID");
-    if (!courseId) return;
-
-    const attachmentUrl = window.prompt("Public Google Drive/link URL to attach");
-    if (!attachmentUrl) return;
-
-    const result = await exportToClassroomViaApi(selectedPaper, { courseId, attachmentUrl });
-    const statusText = result?.status === "created" ? "Created Classroom material." : "Prepared Classroom payload. Add GOOGLE_CLASSROOM_ACCESS_TOKEN to publish directly.";
-    addAssistantMessage(statusText);
-  }
-
   function addUserMessage(text: string) {
     setChatMessages((messages) => [...messages, { id: crypto.randomUUID(), role: "user", text }]);
   }
@@ -571,405 +550,100 @@ export default function Home() {
     setChatMessages((messages) => [...messages, { id: crypto.randomUUID(), role: "assistant", text }]);
   }
 
+  const hasPaperWorkspace = selectedPaper || variantPapers.length > 0 || isGenerating;
+  const openDraftWorkspace = () => {
+    setAppView("studio");
+    setSelectedPaper((current) => current ?? createDraftPaper(requestPreview, documentStyle));
+  };
+
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--on-surface)]">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--outline-variant)] bg-[var(--surface)] px-6">
-        <div className="flex min-w-0 items-center gap-6">
-          <div className="hidden items-center gap-2 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-2 py-1.5 lg:flex">
-            <Search size={15} className="text-[var(--on-surface-variant)]" />
-            <input className="w-56 bg-transparent font-mono text-[12px] outline-none placeholder:text-[var(--outline)]" placeholder="Command..." />
-            <span className="rounded-sm border border-[var(--outline-variant)] bg-[var(--surface-variant)] px-1 font-mono text-[10px] text-[var(--on-surface-variant)]">Ctrl K</span>
-          </div>
-          <div>
-            <div className="font-display text-2xl font-semibold text-[var(--primary)]">Academic Command Center</div>
-            <div className="font-mono text-[11px] text-[var(--on-surface-variant)]">Question Paper Studio · owned corpus workflow</div>
-          </div>
-          <nav className="hidden h-16 items-center gap-1 xl:flex">
-            {[
-              ["studio", "Studio"],
-              ["library", "Library"],
-              ["analytics", "Analytics"],
-              ["templates", "Templates"],
-            ].map(([view, label]) => (
-              <button key={view} className={topNavClass(appView === view)} onClick={() => setAppView(view as AppView)} type="button">
-                {label}
-              </button>
-            ))}
-          </nav>
+    <main className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
+      <PaperLabTopBar
+        aiOpen={rightPanel === "chat"}
+        appView={appView}
+        currentTitle={selectedPaper?.title ?? "Untitled paper"}
+        isGenerating={isGenerating}
+        onExport={exportCurrent}
+        onGenerate={() => void runGeneration()}
+        onHome={() => {
+          setAppView("studio");
+          setSelectedPaper(null);
+          setVariantPapers([]);
+        }}
+        onOpenView={setAppView}
+        onRefresh={() => void refreshDashboard()}
+        onSave={() => void saveCurrentVersion()}
+        onToggleAI={() => setRightPanel("chat")}
+        onTitleChange={(title) => {
+          if (!selectedPaper) return;
+          updateSelectedPaper({ ...selectedPaper, title });
+        }}
+        onUseBlank={openDraftWorkspace}
+        status={status}
+        versions={versions}
+        onRestoreVersion={(version) => void restoreVersion(version)}
+      />
+
+      {appView !== "studio" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--bg-deep)] px-6 py-8">
+          <WorkspaceView
+            dashboard={dashboard}
+            view={appView}
+            onSelectPaper={(paper) => {
+              setAppView("studio");
+              void loadPaperFromLibrary(paper.id);
+            }}
+            onUseTemplate={(template) => {
+              setAppView("studio");
+              applyDashboardTemplate(template);
+            }}
+          />
         </div>
+      ) : !hasPaperWorkspace ? (
+        <LandingScreen
+          dashboard={dashboard}
+          documentStyle={documentStyle}
+          request={request}
+          templates={dashboard?.templates ?? []}
+          onCreateBlank={openDraftWorkspace}
+          onOpenPaper={(paperId) => void loadPaperFromLibrary(paperId)}
+          onOpenPrompt={() => {
+            setMode("prompt");
+            openDraftWorkspace();
+          }}
+          onOpenStructured={() => {
+            setMode("structured");
+            openDraftWorkspace();
+          }}
+          onUseTemplate={(template) => {
+            applyDashboardTemplate(template);
+            openDraftWorkspace();
+          }}
+        />
+      ) : (
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <PaperNavigator
+            isGenerating={isGenerating}
+            mode={mode}
+            requestPreview={requestPreview}
+            selectedPaper={selectedPaper}
+            variantPapers={variantPapers}
+            onAddBlank={openDraftWorkspace}
+            onGenerate={() => void runGeneration()}
+            onSelectVariant={(paper) => void selectVariant(paper)}
+            onStop={stopGeneration}
+          />
 
-        <div className="flex items-center gap-2">
-          <button className="hidden rounded border border-[var(--outline-variant)] bg-[var(--on-surface)] px-4 py-2 text-xs font-black uppercase tracking-[0.05em] text-[var(--surface)] hover:bg-[var(--primary)] md:inline-flex" onClick={() => void runGeneration()} type="button">
-            Create New Paper
-          </button>
-          <button className="icon-button" title="Help" type="button">
-            <HelpCircle size={16} />
-          </button>
-          <button className="icon-button" title="Settings" type="button">
-            <Settings size={16} />
-          </button>
-          <div className="ml-1 flex h-8 w-8 items-center justify-center rounded border border-[var(--outline-variant)] bg-[var(--surface-container-high)] font-mono text-[11px] font-bold text-[var(--primary)]">TP</div>
-        </div>
-      </header>
-
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-      <aside className="hidden w-[320px] shrink-0 border-r border-[var(--outline-variant)] bg-[var(--surface-container-low)] lg:flex lg:flex-col">
-        <div className="border-b border-[var(--outline-variant)] px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded border border-[var(--outline-variant)] bg-[var(--surface-container-high)] text-[var(--primary)]">
-              <FileText size={18} />
-            </div>
-            <div>
-              <div className="font-display text-xl font-semibold text-[var(--on-surface)]">Paper Lab</div>
-              <p className="font-mono text-[11px] text-[var(--on-surface-variant)]">Senior Faculty Portal</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          <div className="space-y-1">
-            {[
-              { view: "studio" as AppView, label: "Generation Studio", icon: LayoutDashboard },
-              { view: "library" as AppView, label: "Paper Library", icon: Archive },
-              { view: "analytics" as AppView, label: "Syllabus Coverage", icon: BarChart3 },
-              { view: "templates" as AppView, label: "Template Suite", icon: BookOpen },
-            ].map((item) => (
-              <button key={item.view} className={sideNavClass(appView === item.view)} onClick={() => setAppView(item.view)} type="button">
-                <item.icon size={16} />
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="border-t border-[var(--outline-variant)]" />
-
-          {appView === "studio" && (
-            <>
-          <div className="grid grid-cols-2 rounded-lg bg-[var(--surface-container-high)] p-1">
-            <button className={tabClass(mode === "structured")} onClick={() => setMode("structured")} type="button">
-              Parameters
-            </button>
-            <button className={tabClass(mode === "prompt")} onClick={() => setMode("prompt")} type="button">
-              Prompt
-            </button>
-          </div>
-
-          {mode === "prompt" ? (
-            <Field label="Free prompt">
-              <textarea className="input min-h-32 resize-none" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
-            </Field>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Board">
-                  <Select value={request.board} onChange={(event) => updateRequest("board", event.target.value as PaperRequest["board"])}>
-                    <option>CBSE</option>
-                    <option>ICSE</option>
-                  </Select>
-                </Field>
-                <Field label="Class">
-                  <Select value={request.classLevel} onChange={(event) => updateRequest("classLevel", event.target.value as PaperRequest["classLevel"])}>
-                    {["9", "10", "11", "12"].map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
+          <section className="min-w-0 flex-1 overflow-y-auto bg-[var(--bg-deep)] px-4 py-8">
+            {lastError && (
+              <div className="fade-up mx-auto mb-4 max-w-[980px] rounded-[var(--radius-md)] border border-[var(--error)] bg-[var(--error-container)] px-4 py-3 text-sm font-semibold text-[var(--on-error-container)] shadow-[var(--shadow-sm)]">
+                <div className="font-black">Last error</div>
+                <div className="mt-1 whitespace-pre-wrap break-words text-xs font-medium">{lastError}</div>
               </div>
-
-              <Field label="Template (optional)">
-                <Select
-                  value={request.template?.name ?? ""}
-                  onChange={(event) => {
-                    const template = dashboard?.templates.find((item) => item.name === event.target.value);
-
-                    if (!template) {
-                      setRequest((current) => ({ ...current, template: null }));
-                      return;
-                    }
-
-                    applyDashboardTemplate(template);
-                  }}
-                >
-                  <option value="">Default editor style</option>
-                  {(dashboard?.templates ?? []).map((template) => (
-                    <option key={template.id} value={template.name}>
-                      {template.name}
-                    </option>
-                  ))}
-                </Select>
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]">
-                  <FileUp size={15} />
-                  <span>{request.template?.name ?? "Upload TXT / MD / JSON"}</span>
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept=".txt,.md,.json"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) void loadTemplate(file);
-                    }}
-                  />
-                </label>
-              </Field>
-
-              <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
-                <StyleNumber label="Font" value={documentStyle.fontSize} min={12} max={22} onChange={(fontSize) => setDocumentStyle((current) => ({ ...current, fontSize }))} />
-                <StyleNumber label="Spacing" value={documentStyle.lineHeight} min={1.1} max={2.2} step={0.05} onChange={(lineHeight) => setDocumentStyle((current) => ({ ...current, lineHeight }))} />
-                <StyleNumber label="Margin" value={documentStyle.margin} min={24} max={96} onChange={(margin) => setDocumentStyle((current) => ({ ...current, margin }))} />
-                <label className="grid gap-1 text-[11px] font-bold text-[var(--on-surface-variant)]">
-                  <span>Text color</span>
-                  <input className="h-8 w-full rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-1" type="color" value={documentStyle.textColor} onChange={(event) => setDocumentStyle((current) => ({ ...current, textColor: event.target.value }))} />
-                </label>
-              </div>
-
-              <Field label="Subject">
-                <Select value={request.subject} onChange={(event) => updateRequest("subject", event.target.value as PaperRequest["subject"])}>
-                  {["Maths", "Science", "Physics", "Chemistry", "Biology"].map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </Select>
-              </Field>
-
-              <Field label="Chapter scope">
-                <Select value={request.chapterScope} onChange={(event) => updateRequest("chapterScope", event.target.value as PaperRequest["chapterScope"])}>
-                  <option value="single">One chapter</option>
-                  <option value="multiple">List of chapters</option>
-                  <option value="full_syllabus">Whole syllabus</option>
-                </Select>
-              </Field>
-
-              {request.chapterScope !== "full_syllabus" && (
-                <Field label={request.chapterScope === "single" ? "Choose chapter" : "Choose chapters"}>
-                  <ChapterPicker
-                    availableChapters={availableChapters}
-                    mode={request.chapterScope}
-                    selectedChapters={request.chapters}
-                    onChange={(chapters) => {
-                      updateRequest("chapters", chapters);
-                      updateRequest("chapter", chapters[0] ?? "");
-                      updateRequest("topic", chapters.join(", "));
-                    }}
-                  />
-                </Field>
-              )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Marks">
-                  <input className="input" type="number" value={request.totalMarks} onChange={(event) => updateRequest("totalMarks", Number(event.target.value))} />
-                </Field>
-                <Field label="Sets">
-                  <input className="input" type="number" min={1} max={5} value={request.variantCount} onChange={(event) => updateRequest("variantCount", Number(event.target.value))} />
-                </Field>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Difficulty">
-                  <Select value={request.difficulty} onChange={(event) => updateRequest("difficulty", event.target.value as PaperRequest["difficulty"])}>
-                    <option>Easy</option>
-                    <option>Medium</option>
-                    <option>Hard</option>
-                  </Select>
-                </Field>
-                <Field label="Source">
-                  <Select value={request.source} onChange={(event) => updateRequest("source", event.target.value as PaperRequest["source"])}>
-                    <option>NCERT</option>
-                    <option>PYQ</option>
-                    <option>NCERT + PYQ</option>
-                  </Select>
-                </Field>
-              </div>
-
-              <Field label="Question mix">
-                <div className="grid grid-cols-2 gap-2">
-                  {questionTypeOptions.map((questionType) => {
-                    const selected = request.questionTypes.includes(questionType);
-                    return (
-                      <button
-                        key={questionType}
-                        className={`rounded-lg border px-2 py-2 text-left text-[11px] font-black transition ${selected ? "border-[var(--primary-container)] bg-[var(--primary-fixed)] text-[var(--primary)]" : "border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)]"}`}
-                        onClick={() => toggleQuestionType(questionType)}
-                        type="button"
-                      >
-                        {questionType}
-                      </button>
-                    );
-                  })}
-                </div>
-              </Field>
-
-              <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
-                <button
-                  className="flex w-full items-center justify-between text-left text-xs font-black text-[var(--on-surface)]"
-                  onClick={() => setShowMoreOptions((current) => !current)}
-                  type="button"
-                >
-                  <span>More options: section blueprint</span>
-                  <span className="text-[var(--primary)]">{showMoreOptions ? "Hide" : "Show"}</span>
-                </button>
-                <p className="mt-1 text-[11px] font-semibold text-[var(--on-surface-variant)]">
-                  Optional. Leave empty to use the current CBSE/PYQ-style format.
-                </p>
-
-                {showMoreOptions && (
-                  <div className="mt-3 space-y-3">
-                    {(request.sectionBlueprint ?? []).map((section, index) => (
-                      <div key={section.id} className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <input
-                            className="input h-8 flex-1 text-xs font-black"
-                            value={section.title}
-                            onChange={(event) => updateBlueprintSection(section.id, { title: event.target.value })}
-                            aria-label={`Section ${index + 1} title`}
-                          />
-                          <button className="editor-mini-button text-red-600" onClick={() => removeBlueprintSection(section.id)} type="button">
-                            Remove
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <Field label="Questions">
-                            <input className="input" type="number" min={1} value={section.questionCount} onChange={(event) => updateBlueprintSection(section.id, { questionCount: Number(event.target.value) })} />
-                          </Field>
-                          <Field label="Marks each">
-                            <input className="input" type="number" min={1} value={section.marksEach} onChange={(event) => updateBlueprintSection(section.id, { marksEach: Number(event.target.value) })} />
-                          </Field>
-                          <Field label="Difficulty">
-                            <Select value={section.difficulty} onChange={(event) => updateBlueprintSection(section.id, { difficulty: event.target.value as SectionBlueprint["difficulty"] })}>
-                              <option>Mixed</option>
-                              <option>Easy</option>
-                              <option>Medium</option>
-                              <option>Hard</option>
-                            </Select>
-                          </Field>
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-1">
-                          {questionTypeOptions.map((questionType) => {
-                            const selected = section.questionTypes.includes(questionType);
-                            return (
-                              <button
-                                key={`${section.id}-${questionType}`}
-                                className={`rounded-md border px-2 py-1.5 text-left text-[10px] font-black ${selected ? "border-[var(--primary-container)] bg-[var(--primary-fixed)] text-[var(--primary)]" : "border-[var(--outline-variant)] text-[var(--on-surface-variant)]"}`}
-                                onClick={() => toggleBlueprintType(section.id, questionType)}
-                                type="button"
-                              >
-                                {questionType}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <textarea
-                          className="input mt-2 min-h-16 resize-y text-xs"
-                          placeholder="Section-specific instructions..."
-                          value={section.instructions ?? ""}
-                          onChange={(event) => updateBlueprintSection(section.id, { instructions: event.target.value })}
-                        />
-                      </div>
-                    ))}
-                    <button className="secondary-button w-full justify-center" onClick={addBlueprintSection} type="button">
-                      Add section
-                    </button>
-                    {(request.sectionBlueprint ?? []).length > 0 && (
-                      <div className="rounded-md bg-[var(--surface-container-high)] px-3 py-2 text-[11px] font-bold text-[var(--on-surface-variant)]">
-                        Blueprint total: {(request.sectionBlueprint ?? []).reduce((total, section) => total + section.questionCount * section.marksEach, 0)} marks. Target paper total: {request.totalMarks} marks.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">
-            <div className="font-bold text-[var(--on-surface)]">Request</div>
-            <div className="mt-1">
-              {requestPreview.board} Class {requestPreview.classLevel} {requestPreview.subject}, {requestPreview.totalMarks} marks
-            </div>
-            <div className="mt-1 truncate">{requestPreview.chapterScope === "full_syllabus" ? "Whole syllabus" : requestPreview.chapters.join(", ")}</div>
-            <div className="mt-1 truncate">Types: {requestPreview.questionTypes.join(", ")}</div>
-            {(requestPreview.sectionBlueprint ?? []).length > 0 && (
-              <div className="mt-1 truncate">Blueprint: {(requestPreview.sectionBlueprint ?? []).map((section) => `${section.title} ${section.questionCount}x${section.marksEach}`).join(" · ")}</div>
             )}
-          </div>
 
-          {variantPapers.length > 0 && (
-            <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3">
-              <div className="mb-2 text-xs font-bold text-[var(--on-surface)]">Generated sets</div>
-              <div className="space-y-2">
-                {variantPapers.map((paper, index) => (
-                  <button
-                    key={paper.id}
-                    className={`w-full rounded-md border px-3 py-2 text-left text-xs font-semibold ${
-                      selectedPaper?.id === paper.id ? "border-[var(--primary)] bg-[var(--primary-fixed)] text-[var(--primary)]" : "border-[var(--outline-variant)] bg-[var(--surface-container-low)] text-[var(--on-surface-variant)]"
-                    }`}
-                    onClick={() => void selectVariant(paper)}
-                    type="button"
-                  >
-                    Set {String.fromCharCode(65 + index)}
-                    <span className="block font-normal">{paper.summary.totalMarks} marks · {paper.summary.questionCount} questions</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-            </>
-          )}
-        </div>
+            <GenerationCanvasState isGenerating={isGenerating} status={status} />
 
-        {appView === "studio" && <div className="space-y-2 border-t border-[var(--outline-variant)] p-4">
-          <button className="primary-button" disabled={isGenerating} onClick={() => void runGeneration()} type="button">
-            {isGenerating ? <LoaderCircle className="animate-spin" size={16} /> : <Sparkles size={16} />}
-            {isGenerating ? "Generating" : "Generate paper"}
-          </button>
-          {isGenerating && (
-            <button className="secondary-button" onClick={stopGeneration} type="button">
-              <Square size={15} />
-              Stop
-            </button>
-          )}
-        </div>}
-      </aside>
-
-      <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-4">
-          <div>
-            <div className="text-sm font-bold">{appView === "studio" ? selectedPaper?.title ?? "Untitled paper" : viewTitle(appView)}</div>
-            <div className="text-xs text-[var(--on-surface-variant)]">{appView === "studio" ? status.message : viewSubtitle(appView)}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            {appView === "studio" ? (
-              <>
-                <ProgressBadge status={status} />
-                <button className="icon-button" onClick={() => void saveCurrentVersion()} title="Save version" type="button">
-                  <Save size={16} />
-                </button>
-                <button className="icon-button" onClick={() => exportCurrent("pdf")} title="Export PDF" type="button">
-                  <Download size={16} />
-                </button>
-                <button className="hidden rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] md:inline-flex" onClick={() => exportCurrent("docx")} type="button">
-                  DOCX
-                </button>
-                <button className="hidden rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] md:inline-flex" onClick={() => void exportToClassroom()} type="button">
-                  Classroom
-                </button>
-              </>
-            ) : (
-              <button className="secondary-button !min-h-9 !w-auto px-4" onClick={() => void refreshDashboard()} type="button">
-                <RefreshCcw size={15} />
-                Refresh
-              </button>
-            )}
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto px-4 py-8">
-          {appView === "studio" && lastError && (
-            <div className="mx-auto mb-4 max-w-[980px] rounded-lg border border-[var(--error)] bg-[var(--error-container)] px-4 py-3 text-sm font-semibold text-[var(--on-error-container)]">
-              <div className="font-black">Last error</div>
-              <div className="mt-1 whitespace-pre-wrap break-words text-xs font-medium">{lastError}</div>
-            </div>
-          )}
-          {appView === "studio" ? (
             <PaperEditor
               documentStyle={documentStyle}
               isGenerating={isGenerating}
@@ -980,94 +654,847 @@ export default function Home() {
               onReplaceOptionalChoice={(sectionId, questionId, questionNumber) => void replaceOptionalChoiceWithAi(sectionId, questionId, questionNumber)}
               onSaveQuestionToBank={(question) => void saveQuestionToBank(question)}
             />
-          ) : (
-            <WorkspaceView
-              dashboard={dashboard}
-              view={appView}
-              onSelectPaper={(paper) => {
-                setAppView("studio");
-                void loadPaperFromLibrary(paper.id);
-              }}
-              onUseTemplate={(template) => {
-                setAppView("studio");
-                applyDashboardTemplate(template);
-              }}
-            />
-          )}
+          </section>
+
+          <AssistantPanel
+            chatInput={chatInput}
+            chatMessages={chatMessages}
+            isBusy={isGenerating || isChatting}
+            preview={retrievalPreview}
+            questionBank={questionBank}
+            rightPanel={rightPanel}
+            usage={usage}
+            versions={versions}
+            onAsk={() => void askAi()}
+            onChatInputChange={setChatInput}
+            onImportBank={(item) => void importBankQuestion(item)}
+            onImportSource={(result) => void importSourceQuestion(result)}
+            onRefreshBank={() => void refreshQuestionBank()}
+            onRefreshRetrieval={() => void refreshRetrievalPreview()}
+            onRestoreVersion={(version) => void restoreVersion(version)}
+            onSetPanel={setRightPanel}
+          />
         </div>
-      </section>
+      )}
 
-      {appView === "studio" && <aside className="hidden w-[380px] shrink-0 border-l border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] lg:flex lg:flex-col">
-        <div className="border-b border-[var(--outline-variant)] px-5 py-4">
-          <div className="flex items-center gap-2 text-sm font-bold">
-            <Bot size={18} />
-            V2 controls
-          </div>
-          <div className="mt-3 grid grid-cols-4 gap-1 rounded-lg bg-[var(--surface-container-high)] p-1">
-            {(["chat", "retrieval", "bank", "versions"] as RightPanel[]).map((panel) => (
-              <button key={panel} className={tabClass(rightPanel === panel)} onClick={() => setRightPanel(panel)} type="button">
-                {panel}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          {rightPanel === "chat" && (
-            <>
-              {usage && (
-                <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">
-                  <div className="font-bold text-[var(--on-surface)]">API usage</div>
-                  <div className="mt-1">{usage.totalTokens} tokens · ${usage.estimatedCostUsd.toFixed(6)}</div>
-                </div>
-              )}
-              {chatMessages.map((message) => (
-                <div key={message.id} className={message.role === "user" ? "ml-8 rounded bg-[var(--primary)] px-3 py-2 text-xs font-medium text-[var(--on-primary)]" : "mr-8 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs text-[var(--on-surface)]"}>
-                  {message.text}
-                </div>
-              ))}
-              {(isGenerating || isChatting) && (
-                <div className="mr-8 flex items-center gap-2 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2 text-xs text-[var(--on-surface-variant)]">
-                  <LoaderCircle className="animate-spin" size={14} />
-                  {isChatting ? "Editing paper..." : "Generating paper..."}
-                </div>
-              )}
-            </>
-          )}
-
-          {rightPanel === "retrieval" && (
-            <RetrievalPanel preview={retrievalPreview} onImport={(result) => void importSourceQuestion(result)} onRefresh={() => void refreshRetrievalPreview()} />
-          )}
-
-          {rightPanel === "bank" && (
-            <QuestionBankPanel items={questionBank} onImport={(item) => void importBankQuestion(item)} onRefresh={() => void refreshQuestionBank()} />
-          )}
-
-          {rightPanel === "versions" && (
-            <VersionPanel versions={versions} onRestore={(version) => void restoreVersion(version)} />
-          )}
-        </div>
-
-        <div className="border-t border-[var(--outline-variant)] p-4">
-          <div className="relative">
-            <input
-              className="input pr-11"
-              placeholder="Format, replace Q5, move marking scheme..."
-              value={chatInput}
-              onChange={(event) => setChatInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void askAi();
-              }}
-            />
-            <button className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--on-primary)]" onClick={() => void askAi()} type="button">
-              <Send size={14} />
-            </button>
-          </div>
-        </div>
-      </aside>}
-      </div>
+      {appView === "studio" && hasPaperWorkspace && (
+        <SetupDrawer
+          addBlueprintSection={addBlueprintSection}
+          availableChapters={availableChapters}
+          dashboard={dashboard}
+          documentStyle={documentStyle}
+          isPromptMode={mode === "prompt"}
+          prompt={prompt}
+          questionTypeOptions={questionTypeOptions}
+          request={request}
+          requestPreview={requestPreview}
+          showMoreOptions={showMoreOptions}
+          onApplyDashboardTemplate={applyDashboardTemplate}
+          onLoadTemplate={(file) => void loadTemplate(file)}
+          onModeChange={setMode}
+          onPromptChange={setPrompt}
+          onRemoveBlueprintSection={removeBlueprintSection}
+          onSetDocumentStyle={setDocumentStyle}
+          onSetShowMoreOptions={setShowMoreOptions}
+          onToggleBlueprintType={toggleBlueprintType}
+          onToggleQuestionType={toggleQuestionType}
+          onUpdateBlueprintSection={updateBlueprintSection}
+          onUpdateRequest={updateRequest}
+        />
+      )}
     </main>
   );
+}
+
+function PaperLabTopBar({
+  aiOpen,
+  appView,
+  currentTitle,
+  isGenerating,
+  onExport,
+  onGenerate,
+  onHome,
+  onOpenView,
+  onRefresh,
+  onRestoreVersion,
+  onSave,
+  onTitleChange,
+  onToggleAI,
+  onUseBlank,
+  status,
+  versions,
+}: {
+  aiOpen: boolean;
+  appView: AppView;
+  currentTitle: string;
+  isGenerating: boolean;
+  onExport: (format: "pdf" | "docx") => void;
+  onGenerate: () => void;
+  onHome: () => void;
+  onOpenView: (view: AppView) => void;
+  onRefresh: () => void;
+  onRestoreVersion: (version: PaperVersion) => void;
+  onSave: () => void;
+  onTitleChange: (title: string) => void;
+  onToggleAI: () => void;
+  onUseBlank: () => void;
+  status: GenerationStatus;
+  versions: PaperVersion[];
+}) {
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(currentTitle);
+  const [isVersionOpen, setIsVersionOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+
+  return (
+    <header className="relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-4 shadow-[var(--shadow-sm)]">
+      <div className="flex min-w-0 items-center gap-3">
+        <button className="group flex items-center gap-2" onClick={onHome} type="button">
+          <span className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--ink)] text-[var(--paper-tint)] shadow-[var(--shadow-sm)]">
+            <FileText size={16} />
+          </span>
+          <span className="hidden leading-none sm:block">
+            <span className="block font-display text-xl italic tracking-tight text-[var(--ink)]">Paper Lab</span>
+            <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--ink-3)]">Question Studio</span>
+          </span>
+        </button>
+
+        {appView === "studio" && (
+          <>
+            <div className="mx-1 h-6 w-px bg-[var(--border)]" />
+            {isEditingTitle ? (
+              <input
+                autoFocus
+                className="w-56 rounded-md border border-[var(--border-2)] bg-[var(--surface-2)] px-2 py-1 font-display text-lg italic text-[var(--ink)] outline-none"
+                value={draftTitle}
+                onBlur={() => {
+                  setIsEditingTitle(false);
+                  onTitleChange(draftTitle.trim() || "Untitled paper");
+                }}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    setIsEditingTitle(false);
+                    onTitleChange(draftTitle.trim() || "Untitled paper");
+                  }
+                }}
+              />
+            ) : (
+              <button
+                className="max-w-[36vw] truncate rounded-md px-2 py-1 text-left font-display text-lg italic tracking-tight text-[var(--ink)] hover:bg-[var(--surface-2)]"
+                onClick={() => {
+                  setDraftTitle(currentTitle);
+                  setIsEditingTitle(true);
+                }}
+                type="button"
+              >
+                {currentTitle}
+              </button>
+            )}
+
+            <div className="relative">
+              <button
+                className="flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 font-mono text-[11px] font-bold text-[var(--ink-2)]"
+                onClick={() => setIsVersionOpen((current) => !current)}
+                type="button"
+              >
+                <span className="text-[var(--accent)]">●</span>
+                v{versions[0]?.versionNumber ?? 1}
+              </button>
+              {isVersionOpen && (
+                <div className="scale-in absolute left-0 top-[calc(100%+6px)] w-64 rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-2 shadow-[var(--shadow-lg)]">
+                  <div className="px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Versions</div>
+                  {versions.length === 0 ? (
+                    <div className="px-2 py-3 text-xs text-[var(--ink-3)]">No versions saved yet.</div>
+                  ) : (
+                    versions.map((version) => (
+                      <button
+                        key={version.id}
+                        className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-xs text-[var(--ink-2)] hover:bg-[var(--surface)]"
+                        onClick={() => {
+                          setIsVersionOpen(false);
+                          onRestoreVersion(version);
+                        }}
+                        type="button"
+                      >
+                        <span>
+                          <span className="font-mono font-black text-[var(--accent)]">v{version.versionNumber}</span>
+                          <span className="ml-2">{version.changeSource.replaceAll("_", " ")}</span>
+                        </span>
+                        {version.marksTotal !== undefined && <span>{version.marksTotal}m</span>}
+                      </button>
+                    ))
+                  )}
+                  <button className="mt-1 w-full rounded-md border border-[var(--border)] px-2 py-2 text-left text-xs font-bold text-[var(--accent-deep)] hover:bg-[var(--accent-soft)]" onClick={onSave} type="button">
+                    Save current as new version
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      <nav className="hidden items-center gap-1 xl:flex">
+        {[
+          ["studio", "Studio"],
+          ["library", "Library"],
+          ["analytics", "Coverage"],
+          ["templates", "Templates"],
+        ].map(([view, label]) => (
+          <button key={view} className={topNavClass(appView === view)} onClick={() => onOpenView(view as AppView)} type="button">
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="flex items-center gap-2">
+        {appView === "studio" && (
+          <>
+            <ProgressBadge status={status} />
+            <button className="hidden rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-bold text-[var(--ink-2)] hover:bg-[var(--surface-2)] md:inline-flex" onClick={onUseBlank} type="button">
+              Blank
+            </button>
+            <button className="rounded-[var(--radius-sm)] border border-[var(--ink)] bg-[var(--ink)] px-3 py-1.5 text-xs font-bold text-[var(--paper-tint)] hover:bg-[var(--accent)]" disabled={isGenerating} onClick={onGenerate} type="button">
+              {isGenerating ? "Generating" : "Generate"}
+            </button>
+            <button className="icon-button" onClick={onSave} title="Save version" type="button">
+              <Save size={16} />
+            </button>
+            <div className="relative">
+              <button className="icon-button" onClick={() => setIsExportOpen((current) => !current)} title="Export" type="button">
+                <Download size={16} />
+              </button>
+              {isExportOpen && (
+                <div className="scale-in absolute right-0 top-[calc(100%+6px)] w-44 rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-2 shadow-[var(--shadow-lg)]">
+                  {(["pdf", "docx"] as const).map((format) => (
+                    <button
+                      key={format}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs font-bold uppercase text-[var(--ink-2)] hover:bg-[var(--surface)]"
+                      onClick={() => {
+                        setIsExportOpen(false);
+                        onExport(format);
+                      }}
+                      type="button"
+                    >
+                      <Download size={14} />
+                      {format}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button className={`rounded-[var(--radius-sm)] border px-3 py-1.5 text-xs font-bold ${aiOpen ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] text-[var(--ink-2)] hover:bg-[var(--surface-2)]"}`} onClick={onToggleAI} type="button">
+              Assistant
+            </button>
+          </>
+        )}
+        {appView !== "studio" && (
+          <button className="secondary-button !min-h-9 !w-auto px-4" onClick={onRefresh} type="button">
+            <RefreshCcw size={15} />
+            Refresh
+          </button>
+        )}
+        <div className="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-deep)] font-mono text-[11px] font-black text-[var(--paper-tint)]">TP</div>
+      </div>
+    </header>
+  );
+}
+
+function LandingScreen({
+  dashboard,
+  documentStyle,
+  onCreateBlank,
+  onOpenPaper,
+  onOpenPrompt,
+  onOpenStructured,
+  onUseTemplate,
+  request,
+  templates,
+}: {
+  dashboard: DashboardSummary | null;
+  documentStyle: DocumentStyle;
+  onCreateBlank: () => void;
+  onOpenPaper: (paperId: string) => void;
+  onOpenPrompt: () => void;
+  onOpenStructured: () => void;
+  onUseTemplate: (template: DashboardSummary["templates"][number]) => void;
+  request: PaperRequest;
+  templates: DashboardSummary["templates"];
+}) {
+  const builtInTemplates = templates.length > 0 ? templates : fallbackDashboardTemplates();
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,var(--accent-soft-2),transparent_34%),var(--bg)] px-8 py-10">
+      <div className="mx-auto max-w-7xl">
+        <section className="fade-up grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+          <div>
+            <div className="font-mono text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Question Studio</div>
+            <h1 className="mt-3 max-w-3xl font-display text-6xl italic leading-[0.95] tracking-tight text-[var(--ink)]">
+              Build the paper like an editor, generate it like an AI lab.
+            </h1>
+            <p className="mt-5 max-w-2xl text-sm leading-7 text-[var(--ink-2)]">
+              Start with parameters, a free prompt, or a blank canvas. Generated papers stay structured so every question, option, OR choice, source, and mark can be edited.
+            </p>
+          </div>
+          <div className="rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--paper)] p-5 shadow-[var(--shadow-lg)]">
+            <div className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--ink-3)]">Current default</div>
+            <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--paper-tint)] p-5 font-serif shadow-inner">
+              <div className="text-center font-display text-2xl italic text-[var(--ink)]">{request.subject} Assessment</div>
+              <div className="mt-2 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ink-3)]">
+                CBSE · Class {request.classLevel} · {request.totalMarks} marks
+              </div>
+              <div className="mt-5 space-y-3 text-sm text-[var(--ink-2)]">
+                <div className="h-2 w-3/4 rounded-full bg-[var(--surface-2)]" />
+                <div className="h-2 w-full rounded-full bg-[var(--surface-2)]" />
+                <div className="h-2 w-2/3 rounded-full bg-[var(--surface-2)]" />
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="h-9 rounded border border-[var(--border)]" />
+                  <div className="h-9 rounded border border-[var(--border)]" />
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+              <MiniStat label="Font" value={documentStyle.fontSize} />
+              <MiniStat label="Spacing" value={documentStyle.lineHeight} />
+              <MiniStat label="Sets" value={request.variantCount} />
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-10 grid gap-4 md:grid-cols-3">
+          <StartCard desc="Guided setup with board, class, subject, chapter, sources, question mix, and section blueprint." icon={LayoutDashboard} label="Parameters" onClick={onOpenStructured} title="Create from parameters" />
+          <StartCard desc="Write a natural-language request and let the backend normalize it into the same PaperRequest shape." icon={Sparkles} label="Prompt" onClick={onOpenPrompt} title="Create from free prompt" />
+          <StartCard desc="Open the structured editor immediately and add/import questions manually." icon={FileText} label="Blank" onClick={onCreateBlank} title="Start with blank paper" />
+        </section>
+
+        <section className="mt-10 grid gap-6 xl:grid-cols-[1fr_1.3fr]">
+          <LandingPanel eyebrow="Recent" title="Saved papers">
+            {(dashboard?.recentPapers ?? []).length === 0 ? (
+              <EmptyWorkspaceState title="No saved papers yet" description="Saved versions will appear here once you generate or import a paper." />
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {(dashboard?.recentPapers ?? []).slice(0, 4).map((paper) => (
+                  <button key={paper.id} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-4 text-left hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]" onClick={() => onOpenPaper(paper.id)} type="button">
+                    <div className="font-display text-xl italic text-[var(--ink)]">{paper.title}</div>
+                    <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--ink-3)]">
+                      {paper.board} · Class {paper.classLevel} · {paper.subject}
+                    </div>
+                    <div className="mt-4 flex gap-2 text-[11px] font-bold text-[var(--ink-2)]">
+                      <span>{paper.marksTotal} marks</span>
+                      <span>·</span>
+                      <span>{paper.versionCount} versions</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </LandingPanel>
+
+          <LandingPanel eyebrow="Templates" title="Choose a format">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {builtInTemplates.map((template) => (
+                <button key={template.id} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-4 text-left hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]" onClick={() => onUseTemplate(template)} type="button">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-soft)] text-[var(--accent-deep)]">
+                    <FileText size={17} />
+                  </div>
+                  <div className="mt-3 font-display text-lg italic text-[var(--ink)]">{template.name}</div>
+                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-[var(--ink-2)]">{template.description || "Reusable paper template with formatting and request hints."}</p>
+                </button>
+              ))}
+            </div>
+          </LandingPanel>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function StartCard({ desc, icon: IconComponent, label, onClick, title }: { desc: string; icon: React.ComponentType<{ size?: number | string; className?: string }>; label: string; onClick: () => void; title: string }) {
+  return (
+    <button className="group rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--paper)] p-5 text-left shadow-[var(--shadow-md)] transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:shadow-[var(--shadow-lg)]" onClick={onClick} type="button">
+      <div className="flex items-start justify-between gap-4">
+        <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-[var(--ink)] text-[var(--paper-tint)]">
+          <IconComponent size={20} />
+        </span>
+        <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--accent-deep)]">{label}</span>
+      </div>
+      <div className="mt-5 font-display text-2xl italic leading-tight text-[var(--ink)]">{title}</div>
+      <p className="mt-2 text-sm leading-6 text-[var(--ink-2)]">{desc}</p>
+    </button>
+  );
+}
+
+function LandingPanel({ children, eyebrow, title }: { children: React.ReactNode; eyebrow: string; title: string }) {
+  return (
+    <section className="rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--paper)] p-5 shadow-[var(--shadow-md)]">
+      <div className="mb-4">
+        <div className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">{eyebrow}</div>
+        <h2 className="mt-1 font-display text-2xl italic text-[var(--ink)]">{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function PaperNavigator({
+  isGenerating,
+  mode,
+  onAddBlank,
+  onGenerate,
+  onSelectVariant,
+  onStop,
+  requestPreview,
+  selectedPaper,
+  variantPapers,
+}: {
+  isGenerating: boolean;
+  mode: Mode;
+  onAddBlank: () => void;
+  onGenerate: () => void;
+  onSelectVariant: (paper: Paper) => void;
+  onStop: () => void;
+  requestPreview: PaperRequest;
+  selectedPaper: Paper | null;
+  variantPapers: Paper[];
+}) {
+  const sections = selectedPaper?.sections ?? [];
+  const totalMarks = selectedPaper?.summary.totalMarks ?? requestPreview.totalMarks;
+
+  return (
+    <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] lg:flex">
+      <div className="border-b border-[var(--border)] p-4">
+        <div className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--ink-3)]">Open papers</div>
+        <button className="mt-3 flex w-full items-center gap-2 rounded-[var(--radius-md)] border border-dashed border-[var(--border-2)] px-3 py-2 text-left text-xs font-bold text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]" onClick={onAddBlank} type="button">
+          <FileText size={15} />
+          New paper
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3">
+        {variantPapers.length > 0 && (
+          <div className="mb-4">
+            <div className="px-2 pb-2 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Generated sets</div>
+            <div className="space-y-1">
+              {variantPapers.map((paper, index) => (
+                <button key={paper.id} className={`w-full rounded-[var(--radius-sm)] border px-3 py-2 text-left text-xs ${selectedPaper?.id === paper.id ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-transparent text-[var(--ink-2)] hover:bg-[var(--surface-2)]"}`} onClick={() => onSelectVariant(paper)} type="button">
+                  <span className="font-mono font-black">Set {String.fromCharCode(65 + index)}</span>
+                  <span className="block truncate">{paper.summary.totalMarks} marks · {paper.summary.questionCount} questions</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-3 text-xs text-[var(--ink-2)]">
+          <div className="font-bold text-[var(--ink)]">Request</div>
+          <div className="mt-1">{requestPreview.board} · Class {requestPreview.classLevel}</div>
+          <div className="mt-1">{requestPreview.subject} · {requestPreview.totalMarks} marks</div>
+          <div className="mt-1 line-clamp-2">{requestPreview.chapterScope === "full_syllabus" ? "Whole syllabus" : requestPreview.chapters.join(", ")}</div>
+          <div className="mt-1 line-clamp-2">Types: {requestPreview.questionTypes.join(", ")}</div>
+          <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">{mode === "prompt" ? "Free prompt" : "Parameters"}</div>
+        </div>
+
+        <div>
+          <div className="px-2 pb-2 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Jump to question</div>
+          {sections.length === 0 ? (
+            <div className="rounded border border-dashed border-[var(--border)] p-3 text-xs text-[var(--ink-3)]">Questions appear here after generation or import.</div>
+          ) : (
+            <div className="space-y-2">
+              {sections.map((section) => (
+                <div key={section.id}>
+                  <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold text-[var(--ink-2)]">
+                    <span>{section.title}</span>
+                    <span>{section.questions.reduce((total, question) => total + Number(question.marks || 0), 0)}m</span>
+                  </div>
+                  {section.questions.map((question, index) => (
+                    <button key={question.id} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]" onClick={() => document.getElementById(`question-${question.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} type="button">
+                      <span className="font-mono font-black text-[var(--accent)]">Q{index + 1}</span>
+                      <span className="truncate">{question.text || "Untitled question"}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-[var(--border)] bg-[var(--surface-2)] p-4">
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--ink-3)]">Total marks</span>
+          <span className="font-display text-2xl italic text-[var(--ink)]">{totalMarks}</span>
+        </div>
+        <button className="primary-button mt-3" disabled={isGenerating} onClick={onGenerate} type="button">
+          {isGenerating ? <LoaderCircle className="animate-spin" size={16} /> : <Sparkles size={16} />}
+          {isGenerating ? "Generating" : "Generate paper"}
+        </button>
+        {isGenerating && (
+          <button className="secondary-button mt-2" onClick={onStop} type="button">
+            <Square size={15} />
+            Stop
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function GenerationCanvasState({ isGenerating, status }: { isGenerating: boolean; status: GenerationStatus }) {
+  if (!isGenerating) return null;
+
+  return (
+    <div className="fade-up mx-auto mb-5 max-w-[980px] rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] p-5 text-center shadow-[var(--shadow-md)]">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent-deep)]">
+        <LoaderCircle className="animate-spin" size={22} />
+      </div>
+      <div className="mt-3 font-display text-2xl italic text-[var(--ink)]">Generating question paper</div>
+      <div className="mt-1 text-sm text-[var(--ink-2)]">{status.message}</div>
+      <div className="mx-auto mt-4 h-1.5 max-w-md overflow-hidden rounded-full bg-[var(--surface-2)]">
+        <div className="h-full rounded-full bg-[var(--accent)] transition-all" style={{ width: `${Math.max(8, Math.min(100, status.progress))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function AssistantPanel({
+  chatInput,
+  chatMessages,
+  isBusy,
+  onAsk,
+  onChatInputChange,
+  onImportBank,
+  onImportSource,
+  onRefreshBank,
+  onRefreshRetrieval,
+  onRestoreVersion,
+  onSetPanel,
+  preview,
+  questionBank,
+  rightPanel,
+  usage,
+  versions,
+}: {
+  chatInput: string;
+  chatMessages: ChatMessage[];
+  isBusy: boolean;
+  onAsk: () => void;
+  onChatInputChange: (value: string) => void;
+  onImportBank: (item: QuestionBankItem) => void;
+  onImportSource: (result: RetrievalResult) => void;
+  onRefreshBank: () => void;
+  onRefreshRetrieval: () => void;
+  onRestoreVersion: (version: PaperVersion) => void;
+  onSetPanel: (panel: RightPanel) => void;
+  preview: RetrievalPreview | null;
+  questionBank: QuestionBankItem[];
+  rightPanel: RightPanel;
+  usage: AiUsageSummary | null;
+  versions: PaperVersion[];
+}) {
+  return (
+    <aside className="scale-in absolute bottom-5 right-5 z-20 hidden h-[min(620px,calc(100vh-96px))] w-[390px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] shadow-[var(--shadow-xl)] xl:flex">
+      <div className="border-b border-[var(--border)] bg-[var(--surface)] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] bg-gradient-to-br from-[var(--accent)] to-[var(--accent-deep)] text-[var(--paper-tint)]">
+              <Bot size={16} />
+            </span>
+            <div>
+              <div className="text-sm font-bold text-[var(--ink)]">Assistant</div>
+              <div className="text-[11px] text-[var(--ink-3)]">Refine, retrieve, restore</div>
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-4 gap-1 rounded-[var(--radius-sm)] bg-[var(--surface-2)] p-1">
+          {(["chat", "retrieval", "bank", "versions"] as RightPanel[]).map((panel) => (
+            <button key={panel} className={tabClass(rightPanel === panel)} onClick={() => onSetPanel(panel)} type="button">
+              {panel === "retrieval" ? "Sources" : panel}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3">
+        {rightPanel === "chat" && (
+          <div className="space-y-3">
+            {usage && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--ink-2)]">
+                <div className="font-bold text-[var(--ink)]">API usage</div>
+                <div className="mt-1">{usage.totalTokens} tokens · ${usage.estimatedCostUsd.toFixed(6)}</div>
+              </div>
+            )}
+            {chatMessages.map((message) => (
+              <div key={message.id} className={message.role === "user" ? "ml-10 rounded-xl rounded-tr-sm bg-[var(--ink)] px-3 py-2 text-xs font-medium text-[var(--paper-tint)]" : "mr-8 rounded-xl rounded-tl-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs leading-5 text-[var(--ink)]"}>
+                {message.text}
+              </div>
+            ))}
+            {isBusy && (
+              <div className="mr-8 flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--ink-2)]">
+                <LoaderCircle className="animate-spin" size={14} />
+                Working on the paper...
+              </div>
+            )}
+          </div>
+        )}
+
+        {rightPanel === "retrieval" && <RetrievalPanel preview={preview} onImport={onImportSource} onRefresh={onRefreshRetrieval} />}
+        {rightPanel === "bank" && <QuestionBankPanel items={questionBank} onImport={onImportBank} onRefresh={onRefreshBank} />}
+        {rightPanel === "versions" && <VersionPanel versions={versions} onRestore={onRestoreVersion} />}
+      </div>
+
+      <div className="border-t border-[var(--border)] bg-[var(--surface)] p-3">
+        <div className="relative">
+          <input
+            className="input rounded-full pr-11"
+            placeholder="Replace Q5, rebalance, format..."
+            value={chatInput}
+            onChange={(event) => onChatInputChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onAsk();
+            }}
+          />
+          <button className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--paper-tint)]" onClick={onAsk} type="button">
+            <Send size={14} />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function SetupDrawer({
+  addBlueprintSection,
+  availableChapters,
+  dashboard,
+  documentStyle,
+  isPromptMode,
+  onApplyDashboardTemplate,
+  onLoadTemplate,
+  onModeChange,
+  onPromptChange,
+  onRemoveBlueprintSection,
+  onSetDocumentStyle,
+  onSetShowMoreOptions,
+  onToggleBlueprintType,
+  onToggleQuestionType,
+  onUpdateBlueprintSection,
+  onUpdateRequest,
+  prompt,
+  questionTypeOptions,
+  request,
+  requestPreview,
+  showMoreOptions,
+}: {
+  addBlueprintSection: () => void;
+  availableChapters: string[];
+  dashboard: DashboardSummary | null;
+  documentStyle: DocumentStyle;
+  isPromptMode: boolean;
+  onApplyDashboardTemplate: (template: DashboardSummary["templates"][number]) => void;
+  onLoadTemplate: (file: File) => void;
+  onModeChange: (mode: Mode) => void;
+  onPromptChange: (value: string) => void;
+  onRemoveBlueprintSection: (sectionId: string) => void;
+  onSetDocumentStyle: React.Dispatch<React.SetStateAction<DocumentStyle>>;
+  onSetShowMoreOptions: React.Dispatch<React.SetStateAction<boolean>>;
+  onToggleBlueprintType: (sectionId: string, questionType: string) => void;
+  onToggleQuestionType: (questionType: string) => void;
+  onUpdateBlueprintSection: (sectionId: string, patch: Partial<SectionBlueprint>) => void;
+  onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
+  prompt: string;
+  questionTypeOptions: string[];
+  request: PaperRequest;
+  requestPreview: PaperRequest;
+  showMoreOptions: boolean;
+}) {
+  return (
+    <details className="group fixed bottom-5 left-5 z-30 hidden w-[340px] rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] shadow-[var(--shadow-xl)] lg:block">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-lg)] bg-[var(--surface)] px-4 py-3">
+        <span>
+          <span className="block font-display text-xl italic text-[var(--ink)]">Generation setup</span>
+          <span className="block text-[11px] text-[var(--ink-3)]">{requestPreview.board} · Class {requestPreview.classLevel} · {requestPreview.subject}</span>
+        </span>
+        <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-bold text-[var(--accent-deep)] group-open:hidden">Open</span>
+        <span className="hidden rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-bold text-[var(--ink-2)] group-open:inline">Close</span>
+      </summary>
+
+      <div className="max-h-[70vh] space-y-4 overflow-y-auto border-t border-[var(--border)] p-4">
+        <div className="grid grid-cols-2 rounded-[var(--radius-sm)] bg-[var(--surface-2)] p-1">
+          <button className={tabClass(!isPromptMode)} onClick={() => onModeChange("structured")} type="button">Parameters</button>
+          <button className={tabClass(isPromptMode)} onClick={() => onModeChange("prompt")} type="button">Prompt</button>
+        </div>
+
+        {isPromptMode ? (
+          <Field label="Free prompt">
+            <textarea className="input min-h-32 resize-none" value={prompt} onChange={(event) => onPromptChange(event.target.value)} />
+          </Field>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Board">
+                <Select value={request.board} onChange={(event) => onUpdateRequest("board", event.target.value as PaperRequest["board"])}>
+                  <option>CBSE</option>
+                  <option disabled>ICSE</option>
+                </Select>
+              </Field>
+              <Field label="Class">
+                <Select value={request.classLevel} onChange={(event) => onUpdateRequest("classLevel", event.target.value as PaperRequest["classLevel"])}>
+                  {["9", "10", "11", "12"].map((item) => <option key={item} value={item}>{item}</option>)}
+                </Select>
+              </Field>
+            </div>
+
+            <Field label="Template">
+              <Select
+                value={request.template?.name ?? ""}
+                onChange={(event) => {
+                  const template = dashboard?.templates.find((item) => item.name === event.target.value) ?? fallbackDashboardTemplates().find((item) => item.name === event.target.value);
+                  if (!template) {
+                    onUpdateRequest("template", null);
+                    return;
+                  }
+                  onApplyDashboardTemplate(template);
+                }}
+              >
+                <option value="">Default editor style</option>
+                {[...(dashboard?.templates ?? []), ...fallbackDashboardTemplates()].map((template) => (
+                  <option key={template.id} value={template.name}>{template.name}</option>
+                ))}
+              </Select>
+              <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] border border-dashed border-[var(--border-2)] bg-[var(--surface)] px-3 py-2 text-xs font-bold text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]">
+                <FileUp size={15} />
+                <span>{request.template?.name ?? "Upload TXT / MD / JSON"}</span>
+                <input className="sr-only" type="file" accept=".txt,.md,.json" onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) onLoadTemplate(file);
+                }} />
+              </label>
+            </Field>
+
+            <div className="grid grid-cols-2 gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-3">
+              <StyleNumber label="Font" value={documentStyle.fontSize} min={12} max={22} onChange={(fontSize) => onSetDocumentStyle((current) => ({ ...current, fontSize }))} />
+              <StyleNumber label="Spacing" value={documentStyle.lineHeight} min={1.1} max={2.2} step={0.05} onChange={(lineHeight) => onSetDocumentStyle((current) => ({ ...current, lineHeight }))} />
+              <StyleNumber label="Margin" value={documentStyle.margin} min={24} max={96} onChange={(margin) => onSetDocumentStyle((current) => ({ ...current, margin }))} />
+              <label className="grid gap-1 text-[11px] font-bold text-[var(--ink-2)]">
+                <span>Text color</span>
+                <input className="h-8 w-full rounded border border-[var(--border)] bg-[var(--paper)] p-1" type="color" value={documentStyle.textColor} onChange={(event) => onSetDocumentStyle((current) => ({ ...current, textColor: event.target.value }))} />
+              </label>
+            </div>
+
+            <Field label="Subject">
+              <Select value={request.subject} onChange={(event) => onUpdateRequest("subject", event.target.value as PaperRequest["subject"])}>
+                {["Maths", "Science", "Physics", "Chemistry", "Biology"].map((item) => <option key={item}>{item}</option>)}
+              </Select>
+            </Field>
+
+            <Field label="Chapter scope">
+              <Select value={request.chapterScope} onChange={(event) => onUpdateRequest("chapterScope", event.target.value as PaperRequest["chapterScope"])}>
+                <option value="single">One chapter</option>
+                <option value="multiple">List of chapters</option>
+                <option value="full_syllabus">Whole syllabus</option>
+              </Select>
+            </Field>
+
+            {request.chapterScope !== "full_syllabus" && (
+              <Field label={request.chapterScope === "single" ? "Choose chapter" : "Choose chapters"}>
+                <ChapterPicker
+                  availableChapters={availableChapters}
+                  mode={request.chapterScope}
+                  selectedChapters={request.chapters}
+                  onChange={(chapters) => {
+                    onUpdateRequest("chapters", chapters);
+                    onUpdateRequest("chapter", chapters[0] ?? "");
+                    onUpdateRequest("topic", chapters.join(", "));
+                  }}
+                />
+              </Field>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Marks">
+                <input className="input" type="number" value={request.totalMarks} onChange={(event) => onUpdateRequest("totalMarks", Number(event.target.value))} />
+              </Field>
+              <Field label="Sets">
+                <input className="input" type="number" min={1} max={5} value={request.variantCount} onChange={(event) => onUpdateRequest("variantCount", Number(event.target.value))} />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Difficulty">
+                <Select value={request.difficulty} onChange={(event) => onUpdateRequest("difficulty", event.target.value as PaperRequest["difficulty"])}>
+                  <option>Easy</option>
+                  <option>Medium</option>
+                  <option>Hard</option>
+                </Select>
+              </Field>
+              <Field label="Source">
+                <Select value={request.source} onChange={(event) => onUpdateRequest("source", event.target.value as PaperRequest["source"])}>
+                  <option>NCERT</option>
+                  <option>PYQ</option>
+                  <option>NCERT + PYQ</option>
+                </Select>
+              </Field>
+            </div>
+
+            <Field label="Question mix">
+              <div className="grid grid-cols-2 gap-2">
+                {questionTypeOptions.map((questionType) => {
+                  const selected = request.questionTypes.includes(questionType);
+                  return (
+                    <button key={questionType} className={`rounded-[var(--radius-sm)] border px-2 py-2 text-left text-[11px] font-black transition ${selected ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--surface-2)]"}`} onClick={() => onToggleQuestionType(questionType)} type="button">
+                      {questionType}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-3">
+              <button className="flex w-full items-center justify-between text-left text-xs font-black text-[var(--ink)]" onClick={() => onSetShowMoreOptions((current) => !current)} type="button">
+                <span>More options: section blueprint</span>
+                <span className="text-[var(--accent)]">{showMoreOptions ? "Hide" : "Show"}</span>
+              </button>
+              {showMoreOptions && (
+                <div className="mt-3 space-y-3">
+                  {(request.sectionBlueprint ?? []).map((section, index) => (
+                    <div key={section.id} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <input className="input h-8 flex-1 text-xs font-black" value={section.title} onChange={(event) => onUpdateBlueprintSection(section.id, { title: event.target.value })} aria-label={`Section ${index + 1} title`} />
+                        <button className="editor-mini-button text-red-600" onClick={() => onRemoveBlueprintSection(section.id)} type="button">Remove</button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Field label="Questions"><input className="input" type="number" min={1} value={section.questionCount} onChange={(event) => onUpdateBlueprintSection(section.id, { questionCount: Number(event.target.value) })} /></Field>
+                        <Field label="Marks"><input className="input" type="number" min={1} value={section.marksEach} onChange={(event) => onUpdateBlueprintSection(section.id, { marksEach: Number(event.target.value) })} /></Field>
+                        <Field label="Difficulty"><Select value={section.difficulty} onChange={(event) => onUpdateBlueprintSection(section.id, { difficulty: event.target.value as SectionBlueprint["difficulty"] })}><option>Mixed</option><option>Easy</option><option>Medium</option><option>Hard</option></Select></Field>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-1">
+                        {questionTypeOptions.map((questionType) => {
+                          const selected = section.questionTypes.includes(questionType);
+                          return <button key={`${section.id}-${questionType}`} className={`rounded-md border px-2 py-1.5 text-left text-[10px] font-black ${selected ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] text-[var(--ink-2)]"}`} onClick={() => onToggleBlueprintType(section.id, questionType)} type="button">{questionType}</button>;
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  <button className="secondary-button w-full justify-center" onClick={addBlueprintSection} type="button">Add section</button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function fallbackDashboardTemplates(): DashboardSummary["templates"] {
+  return [
+    { id: "default-template", name: "Default", description: "Balanced editable paper with standard spacing.", payload: {}, formatting: {}, inferredParams: {} },
+    { id: "unit-test-template", name: "Unit Test", description: "Short one-chapter assessment with compact instructions.", payload: {}, formatting: { margin: 48, lineHeight: 1.45, fontSize: 15 }, inferredParams: { totalMarks: 20, durationMinutes: 40, chapterScope: "single" } },
+    { id: "mid-term-template", name: "Mid Term", description: "Multi-chapter 50 mark paper with medium spacing.", payload: {}, formatting: { margin: 56, lineHeight: 1.55, fontSize: 16 }, inferredParams: { totalMarks: 50, durationMinutes: 120, chapterScope: "multiple" } },
+    { id: "full-syllabus-template", name: "Full Syllabus", description: "Large syllabus-wide test with broader sections.", payload: {}, formatting: { margin: 60, lineHeight: 1.6, fontSize: 16 }, inferredParams: { totalMarks: 80, durationMinutes: 180, chapterScope: "full_syllabus" } },
+    { id: "cbse-pyq-template", name: "CBSE PYQ Format", description: "Board-style instructions, sections, and exam-paper spacing.", payload: {}, formatting: { margin: 64, lineHeight: 1.5, fontSize: 15 }, inferredParams: { totalMarks: 80, durationMinutes: 180, source: "NCERT + PYQ" } },
+  ];
 }
 
 function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPreview | null; onImport: (result: RetrievalResult) => void; onRefresh: () => void }) {
@@ -1563,38 +1990,6 @@ function topNavClass(active: boolean) {
   return `h-9 rounded-md px-3 text-xs font-black uppercase tracking-[0.05em] ${
     active ? "bg-[var(--primary-fixed)] text-[var(--primary)]" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] hover:text-[var(--on-surface)]"
   }`;
-}
-
-function sideNavClass(active: boolean) {
-  return `flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs font-black uppercase tracking-[0.04em] ${
-    active ? "bg-[var(--primary-fixed)] text-[var(--primary)]" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)] hover:text-[var(--on-surface)]"
-  }`;
-}
-
-function viewTitle(view: AppView) {
-  switch (view) {
-    case "library":
-      return "Paper Library";
-    case "analytics":
-      return "Syllabus Coverage";
-    case "templates":
-      return "Template Suite";
-    default:
-      return "Question Paper Studio";
-  }
-}
-
-function viewSubtitle(view: AppView) {
-  switch (view) {
-    case "library":
-      return "Saved papers, versions, and recent AI runs";
-    case "analytics":
-      return "Real corpus coverage by chapter, source, and difficulty";
-    case "templates":
-      return "Reusable formatting and request presets";
-    default:
-      return "Structured generation workspace";
-  }
 }
 
 function describeRequest(request: PaperRequest) {

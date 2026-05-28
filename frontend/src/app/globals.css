@@ -1,37 +1,61 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fff8f4;
-  --foreground: #211a14;
-  --surface: #fff8f4;
-  --surface-container-lowest: #ffffff;
-  --surface-container-low: #fff1e7;
-  --surface-container: #faebe0;
-  --surface-container-high: #f4e6da;
-  --surface-container-highest: #efe0d5;
-  --surface-dim: #e6d7cc;
-  --on-surface: #211a14;
-  --on-surface-variant: #534436;
-  --outline: #857464;
-  --outline-variant: #d8c3b1;
-  --primary: #895100;
-  --primary-container: #d98b2c;
-  --primary-fixed: #ffdcbd;
-  --primary-fixed-dim: #ffb86d;
-  --on-primary: #ffffff;
-  --on-primary-container: #4e2c00;
-  --secondary: #5f5e60;
-  --secondary-container: #e2dfe1;
+  --bg: #f7efe1;
+  --bg-deep: #efe4cf;
+  --surface: #fdf7ea;
+  --surface-2: #f3e8d2;
+  --surface-3: #ead9b9;
+  --paper: #ffffff;
+  --paper-tint: #fffbf3;
+  --ink: #221710;
+  --ink-2: #5b4630;
+  --ink-3: #8a7559;
+  --accent: #8b5a2b;
+  --accent-deep: #6b3d18;
+  --accent-soft: #f4d5a8;
+  --accent-soft-2: #f9e5c3;
+  --highlight: #e89a3c;
+  --border: rgba(110, 70, 30, 0.16);
+  --border-2: rgba(110, 70, 30, 0.28);
+  --shadow-sm: 0 1px 2px rgba(60, 40, 20, 0.04), 0 1px 1px rgba(60, 40, 20, 0.03);
+  --shadow-md: 0 4px 14px rgba(60, 40, 20, 0.07), 0 1px 2px rgba(60, 40, 20, 0.04);
+  --shadow-lg: 0 18px 40px rgba(60, 40, 20, 0.12), 0 4px 10px rgba(60, 40, 20, 0.06);
+  --shadow-xl: 0 30px 70px rgba(60, 40, 20, 0.18), 0 10px 20px rgba(60, 40, 20, 0.08);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --surface-container-lowest: var(--paper);
+  --surface-container-low: var(--surface);
+  --surface-container: var(--surface-2);
+  --surface-container-high: var(--surface-2);
+  --surface-container-highest: var(--surface-3);
+  --surface-dim: var(--bg-deep);
+  --on-surface: var(--ink);
+  --on-surface-variant: var(--ink-2);
+  --outline: var(--ink-3);
+  --outline-variant: var(--border-2);
+  --primary: var(--accent);
+  --primary-container: var(--accent);
+  --primary-fixed: var(--accent-soft);
+  --primary-fixed-dim: var(--accent-soft-2);
+  --on-primary: var(--paper-tint);
+  --on-primary-container: var(--accent-deep);
+  --secondary: #3d6334;
+  --secondary-container: #d4e6ca;
   --on-secondary: #ffffff;
-  --on-secondary-container: #636264;
-  --tertiary: #006685;
-  --tertiary-fixed: #bfe9ff;
-  --surface-variant: #efe0d5;
+  --on-secondary-container: #284820;
+  --tertiary: #3f51b5;
+  --tertiary-fixed: #dce4ff;
+  --surface-variant: var(--surface-2);
   --error: #ba1a1a;
   --error-container: #ffdad6;
   --on-error-container: #93000a;
-  --focus: #895100;
-  --shadow: 0 8px 24px rgba(26, 26, 28, 0.08);
+  --focus: var(--accent);
+  --shadow: var(--shadow-lg);
   --font-sans: var(--font-geist), "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-display: var(--font-newsreader), Georgia, "Times New Roman", serif;
   --font-paper: var(--font-libre-caslon), Georgia, "Times New Roman", serif;
@@ -76,8 +100,66 @@ button:disabled {
 }
 
 ::selection {
-  background: var(--primary-container);
-  color: var(--on-primary);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(110, 70, 30, 0.18);
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(110, 70, 30, 0.32);
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.fade-up {
+  animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.scale-in {
+  animation: scaleIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .font-display {
