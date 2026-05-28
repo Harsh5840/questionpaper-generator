@@ -59,7 +59,7 @@ import {
 type Mode = "structured" | "prompt";
 type RightPanel = "chat" | "retrieval";
 type AppView = "studio" | "library" | "analytics" | "templates";
-type CreateFlow = "params" | "prompt" | null;
+type CreateFlow = "choose" | "params" | "prompt" | null;
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -106,6 +106,7 @@ export default function Home() {
   const [prompt, setPrompt] = useState("CBSE class 10 maths 50 marks from Quadratic Equations using NCERT and PYQ format");
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
   const [documentStyle, setDocumentStyle] = useState<DocumentStyle>(defaultDocumentStyle);
+  const [openPapers, setOpenPapers] = useState<Paper[]>([]);
   const [variantPapers, setVariantPapers] = useState<Paper[]>([]);
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
   const [versions, setVersions] = useState<PaperVersion[]>([]);
@@ -175,6 +176,7 @@ export default function Home() {
     }));
     setDocumentStyle((current) => ({ ...current, ...formatting }));
     setSelectedPaper((current) => (current ? applyTemplateToExistingPaper(current, paperTemplate) : current));
+    setOpenPapers((papers) => papers.map((paper) => applyTemplateToExistingPaper(paper, paperTemplate)));
     setVariantPapers((papers) => papers.map((paper) => applyTemplateToExistingPaper(paper, paperTemplate)));
     addAssistantMessage(`Template selected: ${template.name}`);
   }
@@ -193,11 +195,39 @@ export default function Home() {
     setDashboard(await fetchDashboardViaApi());
   }
 
+  function samePaper(left: Paper, right: Paper) {
+    return left.id === right.id || Boolean(left.paperId && right.paperId && left.paperId === right.paperId);
+  }
+
+  function mergeOpenPapers(current: Paper[], incoming: Paper[]) {
+    return incoming.reduce((papers, paper) => {
+      const normalized = applyDocumentStyle(recalculatePaper(normalizePaperStructure(paper)), { ...documentStyle, ...paper.documentStyle });
+      const exists = papers.some((item) => samePaper(item, normalized));
+
+      if (exists) {
+        return papers.map((item) => (samePaper(item, normalized) ? normalized : item));
+      }
+
+      return [...papers, normalized];
+    }, current);
+  }
+
+  function activatePaper(paper: Paper) {
+    const normalized = applyDocumentStyle(recalculatePaper(normalizePaperStructure(paper)), { ...documentStyle, ...paper.documentStyle });
+    setSelectedPaper(normalized);
+    setOpenPapers((papers) => mergeOpenPapers(papers, [normalized]));
+    setDocumentStyle((current) => ({ ...current, ...normalized.documentStyle }));
+  }
+
+  async function switchOpenPaper(paper: Paper) {
+    activatePaper(paper);
+    await refreshVersions(paper.paperId);
+  }
+
   async function runGeneration() {
     if (isGenerating) return;
 
     const nextRequest = mode === "prompt" ? requestFromPrompt(prompt) : request;
-    setSelectedPaper(null);
     setVariantPapers([]);
     setUsage(null);
     setLastError(null);
@@ -220,8 +250,9 @@ export default function Home() {
       const normalizedPapers = papers.map((paper) => applyDocumentStyle(recalculatePaper(paper), documentStyle));
       const paper = normalizedPapers[0];
       setVariantPapers(normalizedPapers);
-      setSelectedPaper(paper);
-      await refreshVersions(paper.paperId);
+      setOpenPapers((current) => mergeOpenPapers(current, normalizedPapers));
+      if (paper) activatePaper(paper);
+      await refreshVersions(paper?.paperId);
       await refreshRetrievalPreview(nextRequest);
       setUsage(await fetchUsageViaApi(activeRunId ?? lastRunId));
       setStatus({ status: "completed", step: "completed", message: "Paper ready", progress: 100 });
@@ -237,8 +268,7 @@ export default function Home() {
   }
 
   async function selectVariant(paper: Paper) {
-    setSelectedPaper(paper);
-    setDocumentStyle((current) => ({ ...current, ...paper.documentStyle }));
+    activatePaper(paper);
     await refreshVersions(paper.paperId);
   }
 
@@ -264,7 +294,7 @@ export default function Home() {
 
     const restored = structured?.paper ?? normalizeVersionPayload(latestVersion?.payload ?? {}, paperId);
     const mergedStyle = { ...documentStyle, ...restored.documentStyle };
-    setSelectedPaper(applyDocumentStyle(restored, mergedStyle));
+    activatePaper(applyDocumentStyle(restored, mergedStyle));
     setDocumentStyle(mergedStyle);
     await refreshVersions(paperId);
     addAssistantMessage(`Loaded ${restored.title} from the library.`);
@@ -276,8 +306,9 @@ export default function Home() {
   }
 
   function updateSelectedPaper(paper: Paper) {
-    const styledPaper = applyDocumentStyle(recalculatePaper(paper), documentStyle);
+    const styledPaper = applyDocumentStyle(recalculatePaper(normalizePaperStructure(paper)), documentStyle);
     setSelectedPaper(styledPaper);
+    setOpenPapers((papers) => mergeOpenPapers(papers, [styledPaper]));
     setVariantPapers((papers) => papers.map((item) => (item.id === styledPaper.id ? styledPaper : item)));
   }
 
@@ -299,8 +330,7 @@ export default function Home() {
     try {
       const refinement = await refineViaApi(selectedPaper, instruction);
       const nextPaper = applyDocumentStyle(recalculatePaper(refinement.preview), documentStyle);
-      setSelectedPaper(nextPaper);
-      setVariantPapers((papers) => papers.map((item) => (item.id === nextPaper.id ? nextPaper : item)));
+      updateSelectedPaper(nextPaper);
       await saveVersionViaApi(nextPaper, "ai_refinement");
       await refreshVersions(nextPaper.paperId);
       setStatus({ status: "completed", step: "refined", message: "Refinement applied", progress: 100 });
@@ -365,7 +395,7 @@ export default function Home() {
 
   async function restoreVersion(version: PaperVersion) {
     const restored = normalizeVersionPayload(version.payload, selectedPaper?.paperId);
-    setSelectedPaper(restored);
+    activatePaper(restored);
     setDocumentStyle((current) => ({ ...current, ...restored.documentStyle }));
     addAssistantMessage(`Restored version ${version.versionNumber}.`);
   }
@@ -497,10 +527,16 @@ export default function Home() {
     setChatMessages((messages) => [...messages, { id: crypto.randomUUID(), role: "assistant", text }]);
   }
 
-  const hasPaperWorkspace = selectedPaper || variantPapers.length > 0 || isGenerating;
+  const hasPaperWorkspace = selectedPaper || openPapers.length > 0 || variantPapers.length > 0 || isGenerating;
   const openDraftWorkspace = () => {
     setAppView("studio");
-    setSelectedPaper((current) => current ?? createDraftPaper(requestPreview, documentStyle));
+    activatePaper(createDraftPaper(requestPreview, documentStyle));
+    setCreateFlow(null);
+  };
+
+  const openNewPaperChooser = () => {
+    setAppView("studio");
+    setCreateFlow("choose");
   };
 
   const openGuidedSetup = () => {
@@ -532,6 +568,7 @@ export default function Home() {
           setAppView("studio");
           setSelectedPaper(null);
           setVariantPapers([]);
+          setOpenPapers([]);
         }}
         onOpenSetup={openGuidedSetup}
         onOpenView={setAppView}
@@ -585,11 +622,13 @@ export default function Home() {
           <PaperNavigator
             isGenerating={isGenerating}
             mode={mode}
+            openPapers={openPapers}
             requestPreview={requestPreview}
             selectedPaper={selectedPaper}
             variantPapers={variantPapers}
-            onAddBlank={openGuidedSetup}
+            onAddBlank={openNewPaperChooser}
             onGenerate={() => void runGeneration()}
+            onSelectOpenPaper={(paper) => void switchOpenPaper(paper)}
             onSelectVariant={(paper) => void selectVariant(paper)}
             onStop={stopGeneration}
           />
@@ -636,6 +675,15 @@ export default function Home() {
             onToggleOpen={() => setIsAssistantOpen((current) => !current)}
           />
         </div>
+      )}
+
+      {createFlow === "choose" && (
+        <NewPaperChooserModal
+          onBlank={openDraftWorkspace}
+          onClose={closeCreateFlow}
+          onFreePrompt={openPromptSetup}
+          onParameters={openGuidedSetup}
+        />
       )}
 
       {createFlow === "params" && (
@@ -854,6 +902,98 @@ function PaperLabTopBar({
         <div className="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-deep)] font-mono text-[11px] font-black text-[var(--paper-tint)]">TP</div>
       </div>
     </header>
+  );
+}
+
+function NewPaperChooserModal({
+  onBlank,
+  onClose,
+  onFreePrompt,
+  onParameters,
+}: {
+  onBlank: () => void;
+  onClose: () => void;
+  onFreePrompt: () => void;
+  onParameters: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(36,20,11,0.32)] px-4 backdrop-blur-sm">
+      <div className="scale-in w-full max-w-4xl overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--surface)] shadow-[var(--shadow-xl)]">
+        <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-7 py-6">
+          <div>
+            <div className="font-mono text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">New Paper</div>
+            <h2 className="mt-1 font-display text-3xl italic leading-none text-[var(--ink)]">How do you want to begin?</h2>
+            <p className="mt-2 text-sm text-[var(--ink-2)]">Create a blank draft, use guided parameters, or describe the paper in plain English.</p>
+          </div>
+          <button className="icon-button bg-[var(--paper)]" onClick={onClose} title="Close" type="button">
+            <X size={17} />
+          </button>
+        </header>
+
+        <div className="grid gap-4 px-7 py-7 md:grid-cols-3">
+          <CreatePathCard
+            desc="Start with an empty structured paper and import or write questions manually."
+            icon={<FileText size={20} />}
+            label="Blank Paper"
+            onClick={onBlank}
+            title="Blank paper"
+          />
+          <CreatePathCard
+            desc="Pick board, class, subject, chapters, marks, difficulty, sources, and question mix."
+            icon={<SlidersHorizontal size={20} />}
+            label="Guided Setup"
+            onClick={onParameters}
+            title="Create from parameters"
+          />
+          <CreatePathCard
+            desc="Tell the assistant what you need. We will extract the missing settings before generation."
+            icon={<Sparkles size={20} />}
+            label="Free Prompt"
+            onClick={onFreePrompt}
+            title="Free prompt"
+          />
+        </div>
+
+        <footer className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--paper-tint)] px-7 py-4 text-xs text-[var(--ink-3)]">
+          <span className="font-mono uppercase tracking-[0.14em]">CBSE-first · structured editor · saved in open papers</span>
+          <button className="secondary-button w-auto px-4" onClick={onClose} type="button">
+            Cancel
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function CreatePathCard({
+  desc,
+  icon,
+  label,
+  onClick,
+  title,
+}: {
+  desc: string;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      className="group min-h-48 rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] p-5 text-left shadow-[var(--shadow-sm)] transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:shadow-[var(--shadow-md)]"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-deep)] transition group-hover:bg-[var(--accent)] group-hover:text-[var(--paper-tint)]">
+        {icon}
+      </span>
+      <span className="mt-5 block font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">{label}</span>
+      <span className="mt-1 block font-display text-2xl italic leading-tight text-[var(--ink)]">{title}</span>
+      <span className="mt-3 block text-sm leading-6 text-[var(--ink-2)]">{desc}</span>
+      <span className="mt-5 inline-flex items-center gap-2 text-xs font-black text-[var(--accent-deep)]">
+        Continue <ArrowRight size={15} />
+      </span>
+    </button>
   );
 }
 
@@ -1400,8 +1540,10 @@ function PaperNavigator({
   mode,
   onAddBlank,
   onGenerate,
+  onSelectOpenPaper,
   onSelectVariant,
   onStop,
+  openPapers,
   requestPreview,
   selectedPaper,
   variantPapers,
@@ -1410,8 +1552,10 @@ function PaperNavigator({
   mode: Mode;
   onAddBlank: () => void;
   onGenerate: () => void;
+  onSelectOpenPaper: (paper: Paper) => void;
   onSelectVariant: (paper: Paper) => void;
   onStop: () => void;
+  openPapers: Paper[];
   requestPreview: PaperRequest;
   selectedPaper: Paper | null;
   variantPapers: Paper[];
@@ -1422,7 +1566,30 @@ function PaperNavigator({
   return (
     <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] lg:flex">
       <div className="border-b border-[var(--border)] p-4">
-        <div className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--ink-3)]">Open papers</div>
+        <div className="flex items-center justify-between">
+          <div className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--ink-3)]">Open papers</div>
+          <span className="font-mono text-[10px] font-black text-[var(--accent)]">{openPapers.length}</span>
+        </div>
+        {openPapers.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {openPapers.map((paper, index) => (
+              <button
+                key={`${paper.id}-${paper.paperId ?? "draft"}`}
+                className={`flex w-full items-center gap-2 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-xs transition ${selectedPaper && (selectedPaper.id === paper.id || (selectedPaper.paperId && selectedPaper.paperId === paper.paperId)) ? "border-[var(--accent)] bg-[var(--paper)] font-black text-[var(--ink)] shadow-[var(--shadow-sm)]" : "border-transparent text-[var(--ink-2)] hover:bg-[var(--surface-2)]"}`}
+                onClick={() => onSelectOpenPaper(paper)}
+                type="button"
+              >
+                <FileText className="shrink-0 text-[var(--accent)]" size={15} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{paper.title || `Untitled paper ${index + 1}`}</span>
+                  <span className="block truncate font-mono text-[10px] font-medium text-[var(--ink-3)]">
+                    {paper.summary.totalMarks}m · {paper.summary.questionCount}q
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <button className="mt-3 flex w-full items-center gap-2 rounded-[var(--radius-md)] border border-dashed border-[var(--border-2)] px-3 py-2 text-left text-xs font-bold text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]" onClick={onAddBlank} type="button">
           <FileText size={15} />
           New paper
@@ -1430,7 +1597,7 @@ function PaperNavigator({
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
-        {variantPapers.length > 0 && (
+        {variantPapers.length > 0 && openPapers.length === 0 && (
           <div className="mb-4">
             <div className="px-2 pb-2 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Generated sets</div>
             <div className="space-y-1">
