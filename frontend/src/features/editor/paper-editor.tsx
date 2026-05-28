@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import { useMemo, useState } from "react";
 import {
   Copy,
@@ -33,6 +34,13 @@ interface DraggedQuestion {
   questionId: string;
 }
 
+interface DraggedDiagram {
+  sectionId: string;
+  questionId: string;
+  diagramId: string;
+  subpartId?: string;
+}
+
 export function PaperEditor({
   paper,
   documentStyle,
@@ -45,6 +53,7 @@ export function PaperEditor({
   onTextEditorFocus,
 }: PaperEditorProps) {
   const [draggedQuestion, setDraggedQuestion] = useState<DraggedQuestion | null>(null);
+  const [draggedDiagram, setDraggedDiagram] = useState<DraggedDiagram | null>(null);
   const [expandedAnswers, setExpandedAnswers] = useState<Record<string, boolean>>({});
   const [replacingQuestions, setReplacingQuestions] = useState<Record<string, boolean>>({});
   const [replacingChoices, setReplacingChoices] = useState<Record<string, boolean>>({});
@@ -277,6 +286,52 @@ export function PaperEditor({
           status: "placeholder",
         },
       ],
+    });
+  };
+
+  const addSubpartDiagramPlaceholder = (sectionId: string, questionId: string, subpartId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const subpart = question?.subparts?.find((item) => item.id === subpartId);
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      diagramBlocks: [
+        ...(subpart?.diagramBlocks ?? []),
+        {
+          id: crypto.randomUUID(),
+          title: `Diagram for part (${subpart?.label ?? ""})`,
+          caption: "Upload or generate a diagram later.",
+          status: "placeholder",
+        },
+      ],
+    });
+  };
+
+  const moveDraggedDiagramToQuestion = (targetSectionId: string, targetQuestionId: string) => {
+    if (!draggedDiagram) return;
+
+    updatePaper((current) => moveDiagram(current, draggedDiagram, { sectionId: targetSectionId, questionId: targetQuestionId }));
+    setDraggedDiagram(null);
+  };
+
+  const moveDraggedDiagramToSubpart = (targetSectionId: string, targetQuestionId: string, targetSubpartId: string) => {
+    if (!draggedDiagram) return;
+
+    updatePaper((current) => moveDiagram(current, draggedDiagram, { sectionId: targetSectionId, questionId: targetQuestionId, subpartId: targetSubpartId }));
+    setDraggedDiagram(null);
+  };
+
+  const deleteQuestionDiagram = (sectionId: string, questionId: string, diagramId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    updateQuestion(sectionId, questionId, {
+      diagramBlocks: (question?.diagramBlocks ?? []).filter((diagram) => diagram.id !== diagramId),
+    });
+  };
+
+  const deleteSubpartDiagram = (sectionId: string, questionId: string, subpartId: string, diagramId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const subpart = question?.subparts?.find((item) => item.id === subpartId);
+    updateSubpart(sectionId, questionId, subpartId, {
+      diagramBlocks: (subpart?.diagramBlocks ?? []).filter((diagram) => diagram.id !== diagramId),
     });
   };
 
@@ -735,6 +790,20 @@ export function PaperEditor({
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
 
+                          <DiagramDropZone
+                            emptyText="Drag a diagram here to attach it to the whole question. It prints before options and subparts."
+                            onDrop={() => moveDraggedDiagramToQuestion(section.id, question.id)}
+                          >
+                            {question.diagramBlocks && question.diagramBlocks.length > 0 && (
+                              <DiagramBlockList
+                                diagrams={question.diagramBlocks}
+                                label="Question diagram"
+                                onDelete={(diagramId) => deleteQuestionDiagram(section.id, question.id, diagramId)}
+                                onDragStart={(diagramId) => setDraggedDiagram({ sectionId: section.id, questionId: question.id, diagramId })}
+                              />
+                            )}
+                          </DiagramDropZone>
+
                           {question.options && question.options.length > 0 && (
                             <div className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
                               {question.options.map((option, optionIndex) => (
@@ -817,13 +886,27 @@ export function PaperEditor({
                                       onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
                                       onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
                                     />
-                                    <TextBlockActions
-                                      className="opacity-100 lg:opacity-0 lg:group-hover/subpart:opacity-100"
-                                      onDuplicate={() => duplicateSubpart(section.id, question.id, subpart.id)}
-                                      onAddChoice={() => addSubpartChoice(section.id, question.id, subpart.id)}
-                                      onDelete={() => deleteSubpart(section.id, question.id, subpart.id)}
-                                    />
-                                  </div>
+                                  <TextBlockActions
+                                    className="opacity-100 lg:opacity-0 lg:group-hover/subpart:opacity-100"
+                                    onDuplicate={() => duplicateSubpart(section.id, question.id, subpart.id)}
+                                    onAddChoice={() => addSubpartChoice(section.id, question.id, subpart.id)}
+                                    onAddDiagram={() => addSubpartDiagramPlaceholder(section.id, question.id, subpart.id)}
+                                    onDelete={() => deleteSubpart(section.id, question.id, subpart.id)}
+                                  />
+                                </div>
+                                  <DiagramDropZone
+                                    emptyText={`Drag a diagram here to attach it to part (${subpart.label}).`}
+                                    onDrop={() => moveDraggedDiagramToSubpart(section.id, question.id, subpart.id)}
+                                  >
+                                    {subpart.diagramBlocks && subpart.diagramBlocks.length > 0 && (
+                                      <DiagramBlockList
+                                        diagrams={subpart.diagramBlocks}
+                                        label={`Part (${subpart.label}) diagram`}
+                                        onDelete={(diagramId) => deleteSubpartDiagram(section.id, question.id, subpart.id, diagramId)}
+                                        onDragStart={(diagramId) => setDraggedDiagram({ sectionId: section.id, questionId: question.id, subpartId: subpart.id, diagramId })}
+                                      />
+                                    )}
+                                  </DiagramDropZone>
                                   {subpart.optionalChoice && (
                                     <div className="mt-2 rounded-md border border-dashed border-blue-200 bg-blue-50/60 p-2">
                                       <div className="mb-2 flex items-center justify-between text-xs font-black text-blue-700">
@@ -849,20 +932,6 @@ export function PaperEditor({
                                       </div>
                                     </div>
                                   )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {question.diagramBlocks && question.diagramBlocks.length > 0 && (
-                            <div className="space-y-2 rounded-md border border-dashed border-slate-300 bg-slate-50 p-3">
-                              {question.diagramBlocks.map((diagram) => (
-                                <div key={diagram.id} className="flex items-center justify-between gap-3 rounded-md bg-white px-3 py-2 text-xs text-slate-600">
-                                  <div>
-                                    <div className="font-black text-slate-800">{diagram.title}</div>
-                                    <div>{diagram.caption || "Diagram placeholder"}</div>
-                                  </div>
-                                  <span className="rounded-full bg-amber-50 px-2 py-1 font-bold text-amber-700">Placeholder</span>
                                 </div>
                               ))}
                             </div>
@@ -1196,6 +1265,138 @@ function SourceMixPill({ label, value }: { label: string; value: number }) {
       <div className="mt-1 font-display text-xl italic text-amber-950">{value}</div>
     </div>
   );
+}
+
+function DiagramDropZone({
+  children,
+  emptyText,
+  onDrop,
+}: {
+  children?: React.ReactNode;
+  emptyText: string;
+  onDrop: () => void;
+}) {
+  return (
+    <div
+      className="rounded-md border border-dashed border-slate-300 bg-slate-50/70 p-2"
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onDrop();
+      }}
+    >
+      {children || <div className="px-2 py-1 text-[11px] font-semibold text-slate-400">{emptyText}</div>}
+    </div>
+  );
+}
+
+function DiagramBlockList({
+  diagrams,
+  label,
+  onDelete,
+  onDragStart,
+}: {
+  diagrams: NonNullable<PaperQuestion["diagramBlocks"]>;
+  label: string;
+  onDelete: (diagramId: string) => void;
+  onDragStart: (diagramId: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {diagrams.map((diagram) => (
+        <div
+          key={diagram.id}
+          className="flex cursor-grab items-center justify-between gap-3 rounded-md border border-amber-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm"
+          draggable
+          onDragStart={(event) => {
+            event.stopPropagation();
+            event.dataTransfer.effectAllowed = "move";
+            onDragStart(diagram.id);
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <GripVertical className="shrink-0 text-amber-700" size={15} />
+            <div className="min-w-0">
+              <div className="truncate font-black text-slate-800">{diagram.title}</div>
+              <div className="truncate">{diagram.caption || label}</div>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="rounded-full bg-amber-50 px-2 py-1 font-bold text-amber-700">Draggable</span>
+            <button className="editor-icon-button text-red-600 hover:bg-red-50" onClick={() => onDelete(diagram.id)} type="button" title="Delete diagram">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function moveDiagram(paper: Paper, source: DraggedDiagram, target: { sectionId: string; questionId: string; subpartId?: string }): Paper {
+  let movingDiagram: NonNullable<PaperQuestion["diagramBlocks"]>[number] | null = null;
+
+  const sectionsWithoutDiagram = paper.sections.map((section) => ({
+    ...section,
+    questions: section.questions.map((question) => {
+      if (section.id !== source.sectionId || question.id !== source.questionId) return question;
+
+      if (source.subpartId) {
+        return {
+          ...question,
+          subparts: question.subparts?.map((subpart) => {
+            if (subpart.id !== source.subpartId) return subpart;
+            movingDiagram = subpart.diagramBlocks?.find((diagram) => diagram.id === source.diagramId) ?? null;
+            return {
+              ...subpart,
+              diagramBlocks: (subpart.diagramBlocks ?? []).filter((diagram) => diagram.id !== source.diagramId),
+            };
+          }),
+        };
+      }
+
+      movingDiagram = question.diagramBlocks?.find((diagram) => diagram.id === source.diagramId) ?? null;
+      return {
+        ...question,
+        diagramBlocks: (question.diagramBlocks ?? []).filter((diagram) => diagram.id !== source.diagramId),
+      };
+    }),
+  }));
+
+  if (!movingDiagram) return paper;
+
+  return {
+    ...paper,
+    sections: sectionsWithoutDiagram.map((section) => ({
+      ...section,
+      questions: section.questions.map((question) => {
+        if (section.id !== target.sectionId || question.id !== target.questionId) return question;
+
+        if (target.subpartId) {
+          return {
+            ...question,
+            subparts: question.subparts?.map((subpart) =>
+              subpart.id === target.subpartId
+                ? {
+                    ...subpart,
+                    diagramBlocks: [...(subpart.diagramBlocks ?? []), movingDiagram as NonNullable<PaperQuestion["diagramBlocks"]>[number]],
+                  }
+                : subpart,
+            ),
+          };
+        }
+
+        return {
+          ...question,
+          diagramBlocks: [...(question.diagramBlocks ?? []), movingDiagram as NonNullable<PaperQuestion["diagramBlocks"]>[number]],
+        };
+      }),
+    })),
+  };
 }
 
 function nextSubpartLabel(subparts: PaperSubpart[]) {

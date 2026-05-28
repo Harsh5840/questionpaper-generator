@@ -113,6 +113,12 @@ export type PaperSubpart = {
   label?: string;
   text: string;
   richText?: string;
+  diagramBlocks?: {
+    id: string;
+    title: string;
+    caption?: string;
+    status: "placeholder";
+  }[];
   marks?: number;
   answer?: string;
   answerRichText?: string;
