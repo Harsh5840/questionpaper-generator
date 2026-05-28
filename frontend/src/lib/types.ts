@@ -10,12 +10,19 @@ export type PaperRequest = {
   questionTypes: string[];
   sectionBlueprint?: SectionBlueprint[];
   markingScheme: string;
-  difficulty: "Easy" | "Medium" | "Hard";
+  difficulty: "Easy" | "Medium" | "Hard" | "Mixed";
+  difficultyMix?: DifficultyMix;
   totalMarks: number;
   durationMinutes: number;
   variantCount: number;
   freePrompt?: string;
   template?: PaperTemplate | null;
+};
+
+export type DifficultyMix = {
+  easy: number;
+  medium: number;
+  hard: number;
 };
 
 export type SectionBlueprint = {
@@ -62,6 +69,13 @@ export type PaperQuestion = {
   topic?: string;
   tags?: string[];
   sourceCitations?: string[];
+  generationMode?: "direct_ncert" | "direct_pyq" | "question_bank" | "ai_generated";
+  diagramBlocks?: {
+    id: string;
+    title: string;
+    caption?: string;
+    status: "placeholder";
+  }[];
   subparts?: PaperSubpart[];
   optionalChoice?: {
     id?: string;
@@ -149,6 +163,14 @@ export type Paper = {
   retrievalTrace?: RetrievalPreview | null;
   documentStyle?: Partial<DocumentStyle>;
   warnings: string[];
+  sourceMix?: {
+    ncert: number;
+    pyq: number;
+    questionBank: number;
+    aiGenerated: number;
+    uncited: number;
+  };
+  pageCount?: number;
 };
 
 export type PaperVersion = {

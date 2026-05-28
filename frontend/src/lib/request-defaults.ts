@@ -13,6 +13,7 @@ export const defaultRequest: PaperRequest = {
   sectionBlueprint: [],
   markingScheme: "Standard board pattern",
   difficulty: "Medium",
+  difficultyMix: { easy: 20, medium: 60, hard: 20 },
   totalMarks: 80,
   durationMinutes: 180,
   variantCount: 3,

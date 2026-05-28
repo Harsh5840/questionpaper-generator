@@ -280,6 +280,7 @@ defmodule Qpg.Generation do
       |> normalize_chapters()
       |> put_default("question_types", ["MCQ", "Short", "Long"])
       |> put_default("difficulty", "Medium")
+      |> put_default("difficulty_mix", %{"easy" => 20, "medium" => 60, "hard" => 20})
       |> put_default("total_marks", 80)
       |> put_default("duration_minutes", 180)
       |> put_default("variant_count", 3)
@@ -364,6 +365,7 @@ defmodule Qpg.Generation do
       "question_types",
       "section_blueprint",
       "difficulty",
+      "difficulty_mix",
       "total_marks",
       "duration_minutes",
       "variant_count"

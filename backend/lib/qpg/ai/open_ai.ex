@@ -606,6 +606,7 @@ defmodule Qpg.AI.OpenAI do
       "topic",
       "source",
       "difficulty",
+      "difficulty_mix",
       "total_marks",
       "duration_minutes",
       "variant_count"

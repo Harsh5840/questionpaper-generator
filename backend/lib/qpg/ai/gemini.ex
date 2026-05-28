@@ -1001,6 +1001,7 @@ defmodule Qpg.AI.Gemini do
       "duration_minutes" => request["duration_minutes"],
       "source" => request["source"],
       "difficulty" => request["difficulty"],
+      "difficulty_mix" => request["difficulty_mix"],
       "total_marks" => request["total_marks"]
     }
   end

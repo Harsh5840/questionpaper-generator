@@ -55,6 +55,7 @@ defmodule Qpg.AI.Prompts do
       question_types, question_count, marks_each, difficulty, and instructions
     - marking_scheme
     - difficulty
+    - difficulty_mix: optional object with easy, medium, and hard percentages
     - total_marks
     - duration_minutes
     - variant_count
@@ -69,6 +70,9 @@ defmodule Qpg.AI.Prompts do
 
     Requirements:
     - Match the requested board, class, subject, marks, and difficulty.
+    - If difficulty_mix is present, approximate that Easy/Medium/Hard
+      distribution across generated questions and warn when source coverage
+      prevents a close match.
     - If subject_focus is Physics, Chemistry, or Biology inside a broader
       Science corpus, generate only that subject's chapter concepts. Do not mix
       unrelated Science chapters unless the user selected Science as the broad
@@ -105,6 +109,8 @@ defmodule Qpg.AI.Prompts do
       answer-key placement, marking-scheme placement, and any image-derived
       layout notes.
     - Balance MCQ, short, and long questions according to the marking scheme.
+    - For hard MCQs, avoid direct recall-only options; prefer application,
+      assertion-reason, case-based, or multi-step conceptual distractors.
     - If section_blueprint is present and non-empty, treat it as the required
       paper layout: create the requested number of sections, keep each section's
       question types, question count, marks_each, difficulty, and instructions,

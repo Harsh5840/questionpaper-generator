@@ -3,6 +3,7 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import type { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
@@ -38,6 +39,27 @@ interface RichTextEditorProps {
   label: string;
   minHeight?: "compact" | "normal" | "answer";
   placeholder?: string;
+  onFocus?: () => void;
+}
+
+let activeRichTextEditor: Editor | null = null;
+
+export type MathToolkitInsert =
+  | { type: "text"; value: string }
+  | { type: "html"; value: string }
+  | { type: "math"; value: string };
+
+export function insertIntoActiveRichTextEditor(insert: MathToolkitInsert) {
+  if (!activeRichTextEditor) return false;
+  const chain = activeRichTextEditor.chain().focus();
+
+  if (insert.type === "math") {
+    chain.insertInlineMath({ latex: insert.value }).run();
+    return true;
+  }
+
+  chain.insertContent(insert.value).run();
+  return true;
 }
 
 export function RichTextEditor({
@@ -48,6 +70,7 @@ export function RichTextEditor({
   label,
   minHeight = "normal",
   placeholder = "Write here...",
+  onFocus,
 }: RichTextEditorProps) {
   const [activeFormulaId, setActiveFormulaId] = useState<string | null>(null);
   const [formulaValues, setFormulaValues] = useState<Record<string, string>>({});
@@ -264,7 +287,14 @@ export function RichTextEditor({
           </>
         )}
       </div>
-      <EditorContent editor={editor} />
+      <EditorContent
+        editor={editor}
+        onFocus={() => {
+          activeRichTextEditor = editor;
+          onFocus?.();
+          window.dispatchEvent(new CustomEvent("qpg:rich-text-focus", { detail: { label } }));
+        }}
+      />
     </div>
   );
 }

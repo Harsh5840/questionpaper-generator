@@ -3,11 +3,13 @@
 import { useMemo, useState } from "react";
 import {
   Copy,
+  FilePlus2,
   GripVertical,
   ImagePlus,
   Plus,
   RefreshCcw,
   Save,
+  Shapes,
   Trash2,
 } from "lucide-react";
 import { DocumentStyle, Paper, PaperQuestion, PaperSection, PaperSubpart } from "@/lib/types";
@@ -19,10 +21,11 @@ interface PaperEditorProps {
   documentStyle: DocumentStyle;
   isGenerating?: boolean;
   onPaperChange: (paper: Paper) => void;
-  onReplaceQuestion: (sectionId: string, questionId: string, questionNumber: number) => Promise<void> | void;
-  onReplaceOptionalChoice: (sectionId: string, questionId: string, questionNumber: number) => Promise<void> | void;
+  onReplaceQuestion: (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => Promise<void> | void;
+  onReplaceOptionalChoice: (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => Promise<void> | void;
   onSaveQuestionToBank: (question: PaperQuestion) => void;
   onImportImage: (sectionId: string) => void;
+  onTextEditorFocus?: () => void;
 }
 
 interface DraggedQuestion {
@@ -39,13 +42,22 @@ export function PaperEditor({
   onReplaceOptionalChoice,
   onSaveQuestionToBank,
   onImportImage,
+  onTextEditorFocus,
 }: PaperEditorProps) {
   const [draggedQuestion, setDraggedQuestion] = useState<DraggedQuestion | null>(null);
   const [expandedAnswers, setExpandedAnswers] = useState<Record<string, boolean>>({});
   const [replacingQuestions, setReplacingQuestions] = useState<Record<string, boolean>>({});
   const [replacingChoices, setReplacingChoices] = useState<Record<string, boolean>>({});
+  const [replacePrompt, setReplacePrompt] = useState<{
+    sectionId: string;
+    questionId: string;
+    questionNumber: number;
+    mode: "question" | "choice";
+    text: string;
+  } | null>(null);
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
+  const sourceMix = useMemo(() => (paper ? calculateSourceMix(paper) : null), [paper]);
 
   if (!paper) {
     return (
@@ -200,6 +212,72 @@ export function PaperEditor({
           : section,
       ),
     }));
+  };
+
+  const addMcqQuestion = (sectionId: string) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: [
+                ...section.questions,
+                {
+                  id: crypto.randomUUID(),
+                  text: "",
+                  richText: "",
+                  marks: 1,
+                  type: "MCQ",
+                  difficulty: section.difficulty || current.summary.difficulty || "Medium",
+                  source: "Manual",
+                  topic: current.metadata.topic,
+                  answer: "",
+                  options: ["A", "B", "C", "D"].map((label) => ({
+                    id: crypto.randomUUID(),
+                    label,
+                    text: "",
+                    richText: "",
+                    isCorrect: false,
+                  })),
+                },
+              ],
+            }
+          : section,
+      ),
+    }));
+  };
+
+  const addSection = () => {
+    updatePaper((current) => ({
+      ...current,
+      sections: [
+        ...current.sections,
+        {
+          id: crypto.randomUUID(),
+          title: `Section ${String.fromCharCode(65 + current.sections.length)}`,
+          instructions: "Answer all questions in this section.",
+          difficulty: "Mixed",
+          targetMarks: 0,
+          questions: [],
+        },
+      ],
+    }));
+  };
+
+  const addDiagramPlaceholder = (sectionId: string, questionId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    updateQuestion(sectionId, questionId, {
+      diagramBlocks: [
+        ...(question?.diagramBlocks ?? []),
+        {
+          id: crypto.randomUUID(),
+          title: "Diagram placeholder",
+          caption: "Upload or generate a diagram later.",
+          status: "placeholder",
+        },
+      ],
+    });
   };
 
   const addInternalChoice = (sectionId: string, questionId: string) => {
@@ -426,21 +504,21 @@ export function PaperEditor({
     setDraggedQuestion(null);
   };
 
-  const replaceQuestion = async (sectionId: string, questionId: string, questionNumber: number) => {
+  const replaceQuestion = async (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => {
     setReplacingQuestions((current) => ({ ...current, [questionId]: true }));
 
     try {
-      await onReplaceQuestion(sectionId, questionId, questionNumber);
+      await onReplaceQuestion(sectionId, questionId, questionNumber, instruction);
     } finally {
       setReplacingQuestions((current) => ({ ...current, [questionId]: false }));
     }
   };
 
-  const replaceInternalChoice = async (sectionId: string, questionId: string, questionNumber: number) => {
+  const replaceInternalChoice = async (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => {
     setReplacingChoices((current) => ({ ...current, [questionId]: true }));
 
     try {
-      await onReplaceOptionalChoice(sectionId, questionId, questionNumber);
+      await onReplaceOptionalChoice(sectionId, questionId, questionNumber, instruction);
     } finally {
       setReplacingChoices((current) => ({ ...current, [questionId]: false }));
     }
@@ -458,16 +536,18 @@ export function PaperEditor({
     );
 
   return (
-    <article
-      className={`mx-auto min-h-[1120px] w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
-      style={{
-        backgroundColor: documentStyle.pageColor,
-        color: documentStyle.textColor,
-        fontSize: documentStyle.fontSize,
-        lineHeight: documentStyle.lineHeight,
-        padding: documentStyle.margin,
-      }}
-    >
+    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-8">
+      <div
+        className={`paper-page relative mx-auto min-h-[1120px] w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
+        style={{
+          backgroundColor: documentStyle.pageColor,
+          color: documentStyle.textColor,
+          fontSize: documentStyle.fontSize,
+          lineHeight: documentStyle.lineHeight,
+          padding: documentStyle.margin,
+        }}
+      >
+        <div className="absolute bottom-4 right-6 font-mono text-[10px] font-bold text-slate-400">Page 1</div>
       <header className={`pb-5 text-center ${templateTone.headerClass}`}>
         <div className="mb-4 flex justify-between text-left text-xs font-bold text-slate-600">
           <span>Series: QPG/{paper.metadata.board || "CBSE"}</span>
@@ -510,6 +590,22 @@ export function PaperEditor({
         </div>
       )}
 
+      {sourceMix && (
+        <div className="my-5 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+          <div className="mb-2 flex items-center justify-between text-xs font-bold text-amber-950">
+            <span>Source mix</span>
+            <span>{sourceMix.total} questions tracked</span>
+          </div>
+          <div className="grid gap-2 text-xs text-amber-950 sm:grid-cols-5">
+            <SourceMixPill label="NCERT direct" value={sourceMix.ncert} />
+            <SourceMixPill label="PYQ direct" value={sourceMix.pyq} />
+            <SourceMixPill label="Question bank" value={sourceMix.questionBank} />
+            <SourceMixPill label="AI generated" value={sourceMix.aiGenerated} />
+            <SourceMixPill label="Uncited" value={sourceMix.uncited} />
+          </div>
+        </div>
+      )}
+
       <section className="my-6 text-sm text-slate-800">
         <h2 className="mb-2 font-sans text-sm font-black uppercase">General Instructions</h2>
         {templateTone.instructions.map((instruction) => (
@@ -521,17 +617,33 @@ export function PaperEditor({
         ))}
       </section>
 
+      <div className="mt-6 flex justify-end">
+        <button className="editor-mini-button" onClick={addSection} type="button">
+          <FilePlus2 size={14} />
+          Add section
+        </button>
+      </div>
+      </div>
+
       <div className="space-y-8">
-        {paper.sections.map((section) => {
+        {paper.sections.map((section, sectionIndex) => {
           const sectionMarks = section.questions.reduce((total, question) => total + Number(question.marks || 0), 0);
 
           return (
             <section
               key={section.id}
-              className="rounded-lg border border-transparent"
+              className={`paper-page relative mx-auto min-h-[1120px] w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
+              style={{
+                backgroundColor: documentStyle.pageColor,
+                color: documentStyle.textColor,
+                fontSize: documentStyle.fontSize,
+                lineHeight: documentStyle.lineHeight,
+                padding: documentStyle.margin,
+              }}
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => moveDraggedQuestion(section.id)}
             >
+              <div className="absolute bottom-4 right-6 font-mono text-[10px] font-bold text-slate-400">Page {sectionIndex + 2}</div>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
                 <input
                   aria-label="Section title"
@@ -566,6 +678,9 @@ export function PaperEditor({
                   <button className="editor-mini-button" onClick={() => addBlankQuestion(section.id)} type="button">
                     <Plus size={14} />
                     Add
+                  </button>
+                  <button className="editor-mini-button" onClick={() => addMcqQuestion(section.id)} type="button">
+                    MCQ
                   </button>
                   <button className="editor-mini-button" onClick={() => onImportImage(section.id)} type="button">
                     <ImagePlus size={14} />
@@ -615,6 +730,7 @@ export function PaperEditor({
                             placeholder="Write the question..."
                             value={question.text}
                             htmlValue={question.richText}
+                            onFocus={onTextEditorFocus}
                             onChange={(text) => updateQuestion(section.id, question.id, { text })}
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
@@ -635,6 +751,7 @@ export function PaperEditor({
                                     placeholder="Write option..."
                                     value={option.text}
                                     htmlValue={option.richText}
+                                    onFocus={onTextEditorFocus}
                                     onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
                                     onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
                                   />
@@ -696,6 +813,7 @@ export function PaperEditor({
                                       placeholder="Write this subpart..."
                                       value={subpart.text}
                                       htmlValue={subpart.richText}
+                                      onFocus={onTextEditorFocus}
                                       onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
                                       onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
                                     />
@@ -721,6 +839,7 @@ export function PaperEditor({
                                           placeholder="Write the OR alternative for this subpart..."
                                           value={subpart.optionalChoice.text}
                                           htmlValue={subpart.optionalChoice.richText}
+                                          onFocus={onTextEditorFocus}
                                           onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
                                           onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
                                         />
@@ -730,6 +849,20 @@ export function PaperEditor({
                                       </div>
                                     </div>
                                   )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {question.diagramBlocks && question.diagramBlocks.length > 0 && (
+                            <div className="space-y-2 rounded-md border border-dashed border-slate-300 bg-slate-50 p-3">
+                              {question.diagramBlocks.map((diagram) => (
+                                <div key={diagram.id} className="flex items-center justify-between gap-3 rounded-md bg-white px-3 py-2 text-xs text-slate-600">
+                                  <div>
+                                    <div className="font-black text-slate-800">{diagram.title}</div>
+                                    <div>{diagram.caption || "Diagram placeholder"}</div>
+                                  </div>
+                                  <span className="rounded-full bg-amber-50 px-2 py-1 font-bold text-amber-700">Placeholder</span>
                                 </div>
                               ))}
                             </div>
@@ -747,6 +880,7 @@ export function PaperEditor({
                                     placeholder="Write the internal choice..."
                                     value={question.optionalChoice.text}
                                     htmlValue={question.optionalChoice.richText}
+                                    onFocus={onTextEditorFocus}
                                     onChange={(text) => updateInternalChoice(section.id, question.id, { text })}
                                     onHtmlChange={(richText) => updateInternalChoice(section.id, question.id, { richText })}
                                   />
@@ -793,6 +927,7 @@ export function PaperEditor({
                                       placeholder="Write OR answer / marking scheme..."
                                       value={question.optionalChoice.answer ?? ""}
                                       htmlValue={question.optionalChoice.answerRichText}
+                                      onFocus={onTextEditorFocus}
                                       onChange={(answer) => updateInternalChoice(section.id, question.id, { answer })}
                                       onHtmlChange={(answerRichText) => updateInternalChoice(section.id, question.id, { answerRichText })}
                                     />
@@ -801,7 +936,15 @@ export function PaperEditor({
                                 <TextBlockActions
                                   className="opacity-100 lg:opacity-0 lg:group-hover/choice:opacity-100"
                                   isReplacing={isChoiceReplacing}
-                                  onReplace={() => void replaceInternalChoice(section.id, question.id, questionNumber)}
+                                  onReplace={() =>
+                                    setReplacePrompt({
+                                      sectionId: section.id,
+                                      questionId: question.id,
+                                      questionNumber,
+                                      mode: "choice",
+                                      text: "Replace this OR choice with a different valid alternative from the same chapter. Preserve marks, type, difficulty, and total paper marks.",
+                                    })
+                                  }
                                   onDuplicate={() => duplicateOptionalChoiceAsQuestion(section.id, question.id)}
                                   onAnswer={() => setExpandedAnswers((current) => ({ ...current, [`${question.id}:choice`]: !(current[`${question.id}:choice`] ?? false) }))}
                                   onSave={() => onSaveQuestionToBank(choiceToQuestion(question))}
@@ -874,6 +1017,7 @@ export function PaperEditor({
                               placeholder="Write answer / marking scheme..."
                               value={question.answer}
                               htmlValue={question.answerRichText}
+                              onFocus={onTextEditorFocus}
                               onChange={(answer) => updateQuestion(section.id, question.id, { answer })}
                               onHtmlChange={(answerRichText) => updateQuestion(section.id, question.id, { answerRichText })}
                             />
@@ -883,10 +1027,19 @@ export function PaperEditor({
                         <TextBlockActions
                           className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                           isReplacing={isReplacing}
-                          onReplace={() => void replaceQuestion(section.id, question.id, questionNumber)}
+                          onReplace={() =>
+                            setReplacePrompt({
+                              sectionId: section.id,
+                              questionId: question.id,
+                              questionNumber,
+                              mode: "question",
+                              text: "Replace this question with a different question from the same chapter, same marks, same difficulty.",
+                            })
+                          }
                           onDuplicate={() => duplicateQuestion(section.id, question.id)}
                           onAddChoice={() => addInternalChoice(section.id, question.id)}
                           onAddSubpart={() => addSubpart(section.id, question.id)}
+                          onAddDiagram={() => addDiagramPlaceholder(section.id, question.id)}
                           onAnswer={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))}
                           onSave={() => onSaveQuestionToBank(question)}
                           onDelete={() => deleteQuestion(section.id, question.id)}
@@ -907,7 +1060,25 @@ export function PaperEditor({
           );
         })}
       </div>
-    </article>
+
+      {replacePrompt && (
+        <ReplacePromptModal
+          prompt={replacePrompt.text}
+          title={replacePrompt.mode === "choice" ? "Replace OR choice with AI" : "Replace question with AI"}
+          onChange={(text) => setReplacePrompt((current) => (current ? { ...current, text } : current))}
+          onClose={() => setReplacePrompt(null)}
+          onSubmit={() => {
+            const nextPrompt = replacePrompt;
+            setReplacePrompt(null);
+            if (nextPrompt.mode === "choice") {
+              void replaceInternalChoice(nextPrompt.sectionId, nextPrompt.questionId, nextPrompt.questionNumber, nextPrompt.text);
+            } else {
+              void replaceQuestion(nextPrompt.sectionId, nextPrompt.questionId, nextPrompt.questionNumber, nextPrompt.text);
+            }
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -918,6 +1089,7 @@ interface TextBlockActionsProps {
   onDuplicate?: () => void;
   onAddChoice?: () => void;
   onAddSubpart?: () => void;
+  onAddDiagram?: () => void;
   onAnswer?: () => void;
   onSave?: () => void;
   onDelete?: () => void;
@@ -930,6 +1102,7 @@ function TextBlockActions({
   onDuplicate,
   onAddChoice,
   onAddSubpart,
+  onAddDiagram,
   onAnswer,
   onSave,
   onDelete,
@@ -956,6 +1129,11 @@ function TextBlockActions({
           (a)
         </button>
       )}
+      {onAddDiagram && (
+        <button className="editor-icon-button" title="Insert diagram placeholder" onClick={onAddDiagram} type="button">
+          <Shapes size={15} />
+        </button>
+      )}
       {onAnswer && (
         <button className="editor-icon-button" title="Show answer" onClick={onAnswer} type="button">
           A
@@ -971,6 +1149,51 @@ function TextBlockActions({
           <Trash2 size={15} />
         </button>
       )}
+    </div>
+  );
+}
+
+function ReplacePromptModal({
+  onChange,
+  onClose,
+  onSubmit,
+  prompt,
+  title,
+}: {
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+  prompt: string;
+  title: string;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="font-display text-2xl italic text-slate-950">{title}</div>
+        <p className="mt-1 text-sm text-slate-500">Tell the AI exactly what should change before replacement starts.</p>
+        <textarea
+          className="mt-4 min-h-32 w-full resize-y rounded-lg border border-slate-200 p-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          value={prompt}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="editor-mini-button" onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button className="editor-mini-button bg-slate-950 text-white hover:bg-slate-800" onClick={onSubmit} type="button">
+            Replace
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SourceMixPill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-amber-200 bg-white/70 px-2 py-2">
+      <div className="font-mono text-[10px] font-black uppercase tracking-[0.08em] text-amber-700">{label}</div>
+      <div className="mt-1 font-display text-xl italic text-amber-950">{value}</div>
     </div>
   );
 }
@@ -1094,6 +1317,25 @@ function calculateStats(paper: Paper) {
   }));
 
   return { questionNumberById, totalMarks, questionCount, topicWeights };
+}
+
+function calculateSourceMix(paper: Paper) {
+  const counts = { ncert: 0, pyq: 0, questionBank: 0, aiGenerated: 0, uncited: 0, total: 0 };
+
+  paper.sections.forEach((section) => {
+    section.questions.forEach((question) => {
+      counts.total += 1;
+      const source = `${question.generationMode ?? ""} ${question.source ?? ""} ${(question.sourceCitations ?? []).join(" ")}`.toLowerCase();
+
+      if (question.generationMode === "direct_ncert" || source.includes("ncert")) counts.ncert += 1;
+      else if (question.generationMode === "direct_pyq" || source.includes("pyq")) counts.pyq += 1;
+      else if (question.generationMode === "question_bank" || source.includes("question bank")) counts.questionBank += 1;
+      else if (question.sourceCitations && question.sourceCitations.length > 0) counts.aiGenerated += 1;
+      else counts.uncited += 1;
+    });
+  });
+
+  return counts;
 }
 
 function recalculatePaper(paper: Paper): Paper {

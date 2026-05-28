@@ -576,6 +576,7 @@ function toBackendRequest(request: PaperRequest) {
     })),
     marking_scheme: request.markingScheme,
     difficulty: request.difficulty,
+    difficulty_mix: request.difficultyMix,
     total_marks: request.totalMarks,
     duration_minutes: request.durationMinutes,
     variant_count: request.variantCount,
@@ -630,6 +631,8 @@ function normalizePaper(raw: Record<string, unknown>, paperId?: string): Paper {
     retrievalTrace: raw.retrievalTrace || raw.retrieval_trace ? normalizeRetrievalPreview(raw.retrievalTrace ?? raw.retrieval_trace) : undefined,
     documentStyle: asRecord(raw.documentStyle ?? raw.document_style),
     warnings: Array.isArray(raw.warnings) ? raw.warnings.map(String) : [],
+    sourceMix: normalizeSourceMix(raw.sourceMix ?? raw.source_mix),
+    pageCount: raw.pageCount || raw.page_count ? Number(raw.pageCount ?? raw.page_count) : undefined,
   });
 }
 
@@ -667,6 +670,22 @@ function toBackendPaper(paper: Paper) {
     retrieval_trace: normalized.retrievalTrace,
     document_style: normalized.documentStyle,
     warnings: normalized.warnings,
+    source_mix: normalized.sourceMix,
+    page_count: normalized.pageCount,
+  };
+}
+
+function normalizeSourceMix(value: unknown): Paper["sourceMix"] {
+  const record = asRecord(value);
+  const hasAny = ["ncert", "pyq", "questionBank", "question_bank", "aiGenerated", "ai_generated", "uncited"].some((key) => record[key] !== undefined);
+  if (!hasAny) return undefined;
+
+  return {
+    ncert: Number(record.ncert ?? 0),
+    pyq: Number(record.pyq ?? 0),
+    questionBank: Number(record.questionBank ?? record.question_bank ?? 0),
+    aiGenerated: Number(record.aiGenerated ?? record.ai_generated ?? 0),
+    uncited: Number(record.uncited ?? 0),
   };
 }
 

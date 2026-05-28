@@ -33,11 +33,33 @@ export function normalizeRawQuestion(record: AnyRecord): PaperQuestion {
     sourceCitations: Array.isArray(record.sourceCitations ?? record.source_citations)
       ? ((record.sourceCitations ?? record.source_citations) as unknown[]).map(String)
       : undefined,
+    generationMode: optionalGenerationMode(record.generationMode ?? record.generation_mode),
+    diagramBlocks: normalizeDiagramBlocks(record.diagramBlocks ?? record.diagram_blocks),
     subparts: normalizeRawSubparts(record.subparts ?? record.sub_parts),
     optionalChoice: normalizeRawChoice(record.optionalChoice ?? record.optional_choice),
     answer: stringValue(record.answer, ""),
     answerRichText: stringValue(record.answerRichText ?? record.answer_rich_text, ""),
   });
+}
+
+function normalizeDiagramBlocks(value: unknown): PaperQuestion["diagramBlocks"] {
+  if (!Array.isArray(value)) return undefined;
+  const blocks = value.map((item) => {
+    const record = asRecord(item);
+    return {
+      id: stringValue(record.id, makeId()),
+      title: stringValue(record.title, "Diagram placeholder"),
+      caption: optionalString(record.caption),
+      status: "placeholder" as const,
+    };
+  });
+  return blocks.length > 0 ? blocks : undefined;
+}
+
+function optionalGenerationMode(value: unknown): PaperQuestion["generationMode"] {
+  const mode = optionalString(value);
+  if (mode === "direct_ncert" || mode === "direct_pyq" || mode === "question_bank" || mode === "ai_generated") return mode;
+  return undefined;
 }
 
 export function richTextFromText(text: string) {
