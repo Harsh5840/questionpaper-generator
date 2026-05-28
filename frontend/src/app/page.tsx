@@ -8,7 +8,6 @@ import {
   Database,
   Download,
   FileText,
-  FileUp,
   ArrowRight,
   Bookmark,
   Check,
@@ -55,11 +54,10 @@ import {
   QuestionBankItem,
   RetrievalPreview,
   RetrievalResult,
-  SectionBlueprint,
 } from "@/lib/types";
 
 type Mode = "structured" | "prompt";
-type RightPanel = "chat" | "retrieval" | "bank" | "versions";
+type RightPanel = "chat" | "retrieval";
 type AppView = "studio" | "library" | "analytics" | "templates";
 type CreateFlow = "params" | "prompt" | null;
 type ChatMessage = {
@@ -90,9 +88,9 @@ export default function Home() {
   const [appView, setAppView] = useState<AppView>("studio");
   const [mode, setMode] = useState<Mode>("structured");
   const [rightPanel, setRightPanel] = useState<RightPanel>("chat");
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [createFlow, setCreateFlow] = useState<CreateFlow>(null);
   const [wizardStep, setWizardStep] = useState(0);
-  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [request, setRequest] = useState<PaperRequest>({
     ...defaultRequest,
     chapter: "Quadratic Equations",
@@ -166,50 +164,6 @@ export default function Home() {
     });
   };
 
-  const addBlueprintSection = () => {
-    setRequest((current) => ({
-      ...current,
-      sectionBlueprint: [
-        ...(current.sectionBlueprint ?? []),
-        {
-          id: crypto.randomUUID(),
-          title: `Section ${String.fromCharCode(65 + (current.sectionBlueprint?.length ?? 0))}`,
-          questionTypes: current.questionTypes.slice(0, 1),
-          questionCount: 5,
-          marksEach: 1,
-          difficulty: "Mixed",
-          instructions: "Attempt all questions.",
-        },
-      ],
-    }));
-  };
-
-  const updateBlueprintSection = (sectionId: string, patch: Partial<SectionBlueprint>) => {
-    setRequest((current) => ({
-      ...current,
-      sectionBlueprint: (current.sectionBlueprint ?? []).map((section) => (section.id === sectionId ? { ...section, ...patch } : section)),
-    }));
-  };
-
-  const removeBlueprintSection = (sectionId: string) => {
-    setRequest((current) => ({
-      ...current,
-      sectionBlueprint: (current.sectionBlueprint ?? []).filter((section) => section.id !== sectionId),
-    }));
-  };
-
-  const toggleBlueprintType = (sectionId: string, questionType: string) => {
-    setRequest((current) => ({
-      ...current,
-      sectionBlueprint: (current.sectionBlueprint ?? []).map((section) => {
-        if (section.id !== sectionId) return section;
-        const exists = section.questionTypes.includes(questionType);
-        const questionTypes = exists ? section.questionTypes.filter((item) => item !== questionType) : [...section.questionTypes, questionType];
-        return { ...section, questionTypes: questionTypes.length > 0 ? questionTypes : [questionType] };
-      }),
-    }));
-  };
-
   function applyDashboardTemplate(template: DashboardSummary["templates"][number]) {
     const paperTemplate = dashboardTemplateToPaperTemplate(template);
     const formatting = paperTemplate.formatting ?? {};
@@ -237,23 +191,6 @@ export default function Home() {
 
   async function refreshDashboard() {
     setDashboard(await fetchDashboardViaApi());
-  }
-
-  async function loadTemplate(file: File) {
-    const text = await file.text();
-    const template = parseTemplate(file.name, text);
-    setRequest((current) => ({ ...current, template }));
-    setDocumentStyle((current) => ({ ...current, ...template.formatting }));
-
-    if (template.inferredParams) {
-      setRequest((current) => ({
-        ...current,
-        ...template.inferredParams,
-        template,
-      }));
-    }
-
-    addAssistantMessage(`Template loaded: ${template.name}`);
   }
 
   async function runGeneration() {
@@ -587,7 +524,7 @@ export default function Home() {
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
         <PaperLabTopBar
-          aiOpen={rightPanel === "chat"}
+          aiOpen={isAssistantOpen}
           appView={appView}
           currentTitle={selectedPaper?.title ?? "Untitled paper"}
           onExport={exportCurrent}
@@ -600,7 +537,10 @@ export default function Home() {
         onOpenView={setAppView}
         onRefresh={() => void refreshDashboard()}
         onSave={() => void saveCurrentVersion()}
-        onToggleAI={() => setRightPanel("chat")}
+        onToggleAI={() => {
+          setRightPanel("chat");
+          setIsAssistantOpen((current) => !current);
+        }}
         onTitleChange={(title) => {
           if (!selectedPaper) return;
           updateSelectedPaper({ ...selectedPaper, title });
@@ -648,7 +588,7 @@ export default function Home() {
             requestPreview={requestPreview}
             selectedPaper={selectedPaper}
             variantPapers={variantPapers}
-            onAddBlank={openDraftWorkspace}
+            onAddBlank={openGuidedSetup}
             onGenerate={() => void runGeneration()}
             onSelectVariant={(paper) => void selectVariant(paper)}
             onStop={stopGeneration}
@@ -679,20 +619,21 @@ export default function Home() {
           <AssistantPanel
             chatInput={chatInput}
             chatMessages={chatMessages}
+            isOpen={isAssistantOpen}
             isBusy={isGenerating || isChatting}
             preview={retrievalPreview}
             questionBank={questionBank}
             rightPanel={rightPanel}
             usage={usage}
-            versions={versions}
             onAsk={() => void askAi()}
             onChatInputChange={setChatInput}
+            onClose={() => setIsAssistantOpen(false)}
             onImportBank={(item) => void importBankQuestion(item)}
             onImportSource={(result) => void importSourceQuestion(result)}
             onRefreshBank={() => void refreshQuestionBank()}
             onRefreshRetrieval={() => void refreshRetrievalPreview()}
-            onRestoreVersion={(version) => void restoreVersion(version)}
             onSetPanel={setRightPanel}
+            onToggleOpen={() => setIsAssistantOpen((current) => !current)}
           />
         </div>
       )}
@@ -1577,40 +1518,58 @@ function GenerationCanvasState({ isGenerating, status }: { isGenerating: boolean
 function AssistantPanel({
   chatInput,
   chatMessages,
+  isOpen,
   isBusy,
   onAsk,
   onChatInputChange,
+  onClose,
   onImportBank,
   onImportSource,
   onRefreshBank,
   onRefreshRetrieval,
-  onRestoreVersion,
   onSetPanel,
+  onToggleOpen,
   preview,
   questionBank,
   rightPanel,
   usage,
-  versions,
 }: {
   chatInput: string;
   chatMessages: ChatMessage[];
+  isOpen: boolean;
   isBusy: boolean;
   onAsk: () => void;
   onChatInputChange: (value: string) => void;
+  onClose: () => void;
   onImportBank: (item: QuestionBankItem) => void;
   onImportSource: (result: RetrievalResult) => void;
   onRefreshBank: () => void;
   onRefreshRetrieval: () => void;
-  onRestoreVersion: (version: PaperVersion) => void;
   onSetPanel: (panel: RightPanel) => void;
+  onToggleOpen: () => void;
   preview: RetrievalPreview | null;
   questionBank: QuestionBankItem[];
   rightPanel: RightPanel;
   usage: AiUsageSummary | null;
-  versions: PaperVersion[];
 }) {
+  if (!isOpen) {
+    return (
+      <button
+        className="fade-up fixed bottom-5 right-5 z-30 flex items-center gap-3 rounded-full bg-[var(--ink)] px-4 py-3 text-sm font-black text-[var(--paper-tint)] shadow-[var(--shadow-xl)] hover:-translate-y-0.5 hover:bg-[var(--accent-deep)]"
+        onClick={onToggleOpen}
+        type="button"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[rgba(244,213,168,0.18)] text-[var(--highlight)]">
+          <Sparkles size={15} />
+        </span>
+        Ask assistant
+        <span className="rounded bg-[rgba(255,255,255,0.12)] px-1.5 py-0.5 font-mono text-[10px]">⌘K</span>
+      </button>
+    );
+  }
+
   return (
-    <aside className="scale-in absolute bottom-5 right-5 z-20 hidden h-[min(620px,calc(100vh-96px))] w-[390px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] shadow-[var(--shadow-xl)] xl:flex">
+    <aside className="scale-in fixed bottom-5 right-5 z-30 flex h-[min(620px,calc(100vh-96px))] w-[390px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] shadow-[var(--shadow-xl)]">
       <div className="border-b border-[var(--border)] bg-[var(--surface)] p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -1622,9 +1581,12 @@ function AssistantPanel({
               <div className="text-[11px] text-[var(--ink-3)]">Refine, retrieve, restore</div>
             </div>
           </div>
+          <button className="icon-button" onClick={onClose} title="Close assistant" type="button">
+            <X size={16} />
+          </button>
         </div>
-        <div className="mt-3 grid grid-cols-4 gap-1 rounded-[var(--radius-sm)] bg-[var(--surface-2)] p-1">
-          {(["chat", "retrieval", "bank", "versions"] as RightPanel[]).map((panel) => (
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-[var(--radius-sm)] bg-[var(--surface-2)] p-1">
+          {(["chat", "retrieval"] as RightPanel[]).map((panel) => (
             <button key={panel} className={tabClass(rightPanel === panel)} onClick={() => onSetPanel(panel)} type="button">
               {panel === "retrieval" ? "Sources" : panel}
             </button>
@@ -1655,9 +1617,20 @@ function AssistantPanel({
           </div>
         )}
 
-        {rightPanel === "retrieval" && <RetrievalPanel preview={preview} onImport={onImportSource} onRefresh={onRefreshRetrieval} />}
-        {rightPanel === "bank" && <QuestionBankPanel items={questionBank} onImport={onImportBank} onRefresh={onRefreshBank} />}
-        {rightPanel === "versions" && <VersionPanel versions={versions} onRestore={onRestoreVersion} />}
+        {rightPanel === "retrieval" && (
+          <div className="space-y-4">
+            <RetrievalPanel preview={preview} onImport={onImportSource} onRefresh={onRefreshRetrieval} />
+            <div className="border-t border-[var(--border)] pt-3">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--accent)]">Question bank</div>
+                <button className="text-[11px] font-bold text-[var(--ink-3)] hover:text-[var(--accent)]" onClick={onRefreshBank} type="button">
+                  Refresh
+                </button>
+              </div>
+              <QuestionBankPanel items={questionBank} onImport={onImportBank} onRefresh={onRefreshBank} compact />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="border-t border-[var(--border)] bg-[var(--surface)] p-3">
@@ -1677,230 +1650,6 @@ function AssistantPanel({
         </div>
       </div>
     </aside>
-  );
-}
-
-function SetupDrawer({
-  addBlueprintSection,
-  availableChapters,
-  dashboard,
-  documentStyle,
-  isPromptMode,
-  onApplyDashboardTemplate,
-  onLoadTemplate,
-  onModeChange,
-  onPromptChange,
-  onRemoveBlueprintSection,
-  onSetDocumentStyle,
-  onSetShowMoreOptions,
-  onToggleBlueprintType,
-  onToggleQuestionType,
-  onUpdateBlueprintSection,
-  onUpdateRequest,
-  prompt,
-  questionTypeOptions,
-  request,
-  requestPreview,
-  showMoreOptions,
-}: {
-  addBlueprintSection: () => void;
-  availableChapters: string[];
-  dashboard: DashboardSummary | null;
-  documentStyle: DocumentStyle;
-  isPromptMode: boolean;
-  onApplyDashboardTemplate: (template: DashboardSummary["templates"][number]) => void;
-  onLoadTemplate: (file: File) => void;
-  onModeChange: (mode: Mode) => void;
-  onPromptChange: (value: string) => void;
-  onRemoveBlueprintSection: (sectionId: string) => void;
-  onSetDocumentStyle: React.Dispatch<React.SetStateAction<DocumentStyle>>;
-  onSetShowMoreOptions: React.Dispatch<React.SetStateAction<boolean>>;
-  onToggleBlueprintType: (sectionId: string, questionType: string) => void;
-  onToggleQuestionType: (questionType: string) => void;
-  onUpdateBlueprintSection: (sectionId: string, patch: Partial<SectionBlueprint>) => void;
-  onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
-  prompt: string;
-  questionTypeOptions: string[];
-  request: PaperRequest;
-  requestPreview: PaperRequest;
-  showMoreOptions: boolean;
-}) {
-  return (
-    <details className="group fixed bottom-5 left-5 z-30 hidden w-[340px] rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] shadow-[var(--shadow-xl)] lg:block">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-lg)] bg-[var(--surface)] px-4 py-3">
-        <span>
-          <span className="block font-display text-xl italic text-[var(--ink)]">Generation setup</span>
-          <span className="block text-[11px] text-[var(--ink-3)]">{requestPreview.board} · Class {requestPreview.classLevel} · {requestPreview.subject}</span>
-        </span>
-        <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs font-bold text-[var(--accent-deep)] group-open:hidden">Open</span>
-        <span className="hidden rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-bold text-[var(--ink-2)] group-open:inline">Close</span>
-      </summary>
-
-      <div className="max-h-[70vh] space-y-4 overflow-y-auto border-t border-[var(--border)] p-4">
-        <div className="grid grid-cols-2 rounded-[var(--radius-sm)] bg-[var(--surface-2)] p-1">
-          <button className={tabClass(!isPromptMode)} onClick={() => onModeChange("structured")} type="button">Parameters</button>
-          <button className={tabClass(isPromptMode)} onClick={() => onModeChange("prompt")} type="button">Prompt</button>
-        </div>
-
-        {isPromptMode ? (
-          <Field label="Free prompt">
-            <textarea className="input min-h-32 resize-none" value={prompt} onChange={(event) => onPromptChange(event.target.value)} />
-          </Field>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Board">
-                <Select value={request.board} onChange={(event) => onUpdateRequest("board", event.target.value as PaperRequest["board"])}>
-                  <option>CBSE</option>
-                  <option disabled>ICSE</option>
-                </Select>
-              </Field>
-              <Field label="Class">
-                <Select value={request.classLevel} onChange={(event) => onUpdateRequest("classLevel", event.target.value as PaperRequest["classLevel"])}>
-                  {["9", "10", "11", "12"].map((item) => <option key={item} value={item}>{item}</option>)}
-                </Select>
-              </Field>
-            </div>
-
-            <Field label="Template">
-              <Select
-                value={request.template?.name ?? ""}
-                onChange={(event) => {
-                  const template = dashboard?.templates.find((item) => item.name === event.target.value) ?? fallbackDashboardTemplates().find((item) => item.name === event.target.value);
-                  if (!template) {
-                    onUpdateRequest("template", null);
-                    return;
-                  }
-                  onApplyDashboardTemplate(template);
-                }}
-              >
-                <option value="">Default editor style</option>
-                {[...(dashboard?.templates ?? []), ...fallbackDashboardTemplates()].map((template) => (
-                  <option key={template.id} value={template.name}>{template.name}</option>
-                ))}
-              </Select>
-              <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] border border-dashed border-[var(--border-2)] bg-[var(--surface)] px-3 py-2 text-xs font-bold text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]">
-                <FileUp size={15} />
-                <span>{request.template?.name ?? "Upload TXT / MD / JSON"}</span>
-                <input className="sr-only" type="file" accept=".txt,.md,.json" onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) onLoadTemplate(file);
-                }} />
-              </label>
-            </Field>
-
-            <div className="grid grid-cols-2 gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-3">
-              <StyleNumber label="Font" value={documentStyle.fontSize} min={12} max={22} onChange={(fontSize) => onSetDocumentStyle((current) => ({ ...current, fontSize }))} />
-              <StyleNumber label="Spacing" value={documentStyle.lineHeight} min={1.1} max={2.2} step={0.05} onChange={(lineHeight) => onSetDocumentStyle((current) => ({ ...current, lineHeight }))} />
-              <StyleNumber label="Margin" value={documentStyle.margin} min={24} max={96} onChange={(margin) => onSetDocumentStyle((current) => ({ ...current, margin }))} />
-              <label className="grid gap-1 text-[11px] font-bold text-[var(--ink-2)]">
-                <span>Text color</span>
-                <input className="h-8 w-full rounded border border-[var(--border)] bg-[var(--paper)] p-1" type="color" value={documentStyle.textColor} onChange={(event) => onSetDocumentStyle((current) => ({ ...current, textColor: event.target.value }))} />
-              </label>
-            </div>
-
-            <Field label="Subject">
-              <Select value={request.subject} onChange={(event) => onUpdateRequest("subject", event.target.value as PaperRequest["subject"])}>
-                {["Maths", "Science", "Physics", "Chemistry", "Biology"].map((item) => <option key={item}>{item}</option>)}
-              </Select>
-            </Field>
-
-            <Field label="Chapter scope">
-              <Select value={request.chapterScope} onChange={(event) => onUpdateRequest("chapterScope", event.target.value as PaperRequest["chapterScope"])}>
-                <option value="single">One chapter</option>
-                <option value="multiple">List of chapters</option>
-                <option value="full_syllabus">Whole syllabus</option>
-              </Select>
-            </Field>
-
-            {request.chapterScope !== "full_syllabus" && (
-              <Field label={request.chapterScope === "single" ? "Choose chapter" : "Choose chapters"}>
-                <ChapterPicker
-                  availableChapters={availableChapters}
-                  mode={request.chapterScope}
-                  selectedChapters={request.chapters}
-                  onChange={(chapters) => {
-                    onUpdateRequest("chapters", chapters);
-                    onUpdateRequest("chapter", chapters[0] ?? "");
-                    onUpdateRequest("topic", chapters.join(", "));
-                  }}
-                />
-              </Field>
-            )}
-
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Marks">
-                <input className="input" type="number" value={request.totalMarks} onChange={(event) => onUpdateRequest("totalMarks", Number(event.target.value))} />
-              </Field>
-              <Field label="Sets">
-                <input className="input" type="number" min={1} max={5} value={request.variantCount} onChange={(event) => onUpdateRequest("variantCount", Number(event.target.value))} />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Difficulty">
-                <Select value={request.difficulty} onChange={(event) => onUpdateRequest("difficulty", event.target.value as PaperRequest["difficulty"])}>
-                  <option>Easy</option>
-                  <option>Medium</option>
-                  <option>Hard</option>
-                </Select>
-              </Field>
-              <Field label="Source">
-                <Select value={request.source} onChange={(event) => onUpdateRequest("source", event.target.value as PaperRequest["source"])}>
-                  <option>NCERT</option>
-                  <option>PYQ</option>
-                  <option>NCERT + PYQ</option>
-                </Select>
-              </Field>
-            </div>
-
-            <Field label="Question mix">
-              <div className="grid grid-cols-2 gap-2">
-                {questionTypeOptions.map((questionType) => {
-                  const selected = request.questionTypes.includes(questionType);
-                  return (
-                    <button key={questionType} className={`rounded-[var(--radius-sm)] border px-2 py-2 text-left text-[11px] font-black transition ${selected ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--surface-2)]"}`} onClick={() => onToggleQuestionType(questionType)} type="button">
-                      {questionType}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-
-            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-3">
-              <button className="flex w-full items-center justify-between text-left text-xs font-black text-[var(--ink)]" onClick={() => onSetShowMoreOptions((current) => !current)} type="button">
-                <span>More options: section blueprint</span>
-                <span className="text-[var(--accent)]">{showMoreOptions ? "Hide" : "Show"}</span>
-              </button>
-              {showMoreOptions && (
-                <div className="mt-3 space-y-3">
-                  {(request.sectionBlueprint ?? []).map((section, index) => (
-                    <div key={section.id} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-3">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <input className="input h-8 flex-1 text-xs font-black" value={section.title} onChange={(event) => onUpdateBlueprintSection(section.id, { title: event.target.value })} aria-label={`Section ${index + 1} title`} />
-                        <button className="editor-mini-button text-red-600" onClick={() => onRemoveBlueprintSection(section.id)} type="button">Remove</button>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <Field label="Questions"><input className="input" type="number" min={1} value={section.questionCount} onChange={(event) => onUpdateBlueprintSection(section.id, { questionCount: Number(event.target.value) })} /></Field>
-                        <Field label="Marks"><input className="input" type="number" min={1} value={section.marksEach} onChange={(event) => onUpdateBlueprintSection(section.id, { marksEach: Number(event.target.value) })} /></Field>
-                        <Field label="Difficulty"><Select value={section.difficulty} onChange={(event) => onUpdateBlueprintSection(section.id, { difficulty: event.target.value as SectionBlueprint["difficulty"] })}><option>Mixed</option><option>Easy</option><option>Medium</option><option>Hard</option></Select></Field>
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-1">
-                        {questionTypeOptions.map((questionType) => {
-                          const selected = section.questionTypes.includes(questionType);
-                          return <button key={`${section.id}-${questionType}`} className={`rounded-md border px-2 py-1.5 text-left text-[10px] font-black ${selected ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] text-[var(--ink-2)]"}`} onClick={() => onToggleBlueprintType(section.id, questionType)} type="button">{questionType}</button>;
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                  <button className="secondary-button w-full justify-center" onClick={addBlueprintSection} type="button">Add section</button>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </details>
   );
 }
 
@@ -2021,13 +1770,15 @@ function SourceResultButton({ result, onImport }: { result: RetrievalResult; onI
   );
 }
 
-function QuestionBankPanel({ items, onImport, onRefresh }: { items: QuestionBankItem[]; onImport: (item: QuestionBankItem) => void; onRefresh: () => void }) {
+function QuestionBankPanel({ compact = false, items, onImport, onRefresh }: { compact?: boolean; items: QuestionBankItem[]; onImport: (item: QuestionBankItem) => void; onRefresh: () => void }) {
   return (
     <div className="space-y-3">
-      <button className="secondary-button" onClick={onRefresh} type="button">
-        <RefreshCcw size={15} />
-        Refresh bank
-      </button>
+      {!compact && (
+        <button className="secondary-button" onClick={onRefresh} type="button">
+          <RefreshCcw size={15} />
+          Refresh bank
+        </button>
+      )}
       {items.length === 0 ? (
         <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No saved questions yet. Use the save icon on any question card.</div>
       ) : (
@@ -2039,24 +1790,6 @@ function QuestionBankPanel({ items, onImport, onRefresh }: { items: QuestionBank
           </button>
         ))
       )}
-    </div>
-  );
-}
-
-function VersionPanel({ versions, onRestore }: { versions: PaperVersion[]; onRestore: (version: PaperVersion) => void }) {
-  if (versions.length === 0) {
-    return <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No versions saved yet.</div>;
-  }
-
-  return (
-    <div className="space-y-2">
-      {versions.map((version) => (
-        <button key={version.id} className="w-full rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-3 py-2 text-left text-xs text-[var(--on-surface-variant)] hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onRestore(version)} type="button">
-          <span className="font-bold text-[var(--on-surface)]">Version {version.versionNumber}</span>
-          <span className="block">{version.changeSource.replaceAll("_", " ")}</span>
-          {version.marksTotal !== undefined && <span className="block text-[11px]">{version.marksTotal} marks</span>}
-        </button>
-      ))}
     </div>
   );
 }
@@ -2306,99 +2039,6 @@ function ProgressBadge({ status }: { status: GenerationStatus }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="grid gap-1.5 text-xs font-bold text-[var(--on-surface-variant)]">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`input ${props.className ?? ""}`} />;
-}
-
-function ChapterPicker({
-  availableChapters,
-  mode,
-  selectedChapters,
-  onChange,
-}: {
-  availableChapters: string[];
-  mode: PaperRequest["chapterScope"];
-  selectedChapters: string[];
-  onChange: (chapters: string[]) => void;
-}) {
-  const chapters = availableChapters.length > 0 ? availableChapters : selectedChapters;
-
-  if (chapters.length === 0) {
-    return (
-      <input
-        className="input"
-        placeholder="Type chapter name"
-        value={selectedChapters.join(", ")}
-        onChange={(event) => onChange(event.target.value.split(",").map((item) => item.trim()).filter(Boolean))}
-      />
-    );
-  }
-
-  return (
-    <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-2">
-      {chapters.map((chapter) => {
-        const selected = selectedChapters.includes(chapter);
-
-        return (
-          <button
-            key={chapter}
-            className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-semibold ${
-              selected ? "bg-[var(--primary-fixed)] text-[var(--primary)]" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)]"
-            }`}
-            onClick={() => {
-              if (mode === "single") {
-                onChange([chapter]);
-                return;
-              }
-
-              onChange(selected ? selectedChapters.filter((item) => item !== chapter) : [...selectedChapters, chapter]);
-            }}
-            type="button"
-          >
-            <span>{chapter}</span>
-            {selected && <CheckCircle2 size={14} />}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function StyleNumber({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="grid gap-1 text-[11px] font-bold text-[var(--on-surface-variant)]">
-      <span className="flex items-center justify-between">
-        {label}
-        <span className="font-semibold text-[var(--outline)]">{value}</span>
-      </span>
-      <input className="accent-[var(--primary)]" type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
-    </label>
-  );
-}
-
 function tabClass(active: boolean) {
   return `rounded-md px-2 py-2 text-[11px] font-bold capitalize ${active ? "bg-[var(--surface-container-lowest)] text-[var(--primary)] " : "text-[var(--on-surface-variant)] hover:text-[var(--on-surface)]"}`;
 }
@@ -2617,81 +2257,6 @@ function textToHtml(text: string) {
   return richTextFromText(text) || escapeHtml(text).replaceAll("\n", "<br>");
 }
 
-function parseTemplate(name: string, text: string): PaperTemplate {
-  const parsed = parseJsonTemplate(name, text);
-  if (parsed) return parsed;
-
-  const lower = text.toLowerCase();
-  const marksMatch = text.match(/(?:maximum|max)\s*marks?\s*:?\s*(\d+)/i) ?? text.match(/(\d+)\s*marks?/i);
-  const classMatch = text.match(/class\s*(9|10|11|12)/i);
-  const subject = lower.includes("science")
-    ? "Science"
-    : lower.includes("physics")
-    ? "Physics"
-    : lower.includes("chemistry")
-      ? "Chemistry"
-      : lower.includes("biology")
-        ? "Biology"
-        : lower.includes("math")
-          ? "Maths"
-          : undefined;
-  const board = lower.includes("icse") ? "ICSE" : lower.includes("cbse") ? "CBSE" : undefined;
-  const durationMinutes = inferDurationMinutes(text);
-  const formatting: Partial<DocumentStyle> = {
-    margin: lower.includes("narrow margin") ? 36 : lower.includes("wide margin") ? 76 : defaultDocumentStyle.margin,
-    lineHeight: lower.includes("double spacing") ? 2 : lower.includes("single spacing") ? 1.2 : defaultDocumentStyle.lineHeight,
-    fontSize: Number(text.match(/font\s*size\s*:?\s*(\d+)/i)?.[1] ?? defaultDocumentStyle.fontSize),
-  };
-  const inferredParams: Partial<PaperRequest> = {};
-
-  if (board) inferredParams.board = board;
-  if (classMatch?.[1]) inferredParams.classLevel = classMatch[1] as PaperRequest["classLevel"];
-  if (subject) inferredParams.subject = subject;
-  if (marksMatch?.[1]) inferredParams.totalMarks = Number(marksMatch[1]);
-  if (durationMinutes) inferredParams.durationMinutes = durationMinutes;
-
-  return {
-    name,
-    description: "Uploaded text template",
-    instructions: text.slice(0, 2000),
-    sections: Array.from(text.matchAll(/section\s+[a-e][^\n]*/gi)).map((match) => match[0]),
-    inferredParams,
-    formatting,
-    layoutNotes: inferLayoutNotes(text),
-    markingSchemePosition: lower.includes("marking scheme at end") || lower.includes("marking scheme to the end") ? "end" : undefined,
-  };
-}
-
-function parseJsonTemplate(name: string, text: string): PaperTemplate | null {
-  try {
-    const raw = JSON.parse(text) as Record<string, unknown>;
-    const formatting = asRecord(raw.formatting);
-    const inferred = asRecord(raw.inferredParams ?? raw.inferred_params);
-
-    return {
-      name: String(raw.name ?? name),
-      description: raw.description ? String(raw.description) : undefined,
-      instructions: raw.instructions ? String(raw.instructions) : undefined,
-      sections: Array.isArray(raw.sections) ? raw.sections.map(String) : undefined,
-      inferredParams: normalizeTemplateParams(inferred),
-      layoutNotes: stringOrUndefined(raw.layoutNotes ?? raw.layout_notes),
-      imageNotes: stringOrUndefined(raw.imageNotes ?? raw.image_notes),
-      markingSchemePosition: normalizePosition(raw.markingSchemePosition ?? raw.marking_scheme_position, ["start", "end"]),
-      answerKeyPosition: normalizePosition(raw.answerKeyPosition ?? raw.answer_key_position, ["inline", "end", "separate"]),
-      formatting: {
-        margin: numberOrUndefined(formatting.margin),
-        lineHeight: numberOrUndefined(formatting.lineHeight ?? formatting.line_height),
-        fontSize: numberOrUndefined(formatting.fontSize ?? formatting.font_size),
-        textColor: stringOrUndefined(formatting.textColor ?? formatting.text_color),
-        accentColor: stringOrUndefined(formatting.accentColor ?? formatting.accent_color),
-        pageColor: stringOrUndefined(formatting.pageColor ?? formatting.page_color),
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
 function normalizeTemplateParams(raw: Record<string, unknown>): Partial<PaperRequest> {
   const params: Partial<PaperRequest> = {};
   const board = raw.board;
@@ -2777,23 +2342,6 @@ function normalizeVersionPayload(payload: Record<string, unknown>, paperId?: str
   }));
 }
 
-function inferLayoutNotes(text: string) {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 40)
-    .join("\n")
-    .slice(0, 3000);
-}
-
-function inferDurationMinutes(text: string) {
-  const hourMatch = text.match(/(?:time allowed|time|duration)\s*:?\s*(\d+(?:\.\d+)?)\s*hours?/i);
-  if (hourMatch?.[1]) return Math.round(Number(hourMatch[1]) * 60);
-  const minuteMatch = text.match(/(?:time allowed|time|duration)\s*:?\s*(\d+)\s*minutes?/i);
-  return minuteMatch?.[1] ? Number(minuteMatch[1]) : undefined;
-}
-
 function formatDuration(minutes: number) {
   if (minutes % 60 === 0) return `${minutes / 60} hour${minutes === 60 ? "" : "s"}`;
   const hours = Math.floor(minutes / 60);
@@ -2820,10 +2368,6 @@ function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return "Unknown error";
-}
-
-function normalizePosition<T extends string>(value: unknown, allowed: T[]): T | undefined {
-  return allowed.includes(String(value) as T) ? (String(value) as T) : undefined;
 }
 
 function fileToBase64(file: File) {
