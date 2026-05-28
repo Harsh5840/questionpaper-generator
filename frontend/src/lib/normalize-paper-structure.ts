@@ -138,7 +138,7 @@ function normalizeSubparts(current: PaperSubpart[] | undefined, extracted: Paper
 }
 
 function normalizeChoice(choice: PaperQuestion["optionalChoice"] | PaperSubpart["optionalChoice"] | undefined) {
-  if (!choice || (!choice.text && !choice.richText)) return undefined;
+  if (!choice) return undefined;
   return normalizeQuestionLike({
     ...choice,
     id: choice.id || makeId(),
@@ -185,7 +185,7 @@ function normalizeRawSubparts(value: unknown): PaperSubpart[] | undefined {
 
 function normalizeRawChoice(value: unknown): PaperQuestion["optionalChoice"] | undefined {
   const record = asRecord(value);
-  if (!record.text && !record.richText && !record.rich_text) return undefined;
+  if (!value || typeof value !== "object") return undefined;
   return {
     id: optionalString(record.id),
     text: stringValue(record.text, ""),
