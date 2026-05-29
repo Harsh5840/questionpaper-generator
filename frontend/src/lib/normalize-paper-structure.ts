@@ -100,14 +100,16 @@ export function richTextFromText(text: string) {
 }
 
 export function normalizeMathText(text: string) {
-  return text
+  return restoreProtectedSegments(protectLatexSegments(text), (value) =>
+    value
     .replace(/\b([a-zA-Z])\^(\d+)\b/g, "$1$2")
     .replace(/\b([a-zA-Z])_(\d+)\b/g, "$1$2")
     .replace(/([a-z])(\d)(?=\b|[^a-zA-Z])/g, (_match, symbol: string, digit: string) => `${symbol}${toSuperscript(digit)}`)
     .replace(/(\d)([a-z])(\d)(?=\b|[^a-zA-Z])/g, (_match, coefficient: string, symbol: string, digit: string) => `${coefficient}${symbol}${toSuperscript(digit)}`)
     .replace(/(\([^()\n]+\))\s*(\d)(?=\b|[^a-zA-Z])/g, (_match, group: string, digit: string) => `${group}${toSuperscript(digit)}`)
     .replace(/\b([A-Z][a-z]?)(\d+)\b/g, (_match, element: string, digits: string) => `${element}${toSubscript(digits)}`)
-    .replace(/\b([A-Z][a-z]?\d*){2,}\b/g, (formula) => formula.replace(/(\d+)/g, (digits) => toSubscript(digits)));
+    .replace(/\b([A-Z][a-z]?\d*){2,}\b/g, (formula) => formula.replace(/(\d+)/g, (digits) => toSubscript(digits))),
+  );
 }
 
 export function toRichTextHtml(text: string, existingHtml?: string) {
@@ -276,6 +278,22 @@ function inlineMathHtml(text: string) {
   return escapeHtml(text)
     .replace(/([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, "<sup>$1</sup>")
     .replace(/([₀₁₂₃₄₅₆₇₈₉]+)/g, "<sub>$1</sub>");
+}
+
+function protectLatexSegments(text: string) {
+  const segments: string[] = [];
+  const tokenized = text.replace(/\$\$[^$]+\$\$|\$[^$\n]+\$|\\(?:frac|sqrt|mathrm|text)\{[^{}]*\}(?:\{[^{}]*\})?/g, (segment) => {
+    const token = `\uE000${segments.length}\uE001`;
+    segments.push(segment);
+    return token;
+  });
+
+  return { tokenized, segments };
+}
+
+function restoreProtectedSegments(protectedText: { tokenized: string; segments: string[] }, transform: (value: string) => string) {
+  const transformed = transform(protectedText.tokenized);
+  return transformed.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => protectedText.segments[Number(index)] ?? "");
 }
 
 function looksLikeStaleBlob(html: string, text: string) {

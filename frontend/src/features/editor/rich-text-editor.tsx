@@ -102,6 +102,7 @@ export function RichTextEditor({
       attributes: {
         "aria-label": label,
         class: `rich-text-surface ${heightClass(minHeight)}`,
+        spellcheck: "false",
       },
     },
     onUpdate({ editor: activeEditor }) {
@@ -681,8 +682,15 @@ function textToHtml(value: string) {
 }
 
 function editorContent(value: string, htmlValue?: string) {
-  const content = htmlValue?.trim() ? htmlValue : textToHtml(value);
+  const content = htmlValue?.trim() ? sanitizeMathHtml(htmlValue) : textToHtml(value);
   return enhanceMathMarkup(content);
+}
+
+function sanitizeMathHtml(html: string) {
+  return html.replace(/data-latex=(["'])(.*?)\1/g, (_match, quote: string, latex: string) => {
+    const normalized = normalizeLatexForKatex(unescapeHtml(latex));
+    return `data-latex=${quote}${escapeAttribute(normalized)}${quote}`;
+  });
 }
 
 function enhanceMathMarkup(html: string) {
@@ -756,16 +764,53 @@ function isMostlyFormula(value: string) {
   if (!hasMathSignal) return false;
 
   const words = trimmed.match(/[A-Za-z]{4,}/g) ?? [];
-  const formulaCharacters = trimmed.replace(/[A-Za-z0-9_\\{}()[\]\s+\-*/=.,^'π√∑≤≥≠→]/g, "");
+  const formulaCharacters = trimmed.replace(/[A-Za-z0-9_\\{}()[\]\s+\-*/=.,^'π√∑≤≥≠→⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]/g, "");
 
   return formulaCharacters.length === 0 && words.length <= 2;
 }
 
 function renderMathNode(latex: string) {
-  const normalized = latex.trim();
+  const normalized = normalizeLatexForKatex(latex);
   if (!normalized) return "";
 
   return `<span data-type="inline-math" data-latex="${escapeAttribute(normalized)}"></span>`;
+}
+
+function normalizeLatexForKatex(latex: string) {
+  let normalized = latex.trim();
+  if (!normalized) return "";
+
+  normalized = normalized
+    .replace(/^\${1,2}/, "")
+    .replace(/\${1,2}$/, "")
+    .replace(/[−–]/g, "-")
+    .replace(/π/g, "\\pi")
+    .replace(/√\s*\(([^()]+)\)/g, "\\sqrt{$1}")
+    .replace(/√\s*([A-Za-z0-9]+)/g, "\\sqrt{$1}");
+
+  normalized = normalized.replace(/([A-Za-z0-9)\]}])([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (_match, base: string, digits: string) => {
+    const ascii = fromUnicodeDigits(digits, "sup");
+    return ascii.length === 1 ? `${base}^${ascii}` : `${base}^{${ascii}}`;
+  });
+
+  normalized = normalized.replace(/([A-Za-z0-9)\]}])([₀₁₂₃₄₅₆₇₈₉]+)/g, (_match, base: string, digits: string) => {
+    const ascii = fromUnicodeDigits(digits, "sub");
+    return ascii.length === 1 ? `${base}_${ascii}` : `${base}_{${ascii}}`;
+  });
+
+  return normalized;
+}
+
+function fromUnicodeDigits(value: string, mode: "sup" | "sub") {
+  const map =
+    mode === "sup"
+      ? { "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9" }
+      : { "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9" };
+
+  return value
+    .split("")
+    .map((digit) => map[digit as keyof typeof map] ?? digit)
+    .join("");
 }
 
 interface RichTextJsonNode {
