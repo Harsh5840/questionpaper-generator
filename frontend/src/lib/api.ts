@@ -185,25 +185,28 @@ export async function getStructuredPaperViaApi(paperId: string): Promise<{ versi
 
 export async function fetchChaptersViaApi(request: Pick<PaperRequest, "board" | "classLevel" | "subject">): Promise<string[]> {
   try {
-    const subjects = Array.from(new Set([sourceSubjectFor(request.subject), request.subject].filter(Boolean)));
-    const chapterLists = await Promise.all(
-      subjects.map(async (subject) => {
-        const params = new URLSearchParams({
-          board: request.board,
-          class_level: request.classLevel,
-          subject,
-        });
-        const response = await fetch(`${API_BASE}/catalog/chapters?${params.toString()}`);
-        if (!response.ok) return [];
-        const data = await response.json();
-        return Array.isArray(data.chapters) ? data.chapters.map(String) : [];
-      }),
-    );
-    const chapters = Array.from(new Set(chapterLists.flat()));
-    return filterChaptersForSubject(request.subject, chapters);
+    const exactChapters = await fetchCatalogChapters(request, request.subject);
+    if (exactChapters.length > 0) return exactChapters;
+
+    const fallbackSubject = sourceSubjectFor(request.subject);
+    if (fallbackSubject && fallbackSubject !== request.subject) return fetchCatalogChapters(request, fallbackSubject);
+
+    return [];
   } catch {
     return [];
   }
+}
+
+async function fetchCatalogChapters(request: Pick<PaperRequest, "board" | "classLevel">, subject: string): Promise<string[]> {
+  const params = new URLSearchParams({
+    board: request.board,
+    class_level: request.classLevel,
+    subject,
+  });
+  const response = await fetch(`${API_BASE}/catalog/chapters?${params.toString()}`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return Array.isArray(data.chapters) ? Array.from(new Set(data.chapters.map(String))) : [];
 }
 
 export async function fetchRetrievalPreviewViaApi(request: PaperRequest): Promise<RetrievalPreview | null> {
@@ -504,37 +507,6 @@ function normalizeRunStatus(status: string): GenerationStatus["status"] {
 
 function sourceSubjectFor(subject: PaperRequest["subject"] | string | undefined) {
   return subject === "Physics" || subject === "Chemistry" || subject === "Biology" ? "Science" : subject || "Maths";
-}
-
-function filterChaptersForSubject(subject: PaperRequest["subject"], chapters: string[]) {
-  const normalized = subject.toLowerCase();
-  const groups: Record<string, string[]> = {
-    physics: [
-      "Light Reflection And Refraction",
-      "The Human Eye And The Colourful World",
-      "Electricity",
-      "Magnetic Effects Of Electric Current",
-    ],
-    chemistry: [
-      "Chemical Reactions And Equations",
-      "Acids Bases And Salts",
-      "Metals And Non-Metals",
-      "Carbon And Its Compounds",
-    ],
-    biology: [
-      "Life Processes",
-      "Control And Coordination",
-      "How Do Organisms Reproduce",
-      "Heredity",
-      "Our Environment",
-    ],
-  };
-
-  const allowed = groups[normalized];
-  if (!allowed) return chapters;
-
-  const chapterSet = new Set(chapters.map((chapter) => chapter.toLowerCase()));
-  return allowed.filter((chapter) => chapterSet.has(chapter.toLowerCase()));
 }
 
 function messageForRun(status: string) {
