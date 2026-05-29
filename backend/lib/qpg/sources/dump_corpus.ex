@@ -698,23 +698,57 @@ defmodule Qpg.Sources.DumpCorpus do
       SQL.query!(
         Repo,
         """
+        WITH question_counts AS (
+          SELECT
+            q.chapter_id,
+            count(*) FILTER (
+              WHERE lower(coalesce(q.category, '')) <> 'pyq'
+                AND lower(coalesce(t.book_type, '')) <> 'pyq'
+            )::int AS direct_count,
+            count(*) FILTER (
+              WHERE lower(coalesce(q.category, '')) = 'pyq'
+                OR lower(coalesce(t.book_type, '')) = 'pyq'
+                OR lower(t.title) LIKE '%pyq%'
+                OR lower(t.title) LIKE '%question bank%'
+            )::int AS pyq_count
+          FROM ingested_questions q
+          JOIN ingested_chapters c ON c.id = q.chapter_id
+          JOIN ingested_textbooks t ON t.id = c.textbook_id
+          GROUP BY q.chapter_id
+        ),
+        chunk_counts AS (
+          SELECT chapter_id, count(*)::int AS chunk_count
+          FROM chapter_chunks
+          GROUP BY chapter_id
+        ),
+        formula_counts AS (
+          SELECT chapter_id, count(*)::int AS formula_count
+          FROM ingested_formulas
+          GROUP BY chapter_id
+        ),
+        skill_counts AS (
+          SELECT lower(chapter) AS chapter_key, grade, count(*)::int AS skill_count
+          FROM skills
+          GROUP BY lower(chapter), grade
+        )
         SELECT
           c.id::text,
           c.title,
           c.order_index,
-          count(q.id) FILTER (WHERE lower(coalesce(q.category, '')) <> 'pyq')::int AS direct_count,
-          count(q.id) FILTER (WHERE lower(coalesce(q.category, '')) = 'pyq' OR lower(coalesce(t.book_type, '')) = 'pyq')::int AS pyq_count,
-          count(DISTINCT ch.id)::int AS chunk_count,
-          count(DISTINCT s.id)::int AS skill_count,
-          count(DISTINCT f.id)::int AS formula_count
+          COALESCE(qc.direct_count, 0),
+          COALESCE(qc.pyq_count, 0),
+          COALESCE(cc.chunk_count, 0),
+          COALESCE(sc.skill_count, 0),
+          COALESCE(fc.formula_count, 0)
         FROM ingested_chapters c
         JOIN ingested_textbooks t ON t.id = c.textbook_id
-        LEFT JOIN ingested_questions q ON q.chapter_id = c.id
-        LEFT JOIN chapter_chunks ch ON ch.chapter_id = c.id
-        LEFT JOIN skills s ON lower(s.chapter) = lower(c.title) AND s.grade = t.grade
-        LEFT JOIN ingested_formulas f ON f.chapter_id = c.id
-        GROUP BY c.id
-        ORDER BY count(q.id) DESC, c.order_index NULLS LAST, c.title
+        LEFT JOIN question_counts qc ON qc.chapter_id = c.id
+        LEFT JOIN chunk_counts cc ON cc.chapter_id = c.id
+        LEFT JOIN formula_counts fc ON fc.chapter_id = c.id
+        LEFT JOIN skill_counts sc ON sc.chapter_key = lower(c.title) AND sc.grade = t.grade
+        ORDER BY (COALESCE(qc.direct_count, 0) + COALESCE(qc.pyq_count, 0)) DESC,
+          c.order_index NULLS LAST,
+          c.title
         LIMIT $1
         """,
         [limit]
