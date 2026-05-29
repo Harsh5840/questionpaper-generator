@@ -609,7 +609,9 @@ defmodule Qpg.AI.OpenAI do
       "difficulty_mix",
       "total_marks",
       "duration_minutes",
-      "variant_count"
+      "variant_count",
+      "direct_source_mix",
+      "source_mix_policy"
     ])
   end
 

@@ -19,16 +19,22 @@ export type PaperRequest = {
   template?: PaperTemplate | null;
   sourceBooks?: string[];
   sourceCategories?: string[];
-  directSourceMix?: {
-    dumpDirect: number;
-    aiFromDump: number;
-  };
+  directSourceMix?: DirectSourceMix;
 };
 
 export type DifficultyMix = {
   easy: number;
   medium: number;
   hard: number;
+};
+
+export type DirectSourceMix = {
+  ncertDirect: number;
+  pyqDirect: number;
+  questionBank: number;
+  aiGenerated: number;
+  dumpDirect?: number;
+  aiFromDump?: number;
 };
 
 export type SectionBlueprint = {

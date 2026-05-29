@@ -45,6 +45,7 @@ import { normalizePaperStructure, normalizeRawQuestion, richTextFromText } from 
 import {
   AiUsageSummary,
   DashboardSummary,
+  DirectSourceMix,
   DocumentStyle,
   GenerationStatus,
   Paper,
@@ -93,6 +94,12 @@ const difficultyPresets = {
   Mixed: { easy: 34, medium: 33, hard: 33 },
 } as const;
 
+const sourceMixPresets: Record<PaperRequest["source"], DirectSourceMix> = {
+  NCERT: { ncertDirect: 70, pyqDirect: 0, questionBank: 0, aiGenerated: 30 },
+  PYQ: { ncertDirect: 0, pyqDirect: 70, questionBank: 0, aiGenerated: 30 },
+  "NCERT + PYQ": { ncertDirect: 40, pyqDirect: 30, questionBank: 0, aiGenerated: 30 },
+};
+
 export function StudioApp() {
   const [appView, setAppView] = useState<AppView>("studio");
   const [mode, setMode] = useState<Mode>("structured");
@@ -113,6 +120,7 @@ export function StudioApp() {
     questionTypes: ["MCQ", "Short Answer", "Long Answer"],
     sectionBlueprint: [],
     difficultyMix: difficultyPresets.Medium,
+    directSourceMix: sourceMixPresets["NCERT + PYQ"],
   });
   const [prompt, setPrompt] = useState("CBSE class 10 maths 50 marks from Quadratic Equations using NCERT and PYQ format");
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
@@ -1401,7 +1409,12 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
     onUpdateRequest("difficulty", difficulty);
     onUpdateRequest("difficultyMix", difficultyPresets[difficulty]);
   };
+  const updateSource = (source: PaperRequest["source"]) => {
+    onUpdateRequest("source", source);
+    onUpdateRequest("directSourceMix", sourceMixPresets[source]);
+  };
   const mix = request.difficultyMix ?? difficultyPresets[request.difficulty];
+  const sourceMix = request.directSourceMix ?? sourceMixPresets[request.source];
 
   return (
     <div className="mx-auto max-w-[880px] space-y-6">
@@ -1436,12 +1449,22 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
             ["PYQ", "PYQ only"],
             ["NCERT + PYQ", "NCERT + PYQ"],
           ].map(([value, label]) => (
-            <button key={value} className={`rounded-full border px-4 py-2 text-sm ${request.source === value ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)]"}`} onClick={() => onUpdateRequest("source", value as PaperRequest["source"])} type="button">
+            <button key={value} className={`rounded-full border px-4 py-2 text-sm ${request.source === value ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)]"}`} onClick={() => updateSource(value as PaperRequest["source"])} type="button">
               {label}
             </button>
           ))}
         </div>
       </div>
+
+      <SourceMixSliders
+        disabledSources={{
+          ncertDirect: request.source === "PYQ",
+          pyqDirect: request.source === "NCERT",
+          questionBank: false,
+        }}
+        mix={sourceMix}
+        onChange={(nextMix) => onUpdateRequest("directSourceMix", nextMix)}
+      />
 
       <div className="grid gap-5 md:grid-cols-2">
         <ChipMultiSelect
@@ -1488,6 +1511,7 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
           </div>
           <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}{request.sourceBooks?.length ? ` · ${request.sourceBooks.join(", ")}` : ""}. {request.questionTypes.length} question types selected. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
           <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Difficulty mix: {mix.easy}% easy · {mix.medium}% medium · {mix.hard}% hard.</div>
+          <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Source mix target: {sourceMix.ncertDirect}% NCERT direct · {sourceMix.pyqDirect}% PYQ direct · {sourceMix.questionBank}% bank · {sourceMix.aiGenerated}% AI from dump.</div>
         </div>
       </div>
     </div>
@@ -1559,6 +1583,105 @@ function DifficultyMixSliders({ mix, onChange }: { mix: NonNullable<PaperRequest
       </div>
     </div>
   );
+}
+
+function SourceMixSliders({
+  disabledSources,
+  mix,
+  onChange,
+}: {
+  disabledSources: Partial<Record<keyof Pick<DirectSourceMix, "ncertDirect" | "pyqDirect" | "questionBank">, boolean>>;
+  mix: DirectSourceMix;
+  onChange: (mix: DirectSourceMix) => void;
+}) {
+  const keys = ["ncertDirect", "pyqDirect", "questionBank", "aiGenerated"] as const;
+  const normalized = normalizeSourceMixForUi(mix, disabledSources);
+
+  const update = (key: (typeof keys)[number], value: number) => {
+    const clamped = Math.max(0, Math.min(100, value));
+    const availableKeys = keys.filter((item) => item !== key && !disabledSources[item as keyof typeof disabledSources]);
+    const remaining = 100 - clamped;
+    const currentOtherTotal = availableKeys.reduce((total, item) => total + normalized[item], 0) || 1;
+    const next = { ...normalized, [key]: clamped };
+
+    availableKeys.forEach((item, index) => {
+      if (index === availableKeys.length - 1) {
+        next[item] = 100 - keys.reduce((total, sourceKey) => (sourceKey === item ? total : total + next[sourceKey]), 0);
+      } else {
+        next[item] = Math.round((normalized[item] / currentOtherTotal) * remaining);
+      }
+    });
+
+    (["ncertDirect", "pyqDirect", "questionBank"] as const).forEach((item) => {
+      if (disabledSources[item]) next[item] = 0;
+    });
+
+    onChange({ ...next, dumpDirect: next.ncertDirect + next.pyqDirect + next.questionBank, aiFromDump: next.aiGenerated });
+  };
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <FlowLabel>Source mix target</FlowLabel>
+        <span className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--ink-3)]">Direct pull vs AI</span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        {keys.map((key) => {
+          const disabled = Boolean(disabledSources[key as keyof typeof disabledSources]);
+          return (
+            <label key={key} className={`text-xs font-bold uppercase tracking-[0.08em] ${disabled ? "text-[var(--ink-3)] opacity-50" : "text-[var(--ink-3)]"}`}>
+              <span className="flex justify-between">
+                <span>{sourceMixLabel(key)}</span>
+                <span>{normalized[key]}%</span>
+              </span>
+              <input
+                className="mt-2 w-full accent-[var(--accent)] disabled:opacity-50"
+                disabled={disabled}
+                max={100}
+                min={0}
+                type="range"
+                value={normalized[key]}
+                onChange={(event) => update(key, Number(event.target.value))}
+              />
+            </label>
+          );
+        })}
+      </div>
+      <div className="mt-3 text-[11px] leading-5 text-[var(--ink-3)]">
+        Direct questions are inserted untouched from the dump where compatible candidates exist. AI questions are still grounded in dump citations.
+      </div>
+    </div>
+  );
+}
+
+function normalizeSourceMixForUi(
+  mix: DirectSourceMix,
+  disabledSources: Partial<Record<keyof Pick<DirectSourceMix, "ncertDirect" | "pyqDirect" | "questionBank">, boolean>>,
+) {
+  const next: DirectSourceMix = {
+    ncertDirect: disabledSources.ncertDirect ? 0 : Math.max(0, mix.ncertDirect ?? 0),
+    pyqDirect: disabledSources.pyqDirect ? 0 : Math.max(0, mix.pyqDirect ?? 0),
+    questionBank: disabledSources.questionBank ? 0 : Math.max(0, mix.questionBank ?? 0),
+    aiGenerated: Math.max(0, mix.aiGenerated ?? 0),
+  };
+  const total = next.ncertDirect + next.pyqDirect + next.questionBank + next.aiGenerated || 1;
+  next.ncertDirect = Math.round((next.ncertDirect / total) * 100);
+  next.pyqDirect = Math.round((next.pyqDirect / total) * 100);
+  next.questionBank = Math.round((next.questionBank / total) * 100);
+  next.aiGenerated = 100 - next.ncertDirect - next.pyqDirect - next.questionBank;
+  next.dumpDirect = next.ncertDirect + next.pyqDirect + next.questionBank;
+  next.aiFromDump = next.aiGenerated;
+  return next;
+}
+
+function sourceMixLabel(key: keyof DirectSourceMix) {
+  const labels: Partial<Record<keyof DirectSourceMix, string>> = {
+    ncertDirect: "NCERT",
+    pyqDirect: "PYQ",
+    questionBank: "Bank",
+    aiGenerated: "AI",
+  };
+  return labels[key] ?? key;
 }
 
 function FreePromptModal({ onClose, onGenerate, onPromptChange, prompt }: { onClose: () => void; onGenerate: () => void; onPromptChange: (value: string) => void; prompt: string }) {

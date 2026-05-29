@@ -73,6 +73,12 @@ defmodule Qpg.AI.Prompts do
     - If difficulty_mix is present, approximate that Easy/Medium/Hard
       distribution across generated questions and warn when source coverage
       prevents a close match.
+    - If source_mix_policy is present, treat it as the requested ratio between
+      untouched direct source questions and AI-generated-from-dump questions.
+      Direct NCERT, direct PYQ, and question-bank questions must use
+      generationMode "direct_ncert", "direct_pyq", or "question_bank" only when
+      the question is copied/imported as a structured source question. AI-written
+      questions must use generationMode "ai_generated" with sourceCitations.
     - If subject_focus is Physics, Chemistry, or Biology inside a broader
       Science corpus, generate only that subject's chapter concepts. Do not mix
       unrelated Science chapters unless the user selected Science as the broad

@@ -14,6 +14,7 @@ export const defaultRequest: PaperRequest = {
   markingScheme: "Standard board pattern",
   difficulty: "Medium",
   difficultyMix: { easy: 20, medium: 60, hard: 20 },
+  directSourceMix: { ncertDirect: 40, pyqDirect: 30, questionBank: 0, aiGenerated: 30 },
   totalMarks: 80,
   durationMinutes: 180,
   variantCount: 3,

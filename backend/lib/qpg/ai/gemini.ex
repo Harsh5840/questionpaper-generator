@@ -816,7 +816,9 @@ defmodule Qpg.AI.Gemini do
         "answerRichText" =>
           safe_text(question["answerRichText"] || question["answer_rich_text"], ""),
         "sourceCitations" =>
-          List.wrap(question["sourceCitations"] || question["source_citations"] || question["citation"])
+          List.wrap(
+            question["sourceCitations"] || question["source_citations"] || question["citation"]
+          )
       }
     end)
     |> Enum.reject(&blank_question?/1)
@@ -1236,7 +1238,9 @@ defmodule Qpg.AI.Gemini do
       "difficulty",
       "total_marks",
       "duration_minutes",
-      "variant_count"
+      "variant_count",
+      "direct_source_mix",
+      "source_mix_policy"
     ])
   end
 

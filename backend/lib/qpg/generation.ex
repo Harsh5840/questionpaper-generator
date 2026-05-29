@@ -77,12 +77,15 @@ defmodule Qpg.Generation do
     result =
       try do
         Orchestrator.generate(
-          Map.put(run.request, "retrieval_preview", compact_retrieval_preview(retrieval_preview))
+          run.request
+          |> Map.put("retrieval_preview", compact_retrieval_preview(retrieval_preview))
+          |> Map.put("source_mix_policy", source_mix_policy(run.request))
         )
       after
         Process.delete(:qpg_generation_run_id)
         Process.delete(:qpg_ai_operation)
       end
+      |> enforce_direct_source_mix(run.request, retrieval_preview)
 
     Logging.info("generation.perform_run.ai_result", %{
       run_id: run.id,
@@ -284,6 +287,10 @@ defmodule Qpg.Generation do
       |> put_default("total_marks", 80)
       |> put_default("duration_minutes", 180)
       |> put_default("variant_count", 3)
+      |> put_default(
+        "direct_source_mix",
+        default_direct_source_mix(request["source"] || "NCERT + PYQ")
+      )
 
     Logging.debug("generation.request.normalized", %{request: request_summary(normalized)})
     normalized
@@ -368,7 +375,8 @@ defmodule Qpg.Generation do
       "difficulty_mix",
       "total_marks",
       "duration_minutes",
-      "variant_count"
+      "variant_count",
+      "direct_source_mix"
     ])
   end
 
@@ -490,4 +498,402 @@ defmodule Qpg.Generation do
   end
 
   defp preview_value(_map, _key, default), do: default
+
+  defp enforce_direct_source_mix(%{"variants" => variants} = result, request, preview) do
+    policy = source_mix_policy(request)
+
+    {variants, warnings} =
+      Enum.map_reduce(variants, [], fn variant, accumulated_warnings ->
+        {variant, variant_warnings} = apply_direct_source_mix(variant, request, preview, policy)
+        {variant, accumulated_warnings ++ variant_warnings}
+      end)
+
+    result
+    |> Map.put("variants", variants)
+    |> Map.update("warnings", Enum.uniq(warnings), fn existing ->
+      (List.wrap(existing) ++ warnings) |> Enum.uniq()
+    end)
+  end
+
+  defp enforce_direct_source_mix(result, _request, _preview), do: result
+
+  defp apply_direct_source_mix(variant, request, preview, policy) do
+    slots = question_slots(variant)
+    targets = source_mix_targets(length(slots), policy)
+
+    {variant, slots, warnings} =
+      [
+        {"direct_ncert", targets.ncert, direct_source_candidates(preview, :ncert)},
+        {"direct_pyq", targets.pyq, direct_source_candidates(preview, :pyq)},
+        {"question_bank", targets.question_bank,
+         direct_source_candidates(preview, :question_bank)}
+      ]
+      |> Enum.reduce({variant, slots, []}, fn {mode, target, candidates},
+                                              {current_variant, current_slots, warnings} ->
+        current_count = source_mix_counts(current_slots).counts[mode] || 0
+        needed = max(target - current_count, 0)
+
+        {next_variant, next_slots, remaining} =
+          fill_source_need(current_variant, current_slots, mode, needed, candidates, request)
+
+        next_warnings =
+          if remaining > 0 do
+            [
+              "Source mix target partially met for #{source_mode_label(mode)}: #{remaining} more compatible direct question(s) needed."
+              | warnings
+            ]
+          else
+            warnings
+          end
+
+        {next_variant, next_slots, next_warnings}
+      end)
+
+    source_mix = source_mix_counts(slots).public
+
+    variant =
+      variant
+      |> Map.put("source_mix", source_mix)
+      |> put_in(["summary", "source_coverage"], source_mix_summary(source_mix, policy))
+      |> append_source_mix_warnings(warnings)
+
+    {variant, Enum.reverse(warnings)}
+  end
+
+  defp fill_source_need(variant, slots, _mode, needed, _candidates, _request) when needed <= 0,
+    do: {variant, slots, 0}
+
+  defp fill_source_need(variant, slots, mode, needed, candidates, request) do
+    candidates
+    |> Enum.reduce_while({variant, slots, needed}, fn candidate,
+                                                      {current_variant, current_slots, remaining} ->
+      if remaining <= 0 do
+        {:halt, {current_variant, current_slots, 0}}
+      else
+        with {:ok, imported} <- import_direct_candidate(candidate, request),
+             {:ok, slot_index, slot} <- compatible_slot(current_slots, imported),
+             prepared <- prepare_direct_question(imported, slot.question, mode) do
+          next_variant = put_question_at_slot(current_variant, slot, prepared)
+          next_slots = List.replace_at(current_slots, slot_index, %{slot | question: prepared})
+          {:cont, {next_variant, next_slots, remaining - 1}}
+        else
+          _ -> {:cont, {current_variant, current_slots, remaining}}
+        end
+      end
+    end)
+  end
+
+  defp import_direct_candidate(candidate, request) do
+    source_type = preview_value(candidate, :source_type, nil)
+    id = preview_value(candidate, :id, nil)
+
+    cond do
+      source_type in [nil, ""] or id in [nil, ""] -> {:error, :missing_source_identity}
+      true -> Sources.import_question_from_source(source_type, id, request)
+    end
+  end
+
+  defp compatible_slot(slots, imported) do
+    preferred_index =
+      Enum.find_index(slots, fn slot ->
+        not direct_question?(slot.question) and compatible_question_type?(slot.question, imported)
+      end)
+
+    fallback_index =
+      Enum.find_index(slots, fn slot ->
+        not direct_question?(slot.question) and
+          normalize_question_type(slot.question["type"]) != "MCQ"
+      end)
+
+    case preferred_index || fallback_index do
+      nil -> {:error, :no_compatible_slot}
+      index -> {:ok, index, Enum.at(slots, index)}
+    end
+  end
+
+  defp compatible_question_type?(target, imported) do
+    target_type = normalize_question_type(target["type"])
+    imported_type = normalize_question_type(imported["type"])
+
+    cond do
+      target_type == "MCQ" -> imported_type == "MCQ" and List.wrap(imported["options"]) != []
+      imported_type == "MCQ" -> false
+      target_type in ["SA", "VSA", "LA", "CASE STUDY"] -> true
+      true -> target_type == imported_type
+    end
+  end
+
+  defp prepare_direct_question(imported, target, mode) do
+    imported
+    |> Map.put("id", target["id"] || imported["id"] || Ecto.UUID.generate())
+    |> Map.put("marks", target["marks"] || imported["marks"] || 1)
+    |> Map.put("type", target["type"] || imported["type"] || "SA")
+    |> Map.put("difficulty", target["difficulty"] || imported["difficulty"] || "Medium")
+    |> Map.put("generationMode", mode)
+    |> Map.put_new("answer", "")
+    |> Map.put_new("answerRichText", "")
+  end
+
+  defp put_question_at_slot(variant, slot, question) do
+    put_in(
+      variant,
+      ["sections", Access.at(slot.section_index), "questions", Access.at(slot.question_index)],
+      question
+    )
+  end
+
+  defp question_slots(%{"sections" => sections}) when is_list(sections) do
+    sections
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {section, section_index} ->
+      section
+      |> Map.get("questions", [])
+      |> List.wrap()
+      |> Enum.with_index()
+      |> Enum.map(fn {question, question_index} ->
+        %{section_index: section_index, question_index: question_index, question: question}
+      end)
+    end)
+  end
+
+  defp question_slots(_variant), do: []
+
+  defp direct_source_candidates(preview, key) do
+    preview
+    |> preview_value(key, [])
+    |> Enum.filter(fn candidate ->
+      source_type = preview_value(candidate, :source_type, "")
+
+      case key do
+        :ncert -> source_type in ["dump_question", "ncert_question", "ingested_question"]
+        :pyq -> source_type in ["dump_pyq_question", "pyq_question"]
+        :question_bank -> source_type == "question_bank"
+        _ -> false
+      end
+    end)
+    |> Enum.uniq_by(&preview_value(&1, :id, ""))
+  end
+
+  defp source_mix_counts(slots) do
+    counts =
+      Enum.reduce(
+        slots,
+        %{
+          "direct_ncert" => 0,
+          "direct_pyq" => 0,
+          "question_bank" => 0,
+          "ai_generated" => 0,
+          "uncited" => 0
+        },
+        fn slot, acc ->
+          mode = source_mode(slot.question)
+          Map.update!(acc, mode, &(&1 + 1))
+        end
+      )
+
+    %{
+      counts: counts,
+      public: %{
+        "ncert" => counts["direct_ncert"],
+        "pyq" => counts["direct_pyq"],
+        "question_bank" => counts["question_bank"],
+        "ai_generated" => counts["ai_generated"],
+        "uncited" => counts["uncited"]
+      }
+    }
+  end
+
+  defp source_mode(question) do
+    mode = question["generationMode"] || question["generation_mode"]
+
+    source =
+      "#{mode} #{question["source"]} #{Enum.join(List.wrap(question["sourceCitations"] || question["source_citations"]), " ")}"
+      |> String.downcase()
+
+    cond do
+      mode == "direct_ncert" or String.contains?(source, "direct_ncert") ->
+        "direct_ncert"
+
+      mode == "direct_pyq" or String.contains?(source, "direct_pyq") ->
+        "direct_pyq"
+
+      mode == "question_bank" or String.contains?(source, "question bank") ->
+        "question_bank"
+
+      mode == "ai_generated" or question_has_citation?(question) or
+          String.contains?(source, "ai generated") ->
+        "ai_generated"
+
+      true ->
+        "uncited"
+    end
+  end
+
+  defp direct_question?(question),
+    do: source_mode(question) in ["direct_ncert", "direct_pyq", "question_bank"]
+
+  defp question_has_citation?(question) do
+    List.wrap(question["sourceCitations"] || question["source_citations"]) != []
+  end
+
+  defp source_mix_targets(total_questions, policy) do
+    ncert = percentage_count(total_questions, policy.ncert)
+    pyq = percentage_count(total_questions, policy.pyq)
+    question_bank = percentage_count(total_questions, policy.question_bank)
+    direct_total = ncert + pyq + question_bank
+
+    if direct_total <= total_questions do
+      %{ncert: ncert, pyq: pyq, question_bank: question_bank}
+    else
+      scale = total_questions / max(direct_total, 1)
+
+      %{
+        ncert: floor(ncert * scale),
+        pyq: floor(pyq * scale),
+        question_bank: max(total_questions - floor(ncert * scale) - floor(pyq * scale), 0)
+      }
+    end
+  end
+
+  defp percentage_count(total, percent), do: round(total * percent / 100)
+
+  defp source_mix_policy(request) do
+    raw = request["direct_source_mix"] || %{}
+    source = request["source"] || "NCERT + PYQ"
+
+    explicit = %{
+      ncert: numeric(raw["ncertDirect"] || raw["ncert_direct"], nil),
+      pyq: numeric(raw["pyqDirect"] || raw["pyq_direct"], nil),
+      question_bank: numeric(raw["questionBank"] || raw["question_bank"], nil),
+      ai_generated: numeric(raw["aiGenerated"] || raw["ai_generated"], nil)
+    }
+
+    policy =
+      if Enum.any?(explicit, fn {_key, value} -> is_number(value) end) do
+        %{
+          ncert: explicit.ncert || 0,
+          pyq: explicit.pyq || 0,
+          question_bank: explicit.question_bank || 0,
+          ai_generated: explicit.ai_generated || 0
+        }
+      else
+        legacy_or_default_source_mix(raw, source)
+      end
+
+    normalize_source_mix_policy(policy, source)
+  end
+
+  defp legacy_or_default_source_mix(raw, source) do
+    dump_direct = numeric(raw["dumpDirect"] || raw["dump_direct"], nil)
+    ai_from_dump = numeric(raw["aiFromDump"] || raw["ai_from_dump"], 100 - (dump_direct || 70))
+
+    if is_number(dump_direct) do
+      case source do
+        "NCERT" ->
+          %{ncert: dump_direct, pyq: 0, question_bank: 0, ai_generated: ai_from_dump}
+
+        "PYQ" ->
+          %{ncert: 0, pyq: dump_direct, question_bank: 0, ai_generated: ai_from_dump}
+
+        _ ->
+          ncert = round(dump_direct * 0.57)
+          %{ncert: ncert, pyq: dump_direct - ncert, question_bank: 0, ai_generated: ai_from_dump}
+      end
+    else
+      default_source_mix_policy(source)
+    end
+  end
+
+  defp default_direct_source_mix("NCERT"),
+    do: %{"ncertDirect" => 70, "pyqDirect" => 0, "questionBank" => 0, "aiGenerated" => 30}
+
+  defp default_direct_source_mix("PYQ"),
+    do: %{"ncertDirect" => 0, "pyqDirect" => 70, "questionBank" => 0, "aiGenerated" => 30}
+
+  defp default_direct_source_mix(_),
+    do: %{"ncertDirect" => 40, "pyqDirect" => 30, "questionBank" => 0, "aiGenerated" => 30}
+
+  defp default_source_mix_policy("NCERT"),
+    do: %{ncert: 70, pyq: 0, question_bank: 0, ai_generated: 30}
+
+  defp default_source_mix_policy("PYQ"),
+    do: %{ncert: 0, pyq: 70, question_bank: 0, ai_generated: 30}
+
+  defp default_source_mix_policy(_), do: %{ncert: 40, pyq: 30, question_bank: 0, ai_generated: 30}
+
+  defp normalize_source_mix_policy(policy, source) do
+    policy =
+      policy
+      |> Map.update!(:ncert, &max(round(&1), 0))
+      |> Map.update!(:pyq, &max(round(&1), 0))
+      |> Map.update!(:question_bank, &max(round(&1), 0))
+      |> Map.update!(:ai_generated, &max(round(&1), 0))
+
+    policy =
+      case source do
+        "NCERT" -> %{policy | pyq: 0}
+        "PYQ" -> %{policy | ncert: 0}
+        _ -> policy
+      end
+
+    total = policy.ncert + policy.pyq + policy.question_bank + policy.ai_generated
+
+    if total == 100 or total == 0 do
+      if total == 0, do: default_source_mix_policy(source), else: policy
+    else
+      %{
+        ncert: round(policy.ncert * 100 / total),
+        pyq: round(policy.pyq * 100 / total),
+        question_bank: round(policy.question_bank * 100 / total),
+        ai_generated: 0
+      }
+      |> then(fn normalized ->
+        %{
+          normalized
+          | ai_generated: 100 - normalized.ncert - normalized.pyq - normalized.question_bank
+        }
+      end)
+    end
+  end
+
+  defp source_mix_summary(source_mix, policy) do
+    "Target #{policy.ncert}% NCERT direct / #{policy.pyq}% PYQ direct / #{policy.question_bank}% bank / #{policy.ai_generated}% AI; actual #{source_mix["ncert"]} NCERT, #{source_mix["pyq"]} PYQ, #{source_mix["question_bank"]} bank, #{source_mix["ai_generated"]} AI, #{source_mix["uncited"]} uncited."
+  end
+
+  defp append_source_mix_warnings(variant, []), do: variant
+
+  defp append_source_mix_warnings(variant, warnings) do
+    Map.update(variant, "warnings", Enum.uniq(warnings), fn existing ->
+      (List.wrap(existing) ++ warnings) |> Enum.uniq()
+    end)
+  end
+
+  defp source_mode_label("direct_ncert"), do: "NCERT direct"
+  defp source_mode_label("direct_pyq"), do: "PYQ direct"
+  defp source_mode_label("question_bank"), do: "question bank"
+  defp source_mode_label(mode), do: mode
+
+  defp normalize_question_type(value) do
+    text = value |> to_string() |> String.downcase()
+
+    cond do
+      text in ["mcq", "multiple choice"] -> "MCQ"
+      String.contains?(text, "case") -> "CASE STUDY"
+      String.contains?(text, "very") or text == "vsa" -> "VSA"
+      String.contains?(text, "long") or text == "la" -> "LA"
+      String.contains?(text, "short") or text == "sa" -> "SA"
+      true -> String.upcase(to_string(value || "SA"))
+    end
+  end
+
+  defp numeric(value, _default) when is_number(value), do: value
+
+  defp numeric(value, default) when is_binary(value) do
+    case Float.parse(value) do
+      {number, _} -> number
+      :error -> default
+    end
+  end
+
+  defp numeric(_value, default), do: default
 end
