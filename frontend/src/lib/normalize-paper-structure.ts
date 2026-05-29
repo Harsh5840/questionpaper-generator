@@ -1,4 +1,4 @@
-import { Paper, PaperQuestion, PaperQuestionOption, PaperSubpart } from "./types";
+import { Paper, PaperImageAsset, PaperQuestion, PaperQuestionOption, PaperSubpart } from "./types";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -35,11 +35,38 @@ export function normalizeRawQuestion(record: AnyRecord): PaperQuestion {
       : undefined,
     generationMode: optionalGenerationMode(record.generationMode ?? record.generation_mode),
     diagramBlocks: normalizeDiagramBlocks(record.diagramBlocks ?? record.diagram_blocks),
+    imageAssets: normalizeImageAssets(record.imageAssets ?? record.image_assets),
     subparts: normalizeRawSubparts(record.subparts ?? record.sub_parts),
     optionalChoice: normalizeRawChoice(record.optionalChoice ?? record.optional_choice),
     answer: stringValue(record.answer, ""),
     answerRichText: stringValue(record.answerRichText ?? record.answer_rich_text, ""),
   });
+}
+
+function normalizeImageAssets(value: unknown): PaperImageAsset[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const assets = value
+    .map((item): PaperImageAsset | null => {
+      const record = asRecord(item);
+      const url = optionalString(record.url);
+      if (!url) return null;
+
+      return {
+        id: stringValue(record.id, makeId()),
+        filename: optionalString(record.filename),
+        name: optionalString(record.name),
+        url,
+        mimeType: optionalString(record.mimeType ?? record.mime_type),
+        width: numberOrUndefined(record.width),
+        height: numberOrUndefined(record.height),
+        altText: optionalString(record.altText ?? record.alt_text),
+        caption: optionalString(record.caption),
+      };
+    })
+    .filter((asset): asset is PaperImageAsset => Boolean(asset));
+
+  return assets.length > 0 ? assets : undefined;
 }
 
 function normalizeDiagramBlocks(value: unknown): PaperQuestion["diagramBlocks"] {
@@ -119,6 +146,7 @@ function normalizeOption(option: PaperQuestionOption, index: number): PaperQuest
     label: option.label || String.fromCharCode(65 + index),
     text,
     richText: toRichTextHtml(text, option.richText),
+    imageAssets: normalizeImageAssets(option.imageAssets),
   };
 }
 
@@ -155,8 +183,9 @@ function normalizeRawOptions(value: unknown): PaperQuestionOption[] | undefined 
         id: optionalString(record.id),
         label: optionalString(record.label) || String.fromCharCode(65 + index),
         text: stringValue(record.text ?? record.value ?? item, ""),
-        richText: optionalString(record.richText ?? record.rich_text),
-        isCorrect: Boolean(record.isCorrect ?? record.is_correct ?? false),
+      richText: optionalString(record.richText ?? record.rich_text),
+      imageAssets: normalizeImageAssets(record.imageAssets ?? record.image_assets),
+      isCorrect: Boolean(record.isCorrect ?? record.is_correct ?? false),
       },
       index,
     );
@@ -174,6 +203,7 @@ function normalizeRawSubparts(value: unknown): PaperSubpart[] | undefined {
       text: stringValue(record.text, ""),
       richText: optionalString(record.richText ?? record.rich_text),
       diagramBlocks: normalizeDiagramBlocks(record.diagramBlocks ?? record.diagram_blocks),
+      imageAssets: normalizeImageAssets(record.imageAssets ?? record.image_assets),
       marks: record.marks === undefined ? undefined : numberValue(record.marks, 0),
       answer: optionalString(record.answer),
       answerRichText: optionalString(record.answerRichText ?? record.answer_rich_text),
@@ -190,6 +220,9 @@ function normalizeRawChoice(value: unknown): PaperQuestion["optionalChoice"] | u
     id: optionalString(record.id),
     text: stringValue(record.text, ""),
     richText: optionalString(record.richText ?? record.rich_text),
+    options: normalizeRawOptions(record.options),
+    subparts: normalizeRawSubparts(record.subparts ?? record.sub_parts),
+    imageAssets: normalizeImageAssets(record.imageAssets ?? record.image_assets),
     marks: record.marks === undefined ? undefined : numberValue(record.marks, 0),
     type: optionalString(record.type ?? record.question_type),
     difficulty: optionalString(record.difficulty),
@@ -275,6 +308,11 @@ function optionalString(value: unknown) {
 function numberValue(value: unknown, fallback: number) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function numberOrUndefined(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
 }
 
 function asRecord(value: unknown): AnyRecord {

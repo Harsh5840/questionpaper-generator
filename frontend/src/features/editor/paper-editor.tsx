@@ -6,6 +6,7 @@ import {
   Copy,
   FilePlus2,
   GripVertical,
+  Image as ImageIcon,
   ImagePlus,
   Plus,
   RefreshCcw,
@@ -13,7 +14,7 @@ import {
   Shapes,
   Trash2,
 } from "lucide-react";
-import { DocumentStyle, Paper, PaperQuestion, PaperSection, PaperSubpart } from "@/lib/types";
+import { DocumentStyle, Paper, PaperImageAsset, PaperQuestion, PaperSection, PaperSubpart } from "@/lib/types";
 import { normalizePaperStructure } from "@/lib/normalize-paper-structure";
 import { RichTextEditor } from "./rich-text-editor";
 
@@ -26,6 +27,7 @@ interface PaperEditorProps {
   onReplaceOptionalChoice: (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => Promise<void> | void;
   onSaveQuestionToBank: (question: PaperQuestion) => void;
   onImportImage: (sectionId: string) => void;
+  onUploadImage?: (file: File) => Promise<PaperImageAsset>;
   onTextEditorFocus?: () => void;
 }
 
@@ -50,6 +52,7 @@ export function PaperEditor({
   onReplaceOptionalChoice,
   onSaveQuestionToBank,
   onImportImage,
+  onUploadImage,
   onTextEditorFocus,
 }: PaperEditorProps) {
   const [draggedQuestion, setDraggedQuestion] = useState<DraggedQuestion | null>(null);
@@ -145,6 +148,25 @@ export function PaperEditor({
         { ...option, id: crypto.randomUUID(), label: String.fromCharCode(65 + optionIndex + 1) },
         ...options.slice(optionIndex + 1),
       ].map((item, index) => ({ ...item, label: item.label && /^[([]?[ivx]+[)]?$/i.test(item.label) ? item.label : String.fromCharCode(65 + index) })),
+    });
+  };
+
+  const addQuestionOption = (sectionId: string, questionId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.options ?? [];
+
+    updateQuestion(sectionId, questionId, {
+      type: "MCQ",
+      options: [
+        ...options,
+        {
+          id: crypto.randomUUID(),
+          label: String.fromCharCode(65 + options.length),
+          text: "",
+          richText: "",
+          isCorrect: false,
+        },
+      ].map((option, index) => ({ ...option, label: String.fromCharCode(65 + index) })),
     });
   };
 
@@ -335,12 +357,191 @@ export function PaperEditor({
     });
   };
 
+  const uploadAsset = async (file: File) => {
+    if (!onUploadImage) return null;
+    return onUploadImage(file);
+  };
+
+  const attachQuestionImage = async (sectionId: string, questionId: string, file: File) => {
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: section.questions.map((question) =>
+                question.id === questionId ? { ...question, imageAssets: [...(question.imageAssets ?? []), asset] } : question,
+              ),
+            }
+          : section,
+      ),
+    }));
+  };
+
+  const attachQuestionOptionImage = async (sectionId: string, questionId: string, optionIndex: number, file: File) => {
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: section.questions.map((question) =>
+                question.id === questionId
+                  ? {
+                      ...question,
+                      options: (question.options ?? []).map((option, index) =>
+                        index === optionIndex ? { ...option, imageAssets: [...(option.imageAssets ?? []), asset] } : option,
+                      ),
+                    }
+                  : question,
+              ),
+            }
+          : section,
+      ),
+    }));
+  };
+
+  const attachSubpartImage = async (sectionId: string, questionId: string, subpartId: string, file: File) => {
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: section.questions.map((question) =>
+                question.id === questionId
+                  ? {
+                      ...question,
+                      subparts: (question.subparts ?? []).map((subpart) =>
+                        subpart.id === subpartId ? { ...subpart, imageAssets: [...(subpart.imageAssets ?? []), asset] } : subpart,
+                      ),
+                    }
+                  : question,
+              ),
+            }
+          : section,
+      ),
+    }));
+  };
+
+  const attachQuestionChoiceImage = async (sectionId: string, questionId: string, file: File) => {
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: section.questions.map((question) =>
+                question.id === questionId && question.optionalChoice
+                  ? {
+                      ...question,
+                      optionalChoice: {
+                        ...question.optionalChoice,
+                        imageAssets: [...(question.optionalChoice.imageAssets ?? []), asset],
+                      },
+                    }
+                  : question,
+              ),
+            }
+          : section,
+      ),
+    }));
+  };
+
+  const attachSubpartChoiceImage = async (sectionId: string, questionId: string, subpartId: string, file: File) => {
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: section.questions.map((question) =>
+                question.id === questionId
+                  ? {
+                      ...question,
+                      subparts: (question.subparts ?? []).map((subpart) =>
+                        subpart.id === subpartId && subpart.optionalChoice
+                          ? {
+                              ...subpart,
+                              optionalChoice: {
+                                ...subpart.optionalChoice,
+                                imageAssets: [...(subpart.optionalChoice.imageAssets ?? []), asset],
+                              },
+                            }
+                          : subpart,
+                      ),
+                    }
+                  : question,
+              ),
+            }
+          : section,
+      ),
+    }));
+  };
+
+  const removeQuestionImage = (sectionId: string, questionId: string, assetId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    updateQuestion(sectionId, questionId, { imageAssets: (question?.imageAssets ?? []).filter((asset) => asset.id !== assetId) });
+  };
+
+  const removeOptionImage = (sectionId: string, questionId: string, optionIndex: number, assetId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    updateQuestion(sectionId, questionId, {
+      options: (question?.options ?? []).map((option, index) =>
+        index === optionIndex ? { ...option, imageAssets: (option.imageAssets ?? []).filter((asset) => asset.id !== assetId) } : option,
+      ),
+    });
+  };
+
+  const removeSubpartImage = (sectionId: string, questionId: string, subpartId: string, assetId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    updateSubpart(sectionId, questionId, subpartId, {
+      imageAssets: (question?.subparts?.find((item) => item.id === subpartId)?.imageAssets ?? []).filter((asset) => asset.id !== assetId),
+    });
+  };
+
+  const removeQuestionChoiceImage = (sectionId: string, questionId: string, assetId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    if (!question?.optionalChoice) return;
+
+    updateInternalChoice(sectionId, questionId, {
+      imageAssets: (question.optionalChoice.imageAssets ?? []).filter((asset) => asset.id !== assetId),
+    });
+  };
+
+  const removeSubpartChoiceImage = (sectionId: string, questionId: string, subpartId: string, assetId: string) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    if (!subpart?.optionalChoice) return;
+
+    updateSubpartChoice(sectionId, questionId, subpartId, {
+      imageAssets: (subpart.optionalChoice.imageAssets ?? []).filter((asset) => asset.id !== assetId),
+    });
+  };
+
   const addInternalChoice = (sectionId: string, questionId: string) => {
     const section = paper.sections.find((item) => item.id === sectionId);
     const question = section?.questions.find((item) => item.id === questionId);
 
     updateQuestion(sectionId, questionId, {
-      optionalChoice: questionToChoice(question),
+      optionalChoice: blankQuestionChoice(question),
     });
   };
 
@@ -351,6 +552,88 @@ export function PaperEditor({
 
     updateQuestion(sectionId, questionId, {
       optionalChoice: { ...question.optionalChoice, ...patch },
+    });
+  };
+
+  const updateInternalChoiceOption = (
+    sectionId: string,
+    questionId: string,
+    optionIndex: number,
+    patch: Partial<NonNullable<PaperQuestion["options"]>[number]>,
+  ) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.optionalChoice?.options ?? [];
+
+    updateInternalChoice(sectionId, questionId, {
+      options: options.map((option, index) => (index === optionIndex ? { ...option, ...patch } : option)),
+    });
+  };
+
+  const attachInternalChoiceOptionImage = async (sectionId: string, questionId: string, optionIndex: number, file: File) => {
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.optionalChoice?.options ?? [];
+
+    updateInternalChoice(sectionId, questionId, {
+      options: options.map((option, index) =>
+        index === optionIndex ? { ...option, imageAssets: [...(option.imageAssets ?? []), asset] } : option,
+      ),
+    });
+  };
+
+  const removeInternalChoiceOptionImage = (sectionId: string, questionId: string, optionIndex: number, assetId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.optionalChoice?.options ?? [];
+
+    updateInternalChoice(sectionId, questionId, {
+      options: options.map((option, index) =>
+        index === optionIndex ? { ...option, imageAssets: (option.imageAssets ?? []).filter((asset) => asset.id !== assetId) } : option,
+      ),
+    });
+  };
+
+  const addInternalChoiceOption = (sectionId: string, questionId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.optionalChoice?.options ?? [];
+
+    updateInternalChoice(sectionId, questionId, {
+      type: "MCQ",
+      options: [
+        ...options,
+        {
+          id: crypto.randomUUID(),
+          label: String.fromCharCode(65 + options.length),
+          text: "",
+          richText: "",
+          isCorrect: false,
+        },
+      ].map((option, index) => ({ ...option, label: String.fromCharCode(65 + index) })),
+    });
+  };
+
+  const duplicateInternalChoiceOption = (sectionId: string, questionId: string, optionIndex: number) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.optionalChoice?.options ?? [];
+    const option = options[optionIndex];
+    if (!option) return;
+
+    updateInternalChoice(sectionId, questionId, {
+      options: [
+        ...options.slice(0, optionIndex + 1),
+        { ...option, id: crypto.randomUUID() },
+        ...options.slice(optionIndex + 1),
+      ].map((item, index) => ({ ...item, label: String.fromCharCode(65 + index) })),
+    });
+  };
+
+  const deleteInternalChoiceOption = (sectionId: string, questionId: string, optionIndex: number) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+    const options = question?.optionalChoice?.options ?? [];
+
+    updateInternalChoice(sectionId, questionId, {
+      options: options.filter((_option, index) => index !== optionIndex).map((option, index) => ({ ...option, label: String.fromCharCode(65 + index) })),
     });
   };
 
@@ -681,7 +964,7 @@ export function PaperEditor({
 
       <div className="mt-8 space-y-8">
         {paper.sections.map((section) => {
-          const sectionMarks = section.questions.reduce((total, question) => total + Number(question.marks || 0), 0);
+          const sectionMarks = section.questions.reduce((total, question) => total + countedQuestionMarks(question), 0);
 
           return (
             <section
@@ -781,6 +1064,8 @@ export function PaperEditor({
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
 
+                          <ImageAssetList assets={question.imageAssets} onDelete={(assetId) => removeQuestionImage(section.id, question.id, assetId)} />
+
                           <DiagramDropZone
                             emptyText="Drag a diagram here to attach it to the whole question. It prints before options and subparts."
                             onDrop={() => moveDraggedDiagramToQuestion(section.id, question.id)}
@@ -805,23 +1090,35 @@ export function PaperEditor({
                                     value={option.label ?? String.fromCharCode(65 + optionIndex)}
                                     onChange={(event) => updateQuestionOption(section.id, question.id, optionIndex, { label: event.target.value })}
                                   />
-                                  <RichTextEditor
-                                    label={`Question ${questionNumber} option ${option.label ?? optionIndex + 1}`}
-                                    minHeight="compact"
-                                    placeholder="Write option..."
-                                    value={option.text}
-                                    htmlValue={option.richText}
-                                    onFocus={onTextEditorFocus}
-                                    onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
-                                    onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
-                                  />
+                                  <div className="min-w-0 space-y-2">
+                                    <RichTextEditor
+                                      label={`Question ${questionNumber} option ${option.label ?? optionIndex + 1}`}
+                                      minHeight="compact"
+                                      placeholder="Write option..."
+                                      value={option.text}
+                                      htmlValue={option.richText}
+                                      onFocus={onTextEditorFocus}
+                                      onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
+                                      onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
+                                    />
+                                    <ImageAssetList
+                                      assets={option.imageAssets}
+                                      compact
+                                      onDelete={(assetId) => removeOptionImage(section.id, question.id, optionIndex, assetId)}
+                                    />
+                                  </div>
                                   <TextBlockActions
                                     className="opacity-100 lg:opacity-0 lg:group-hover/option:opacity-100"
                                     onDuplicate={() => duplicateQuestionOption(section.id, question.id, optionIndex)}
+                                    onAddImage={onUploadImage ? (file) => void attachQuestionOptionImage(section.id, question.id, optionIndex, file) : undefined}
                                     onDelete={() => deleteQuestionOption(section.id, question.id, optionIndex)}
                                   />
                                 </div>
                               ))}
+                              <button className="editor-mini-button ml-11" onClick={() => addQuestionOption(section.id, question.id)} type="button">
+                                <Plus size={14} />
+                                Add option
+                              </button>
                             </div>
                           )}
 
@@ -867,24 +1164,32 @@ export function PaperEditor({
                                     </button>
                                   </div>
                                   <div className="grid grid-cols-[1fr_auto] gap-2">
-                                    <RichTextEditor
-                                      label={`Question ${questionNumber} subpart ${subpart.label}`}
-                                      minHeight="compact"
-                                      placeholder="Write this subpart..."
-                                      value={subpart.text}
-                                      htmlValue={subpart.richText}
-                                      onFocus={onTextEditorFocus}
-                                      onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
-                                      onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
+                                    <div className="min-w-0 space-y-2">
+                                      <RichTextEditor
+                                        label={`Question ${questionNumber} subpart ${subpart.label}`}
+                                        minHeight="compact"
+                                        placeholder="Write this subpart..."
+                                        value={subpart.text}
+                                        htmlValue={subpart.richText}
+                                        onFocus={onTextEditorFocus}
+                                        onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
+                                        onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
+                                      />
+                                      <ImageAssetList
+                                        assets={subpart.imageAssets}
+                                        compact
+                                        onDelete={(assetId) => removeSubpartImage(section.id, question.id, subpart.id, assetId)}
+                                      />
+                                    </div>
+                                    <TextBlockActions
+                                      className="opacity-100 lg:opacity-0 lg:group-hover/subpart:opacity-100"
+                                      onDuplicate={() => duplicateSubpart(section.id, question.id, subpart.id)}
+                                      onAddChoice={() => addSubpartChoice(section.id, question.id, subpart.id)}
+                                      onAddDiagram={() => addSubpartDiagramPlaceholder(section.id, question.id, subpart.id)}
+                                      onAddImage={onUploadImage ? (file) => void attachSubpartImage(section.id, question.id, subpart.id, file) : undefined}
+                                      onDelete={() => deleteSubpart(section.id, question.id, subpart.id)}
                                     />
-                                  <TextBlockActions
-                                    className="opacity-100 lg:opacity-0 lg:group-hover/subpart:opacity-100"
-                                    onDuplicate={() => duplicateSubpart(section.id, question.id, subpart.id)}
-                                    onAddChoice={() => addSubpartChoice(section.id, question.id, subpart.id)}
-                                    onAddDiagram={() => addSubpartDiagramPlaceholder(section.id, question.id, subpart.id)}
-                                    onDelete={() => deleteSubpart(section.id, question.id, subpart.id)}
-                                  />
-                                </div>
+                                  </div>
                                   <DiagramDropZone
                                     emptyText={`Drag a diagram here to attach it to part (${subpart.label}).`}
                                     onDrop={() => moveDraggedDiagramToSubpart(section.id, question.id, subpart.id)}
@@ -907,17 +1212,25 @@ export function PaperEditor({
                                         </button>
                                       </div>
                                       <div className="grid grid-cols-[1fr_auto] gap-2">
-                                        <RichTextEditor
-                                          label={`Question ${questionNumber} subpart ${subpart.label} OR`}
-                                          minHeight="compact"
-                                          placeholder="Write the OR alternative for this subpart..."
-                                          value={subpart.optionalChoice.text}
-                                          htmlValue={subpart.optionalChoice.richText}
-                                          onFocus={onTextEditorFocus}
-                                          onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
-                                          onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
-                                        />
+                                        <div className="min-w-0 space-y-2">
+                                          <RichTextEditor
+                                            label={`Question ${questionNumber} subpart ${subpart.label} OR`}
+                                            minHeight="compact"
+                                            placeholder="Write the OR alternative for this subpart..."
+                                            value={subpart.optionalChoice.text}
+                                            htmlValue={subpart.optionalChoice.richText}
+                                            onFocus={onTextEditorFocus}
+                                            onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
+                                            onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
+                                          />
+                                          <ImageAssetList
+                                            assets={subpart.optionalChoice.imageAssets}
+                                            compact
+                                            onDelete={(assetId) => removeSubpartChoiceImage(section.id, question.id, subpart.id, assetId)}
+                                          />
+                                        </div>
                                         <TextBlockActions
+                                          onAddImage={onUploadImage ? (file) => void attachSubpartChoiceImage(section.id, question.id, subpart.id, file) : undefined}
                                           onDelete={() => removeSubpartChoice(section.id, question.id, subpart.id)}
                                         />
                                       </div>
@@ -944,6 +1257,54 @@ export function PaperEditor({
                                     onChange={(text) => updateInternalChoice(section.id, question.id, { text })}
                                     onHtmlChange={(richText) => updateInternalChoice(section.id, question.id, { richText })}
                                   />
+                                  <ImageAssetList
+                                    assets={question.optionalChoice.imageAssets}
+                                    compact
+                                    onDelete={(assetId) => removeQuestionChoiceImage(section.id, question.id, assetId)}
+                                  />
+                                  {question.optionalChoice.options && question.optionalChoice.options.length > 0 && (
+                                    <div className="space-y-2 rounded-md border border-blue-100 bg-white/80 p-2">
+                                      {question.optionalChoice.options.map((option, optionIndex) => (
+                                        <div key={option.id ?? `${question.id}-choice-option-${optionIndex}`} className="group/or-option grid grid-cols-[44px_1fr_auto] gap-2">
+                                          <input
+                                            aria-label={`Question ${questionNumber} OR option ${optionIndex + 1} label`}
+                                            className="h-9 rounded-md border border-blue-100 bg-white px-2 text-center text-xs font-black text-slate-700"
+                                            value={option.label ?? String.fromCharCode(65 + optionIndex)}
+                                            onChange={(event) => updateInternalChoiceOption(section.id, question.id, optionIndex, { label: event.target.value })}
+                                          />
+                                          <div className="min-w-0 space-y-2">
+                                            <RichTextEditor
+                                              label={`Question ${questionNumber} OR option ${option.label ?? optionIndex + 1}`}
+                                              minHeight="compact"
+                                              placeholder="Write OR option..."
+                                              value={option.text}
+                                              htmlValue={option.richText}
+                                              onFocus={onTextEditorFocus}
+                                              onChange={(text) => updateInternalChoiceOption(section.id, question.id, optionIndex, { text })}
+                                              onHtmlChange={(richText) => updateInternalChoiceOption(section.id, question.id, optionIndex, { richText })}
+                                            />
+                                            <ImageAssetList
+                                              assets={option.imageAssets}
+                                              compact
+                                              onDelete={(assetId) => removeInternalChoiceOptionImage(section.id, question.id, optionIndex, assetId)}
+                                            />
+                                          </div>
+                                          <TextBlockActions
+                                            className="opacity-100 lg:opacity-0 lg:group-hover/or-option:opacity-100"
+                                            onDuplicate={() => duplicateInternalChoiceOption(section.id, question.id, optionIndex)}
+                                            onAddImage={
+                                              onUploadImage ? (file) => void attachInternalChoiceOptionImage(section.id, question.id, optionIndex, file) : undefined
+                                            }
+                                            onDelete={() => deleteInternalChoiceOption(section.id, question.id, optionIndex)}
+                                          />
+                                        </div>
+                                      ))}
+                                      <button className="editor-mini-button ml-11" onClick={() => addInternalChoiceOption(section.id, question.id)} type="button">
+                                        <Plus size={14} />
+                                        Add OR option
+                                      </button>
+                                    </div>
+                                  )}
                                   <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
                                     <input
                                       aria-label={`Question ${questionNumber} OR marks`}
@@ -1007,6 +1368,7 @@ export function PaperEditor({
                                   }
                                   onDuplicate={() => duplicateOptionalChoiceAsQuestion(section.id, question.id)}
                                   onAnswer={() => setExpandedAnswers((current) => ({ ...current, [`${question.id}:choice`]: !(current[`${question.id}:choice`] ?? false) }))}
+                                  onAddImage={onUploadImage ? (file) => void attachQuestionChoiceImage(section.id, question.id, file) : undefined}
                                   onSave={() => onSaveQuestionToBank(choiceToQuestion(question))}
                                   onDelete={() => removeInternalChoice(section.id, question.id)}
                                 />
@@ -1100,6 +1462,7 @@ export function PaperEditor({
                           onAddChoice={() => addInternalChoice(section.id, question.id)}
                           onAddSubpart={() => addSubpart(section.id, question.id)}
                           onAddDiagram={() => addDiagramPlaceholder(section.id, question.id)}
+                          onAddImage={onUploadImage ? (file) => void attachQuestionImage(section.id, question.id, file) : undefined}
                           onAnswer={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))}
                           onSave={() => onSaveQuestionToBank(question)}
                           onDelete={() => deleteQuestion(section.id, question.id)}
@@ -1151,6 +1514,7 @@ interface TextBlockActionsProps {
   onAddChoice?: () => void;
   onAddSubpart?: () => void;
   onAddDiagram?: () => void;
+  onAddImage?: (file: File) => void;
   onAnswer?: () => void;
   onSave?: () => void;
   onDelete?: () => void;
@@ -1164,6 +1528,7 @@ function TextBlockActions({
   onAddChoice,
   onAddSubpart,
   onAddDiagram,
+  onAddImage,
   onAnswer,
   onSave,
   onDelete,
@@ -1195,6 +1560,7 @@ function TextBlockActions({
           <Shapes size={15} />
         </button>
       )}
+      {onAddImage && <ImageUploadButton onUpload={onAddImage} />}
       {onAnswer && (
         <button className="editor-icon-button" title="Show answer" onClick={onAnswer} type="button">
           A
@@ -1210,6 +1576,59 @@ function TextBlockActions({
           <Trash2 size={15} />
         </button>
       )}
+    </div>
+  );
+}
+
+function ImageUploadButton({ onUpload }: { onUpload: (file: File) => void }) {
+  return (
+    <label className="editor-icon-button cursor-pointer" title="Attach image">
+      <ImageIcon size={15} />
+      <input
+        className="sr-only"
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file) onUpload(file);
+        }}
+      />
+    </label>
+  );
+}
+
+function ImageAssetList({
+  assets,
+  compact = false,
+  onDelete,
+}: {
+  assets?: PaperImageAsset[];
+  compact?: boolean;
+  onDelete: (assetId: string) => void;
+}) {
+  if (!assets || assets.length === 0) return null;
+
+  return (
+    <div className={`grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-2 md:grid-cols-3"}`}>
+      {assets.map((asset) => (
+        <figure key={asset.id} className="relative rounded-md border border-slate-200 bg-white p-2 shadow-sm">
+          <img
+            alt={asset.altText || asset.caption || asset.filename || "Question image"}
+            className={`${compact ? "max-h-24" : "max-h-40"} w-full rounded object-contain`}
+            src={asset.url}
+          />
+          <figcaption className="mt-1 truncate text-[10px] font-bold text-slate-500">{asset.caption || asset.filename || asset.name || "Attached image"}</figcaption>
+          <button
+            className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-600 shadow-sm hover:bg-red-50"
+            onClick={() => onDelete(asset.id)}
+            title="Remove image"
+            type="button"
+          >
+            <Trash2 size={12} />
+          </button>
+        </figure>
+      ))}
     </div>
   );
 }
@@ -1452,7 +1871,7 @@ function templateToneFor(templateName: string) {
   };
 }
 
-function questionToChoice(question?: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
+function blankQuestionChoice(question?: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
   return {
     id: crypto.randomUUID(),
     text: "",
@@ -1464,6 +1883,29 @@ function questionToChoice(question?: PaperQuestion): NonNullable<PaperQuestion["
     topic: question?.topic,
     answer: "",
     answerRichText: "",
+  };
+}
+
+function questionToChoice(question: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
+  return {
+    id: crypto.randomUUID(),
+    text: question.text,
+    richText: question.richText,
+    options: question.options?.map((option) => ({ ...option, id: crypto.randomUUID() })),
+    subparts: question.subparts?.map((subpart) => ({
+      ...subpart,
+      id: crypto.randomUUID(),
+      optionalChoice: subpart.optionalChoice ? { ...subpart.optionalChoice, id: crypto.randomUUID() } : undefined,
+    })),
+    imageAssets: question.imageAssets?.map((asset) => ({ ...asset })),
+    marks: question.marks,
+    type: question.type,
+    difficulty: question.difficulty,
+    source: question.source || "Moved OR",
+    topic: question.topic,
+    tags: question.tags,
+    answer: question.answer,
+    answerRichText: question.answerRichText,
   };
 }
 
@@ -1480,9 +1922,22 @@ function choiceToQuestion(question: PaperQuestion): PaperQuestion {
     source: choice?.source || question.source || "Manual OR",
     topic: choice?.topic || question.topic,
     tags: choice?.tags || question.tags,
+    options: choice?.options?.map((option) => ({ ...option, id: crypto.randomUUID() })),
+    subparts: choice?.subparts?.map((subpart) => ({ ...subpart, id: crypto.randomUUID() })),
+    imageAssets: choice?.imageAssets?.map((asset) => ({ ...asset })),
     answer: choice?.answer || "",
     answerRichText: choice?.answerRichText || "",
   };
+}
+
+function countedQuestionMarks(question: PaperQuestion) {
+  const subpartTotal = (question.subparts ?? []).reduce((total, subpart) => total + Number(subpart.marks || 0), 0);
+  return subpartTotal > 0 ? subpartTotal : Number(question.marks || 0);
+}
+
+function questionWithComputedMarks(question: PaperQuestion): PaperQuestion {
+  const marks = countedQuestionMarks(question);
+  return marks !== Number(question.marks || 0) ? { ...question, marks } : question;
 }
 
 function calculateStats(paper: Paper) {
@@ -1497,9 +1952,10 @@ function calculateStats(paper: Paper) {
       questionNumberById[question.id] = questionNumber;
       questionNumber += 1;
       questionCount += 1;
-      totalMarks += Number(question.marks || 0);
+      const marks = countedQuestionMarks(question);
+      totalMarks += marks;
       const topic = question.topic || paper.metadata.topic || paper.metadata.chapter || section.title || "Unassigned";
-      topicMarks.set(topic, (topicMarks.get(topic) || 0) + Number(question.marks || 0));
+      topicMarks.set(topic, (topicMarks.get(topic) || 0) + marks);
     });
   });
 
@@ -1536,22 +1992,27 @@ function calculateSourceMix(paper: Paper) {
 }
 
 function recalculatePaper(paper: Paper): Paper {
-  const totalMarks = paper.sections.reduce(
-    (paperTotal, section) => paperTotal + section.questions.reduce((sectionTotal, question) => sectionTotal + Number(question.marks || 0), 0),
+  const sections = paper.sections.map((section) => ({
+    ...section,
+    questions: section.questions.map(questionWithComputedMarks),
+  }));
+  const totalMarks = sections.reduce(
+    (paperTotal, section) => paperTotal + section.questions.reduce((sectionTotal, question) => sectionTotal + countedQuestionMarks(question), 0),
     0,
   );
-  const questionCount = paper.sections.reduce((count, section) => count + section.questions.length, 0);
+  const questionCount = sections.reduce((count, section) => count + section.questions.length, 0);
   const topicWeightage: Record<string, number> = {};
 
-  paper.sections.forEach((section) => {
+  sections.forEach((section) => {
     section.questions.forEach((question) => {
       const topic = question.topic || paper.metadata.topic || paper.metadata.chapter || section.title || "Unassigned";
-      topicWeightage[topic] = (topicWeightage[topic] || 0) + Number(question.marks || 0);
+      topicWeightage[topic] = (topicWeightage[topic] || 0) + countedQuestionMarks(question);
     });
   });
 
   return {
     ...paper,
+    sections,
     summary: {
       ...paper.summary,
       totalMarks,

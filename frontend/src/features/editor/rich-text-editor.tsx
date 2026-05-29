@@ -6,7 +6,6 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
@@ -85,7 +84,6 @@ export function RichTextEditor({
       StarterKit.configure({
         heading: false,
       }),
-      Underline,
       TextStyle,
       Color,
       Highlight.configure({ multicolor: true }),

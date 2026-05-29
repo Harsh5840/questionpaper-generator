@@ -40,6 +40,7 @@ import {
   refineViaApi,
   saveQuestionToBankViaApi,
   saveVersionViaApi,
+  uploadImageAssetViaApi,
 } from "@/lib/api";
 import { defaultRequest, requestFromPrompt } from "@/lib/request-defaults";
 import { normalizePaperStructure, normalizeRawQuestion, richTextFromText } from "@/lib/normalize-paper-structure";
@@ -51,6 +52,7 @@ import {
   DocumentStyle,
   GenerationStatus,
   Paper,
+  PaperImageAsset,
   PaperQuestion,
   PaperQuestionOption,
   PaperSection,
@@ -82,9 +84,9 @@ const emptyStatus: GenerationStatus = {
 };
 
 const defaultDocumentStyle: DocumentStyle = {
-  margin: 56,
-  lineHeight: 1.55,
-  fontSize: 16,
+  margin: 42,
+  lineHeight: 1.35,
+  fontSize: 11,
   textColor: "#111827",
   accentColor: "#895100",
   pageColor: "#ffffff",
@@ -109,7 +111,6 @@ export function StudioApp() {
   const [mode, setMode] = useState<Mode>("structured");
   const [rightPanel, setRightPanel] = useState<RightPanel>("chat");
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
-  const [hasFocusedTextEditor, setHasFocusedTextEditor] = useState(false);
   const [createFlow, setCreateFlow] = useState<CreateFlow>(null);
   const [wizardStep, setWizardStep] = useState(0);
   const [request, setRequest] = useState<PaperRequest>({
@@ -613,6 +614,20 @@ export function StudioApp() {
     input.click();
   }
 
+  async function uploadEditorImage(file: File): Promise<PaperImageAsset> {
+    try {
+      const asset = await uploadImageAssetViaApi(file);
+      setLastError(null);
+      addAssistantMessage("Attached the image to the selected question block.");
+      return asset;
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setLastError(message);
+      addAssistantMessage(`Image upload failed: ${message}`);
+      throw error;
+    }
+  }
+
   function appendQuestion(question: PaperQuestion, sectionId?: string) {
     if (!selectedPaper) return;
     updateSelectedPaper(appendQuestionToPaper(selectedPaper, question, sectionId));
@@ -691,8 +706,6 @@ export function StudioApp() {
           aiOpen={isAssistantOpen}
           appView={appView}
           currentTitle={selectedPaper?.title ?? "Untitled paper"}
-          hasFocusedTextEditor={hasFocusedTextEditor}
-          onToolkitInsert={(insert) => insertIntoActiveRichTextEditor(insert)}
           onExport={exportCurrent}
         onHome={() => {
           setAppView("studio");
@@ -778,8 +791,8 @@ export function StudioApp() {
               isGenerating={isGenerating}
               paper={selectedPaper}
               onImportImage={(sectionId) => void importQuestionImage(sectionId)}
+              onUploadImage={uploadEditorImage}
               onPaperChange={updateSelectedPaper}
-              onTextEditorFocus={() => setHasFocusedTextEditor(true)}
               onReplaceQuestion={(sectionId, questionId, questionNumber, instruction) => void replaceQuestionWithAi(sectionId, questionId, questionNumber, instruction)}
               onReplaceOptionalChoice={(sectionId, questionId, questionNumber, instruction) => void replaceOptionalChoiceWithAi(sectionId, questionId, questionNumber, instruction)}
               onSaveQuestionToBank={(question) => void saveQuestionToBank(question)}
@@ -842,6 +855,7 @@ export function StudioApp() {
           prompt={prompt}
         />
       )}
+      <MathContextMenu onInsert={(insert) => insertIntoActiveRichTextEditor(insert)} />
     </main>
   );
 }
@@ -850,7 +864,6 @@ function PaperLabTopBar({
   aiOpen,
   appView,
   currentTitle,
-  hasFocusedTextEditor,
   onExport,
   onHome,
   onOpenSetup,
@@ -860,14 +873,12 @@ function PaperLabTopBar({
   onSave,
   onTitleChange,
   onToggleAI,
-  onToolkitInsert,
   status,
   versions,
 }: {
   aiOpen: boolean;
   appView: AppView;
   currentTitle: string;
-  hasFocusedTextEditor: boolean;
   onExport: (format: "pdf" | "docx") => void;
   onHome: () => void;
   onOpenSetup: () => void;
@@ -877,7 +888,6 @@ function PaperLabTopBar({
   onSave: () => void;
   onTitleChange: (title: string) => void;
   onToggleAI: () => void;
-  onToolkitInsert: (insert: MathToolkitInsert) => boolean;
   status: GenerationStatus;
   versions: PaperVersion[];
 }) {
@@ -989,10 +999,6 @@ function PaperLabTopBar({
           ))}
       </nav>
 
-      {appView === "studio" && hasFocusedTextEditor && (
-        <MathToolkit onInsert={onToolkitInsert} />
-      )}
-
       <div className="flex items-center gap-2">
         {appView === "studio" && (
           <>
@@ -1047,92 +1053,162 @@ function PaperLabTopBar({
   );
 }
 
-function MathToolkit({ onInsert }: { onInsert: (insert: MathToolkitInsert) => boolean }) {
-  const tools: { label: string; insert: MathToolkitInsert }[] = [
-    { label: "π", insert: { type: "text", value: "π" } },
-    { label: "θ", insert: { type: "text", value: "θ" } },
-    { label: "α", insert: { type: "text", value: "α" } },
-    { label: "β", insert: { type: "text", value: "β" } },
-    { label: "γ", insert: { type: "text", value: "γ" } },
-    { label: "Δ", insert: { type: "text", value: "Δ" } },
-    { label: "∞", insert: { type: "text", value: "∞" } },
-    { label: "√", insert: { type: "math", value: "\\sqrt{x}" } },
-    { label: "∛", insert: { type: "math", value: "\\sqrt[3]{x}" } },
-    { label: "x²", insert: { type: "html", value: "x<sup>2</sup>" } },
-    { label: "x³", insert: { type: "html", value: "x<sup>3</sup>" } },
-    { label: "xₙ", insert: { type: "html", value: "x<sub>n</sub>" } },
-    { label: "a/b", insert: { type: "math", value: "\\frac{a}{b}" } },
-    { label: "±", insert: { type: "text", value: "±" } },
-    { label: "×", insert: { type: "text", value: "×" } },
-    { label: "÷", insert: { type: "text", value: "÷" } },
-    { label: "≈", insert: { type: "text", value: "≈" } },
-    { label: "≠", insert: { type: "text", value: "≠" } },
-    { label: "≤", insert: { type: "text", value: "≤" } },
-    { label: "≥", insert: { type: "text", value: "≥" } },
-    { label: "∴", insert: { type: "text", value: "∴" } },
-    { label: "∵", insert: { type: "text", value: "∵" } },
-    { label: "∠", insert: { type: "text", value: "∠" } },
-    { label: "⊥", insert: { type: "text", value: "⊥" } },
-    { label: "∥", insert: { type: "text", value: "∥" } },
-    { label: "△", insert: { type: "text", value: "△" } },
-    { label: "≅", insert: { type: "text", value: "≅" } },
-    { label: "∼", insert: { type: "text", value: "∼" } },
-    { label: "∫", insert: { type: "math", value: "\\int_a^b f(x)\\,dx" } },
-    { label: "d/dx", insert: { type: "math", value: "\\frac{d}{dx}" } },
-    { label: "lim", insert: { type: "math", value: "\\lim_{x\\to a}" } },
-    { label: "∑", insert: { type: "math", value: "\\sum_{n=1}^{k}" } },
-    { label: "sin", insert: { type: "text", value: "sin θ" } },
-    { label: "cos", insert: { type: "text", value: "cos θ" } },
-    { label: "tan", insert: { type: "text", value: "tan θ" } },
-    { label: "log", insert: { type: "text", value: "log x" } },
-    { label: "ln", insert: { type: "text", value: "ln x" } },
-    { label: "∈", insert: { type: "text", value: "∈" } },
-    { label: "∉", insert: { type: "text", value: "∉" } },
-    { label: "⊂", insert: { type: "text", value: "⊂" } },
-    { label: "⊆", insert: { type: "text", value: "⊆" } },
-    { label: "∪", insert: { type: "text", value: "∪" } },
-    { label: "∩", insert: { type: "text", value: "∩" } },
-    { label: "∅", insert: { type: "text", value: "∅" } },
-    { label: "⇒", insert: { type: "text", value: "⇒" } },
-    { label: "⇔", insert: { type: "text", value: "⇔" } },
-    { label: "∀", insert: { type: "text", value: "∀" } },
-    { label: "∃", insert: { type: "text", value: "∃" } },
-    { label: "P(A)", insert: { type: "text", value: "P(A)" } },
-    { label: "nCr", insert: { type: "math", value: "{}^nC_r" } },
-    { label: "nPr", insert: { type: "math", value: "{}^nP_r" } },
-    { label: "v=u+at", insert: { type: "text", value: "v = u + at" } },
-    { label: "F=ma", insert: { type: "text", value: "F = ma" } },
-    { label: "V=IR", insert: { type: "text", value: "V = IR" } },
-    { label: "E=mc²", insert: { type: "html", value: "E = mc<sup>2</sup>" } },
-    { label: "H₂O", insert: { type: "html", value: "H<sub>2</sub>O" } },
-    { label: "CO₂", insert: { type: "html", value: "CO<sub>2</sub>" } },
-    { label: "O₂", insert: { type: "html", value: "O<sub>2</sub>" } },
-    { label: "NaCl", insert: { type: "text", value: "NaCl" } },
-    { label: "C₆H₁₂O₆", insert: { type: "html", value: "C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>" } },
-    { label: "→", insert: { type: "text", value: "→" } },
-    { label: "⇌", insert: { type: "text", value: "⇌" } },
-    { label: "Quad", insert: { type: "html", value: "ax<sup>2</sup> + bx + c = 0" } },
-    { label: "AP", insert: { type: "text", value: "aₙ = a + (n - 1)d" } },
-    { label: "Area", insert: { type: "html", value: "πr<sup>2</sup>" } },
-    { label: "Vol", insert: { type: "html", value: "\\frac{4}{3}πr<sup>3</sup>" } },
-    { label: "A-D", insert: { type: "text", value: "\nA. \nB. \nC. \nD. " } },
-    { label: "(i)-(iv)", insert: { type: "text", value: "\n(i) \n(ii) \n(iii) \n(iv) " } },
-    { label: "(a)-(d)", insert: { type: "text", value: "\n(a) \n(b) \n(c) \n(d) " } },
-  ];
+function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) => boolean }) {
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const onContextMenu = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest(".rich-text-surface")) {
+        setPosition(null);
+        return;
+      }
+
+      event.preventDefault();
+      (target.closest(".rich-text-surface") as HTMLElement | null)?.focus();
+      setPosition({
+        x: Math.min(event.clientX, window.innerWidth - 360),
+        y: Math.min(event.clientY, window.innerHeight - 340),
+      });
+    };
+    const close = () => setPosition(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+
+    document.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("click", close);
+    document.addEventListener("scroll", close, true);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("click", close);
+      document.removeEventListener("scroll", close, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  if (!position) return null;
+
+  const groups = [
+    {
+      label: "Algebra",
+      tools: [
+        ["x²", { type: "html", value: "x<sup>2</sup>" }],
+        ["x³", { type: "html", value: "x<sup>3</sup>" }],
+        ["xₙ", { type: "html", value: "x<sub>n</sub>" }],
+        ["√x", { type: "math", value: "\\sqrt{x}" }],
+        ["∛x", { type: "math", value: "\\sqrt[3]{x}" }],
+        ["a/b", { type: "math", value: "\\frac{a}{b}" }],
+        ["Quad", { type: "html", value: "ax<sup>2</sup> + bx + c = 0" }],
+        ["Formula", { type: "math", value: "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" }],
+        ["AP", { type: "text", value: "aₙ = a + (n - 1)d" }],
+        ["Σ", { type: "math", value: "\\sum_{n=1}^{k}" }],
+        ["lim", { type: "math", value: "\\lim_{x\\to a}" }],
+        ["d/dx", { type: "math", value: "\\frac{d}{dx}" }],
+        ["∫", { type: "math", value: "\\int_a^b f(x)\\,dx" }],
+      ],
+    },
+    {
+      label: "Symbols",
+      tools: [
+        ["π", { type: "text", value: "π" }],
+        ["θ", { type: "text", value: "θ" }],
+        ["α", { type: "text", value: "α" }],
+        ["β", { type: "text", value: "β" }],
+        ["γ", { type: "text", value: "γ" }],
+        ["Δ", { type: "text", value: "Δ" }],
+        ["∞", { type: "text", value: "∞" }],
+        ["±", { type: "text", value: "±" }],
+        ["×", { type: "text", value: "×" }],
+        ["÷", { type: "text", value: "÷" }],
+        ["≈", { type: "text", value: "≈" }],
+        ["≠", { type: "text", value: "≠" }],
+        ["≤", { type: "text", value: "≤" }],
+        ["≥", { type: "text", value: "≥" }],
+        ["∴", { type: "text", value: "∴" }],
+        ["∵", { type: "text", value: "∵" }],
+        ["⇒", { type: "text", value: "⇒" }],
+        ["⇔", { type: "text", value: "⇔" }],
+      ],
+    },
+    {
+      label: "Geometry",
+      tools: [
+        ["∠", { type: "text", value: "∠" }],
+        ["⊥", { type: "text", value: "⊥" }],
+        ["∥", { type: "text", value: "∥" }],
+        ["△", { type: "text", value: "△" }],
+        ["≅", { type: "text", value: "≅" }],
+        ["∼", { type: "text", value: "∼" }],
+        ["Area", { type: "html", value: "πr<sup>2</sup>" }],
+        ["Vol sphere", { type: "math", value: "\\frac{4}{3}\\pi r^3" }],
+        ["Pyth", { type: "math", value: "a^2 + b^2 = c^2" }],
+        ["Sim", { type: "math", value: "\\triangle ABC \\sim \\triangle PQR" }],
+      ],
+    },
+    {
+      label: "Science",
+      tools: [
+        ["H₂O", { type: "html", value: "H<sub>2</sub>O" }],
+        ["CO₂", { type: "html", value: "CO<sub>2</sub>" }],
+        ["O₂", { type: "html", value: "O<sub>2</sub>" }],
+        ["C₆H₁₂O₆", { type: "html", value: "C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>" }],
+        ["→", { type: "text", value: "→" }],
+        ["⇌", { type: "text", value: "⇌" }],
+        ["V=IR", { type: "text", value: "V = IR" }],
+        ["F=ma", { type: "text", value: "F = ma" }],
+        ["E=mc²", { type: "html", value: "E = mc<sup>2</sup>" }],
+        ["Photo", { type: "math", value: "\\mathrm{6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2}" }],
+      ],
+    },
+    {
+      label: "Structure",
+      tools: [
+        ["A-D", { type: "text", value: "\nA. \nB. \nC. \nD. " }],
+        ["(i)-(iv)", { type: "text", value: "\n(i) \n(ii) \n(iii) \n(iv) " }],
+        ["(a)-(d)", { type: "text", value: "\n(a) \n(b) \n(c) \n(d) " }],
+        ["OR", { type: "text", value: "\nOR\n" }],
+        ["Case", { type: "text", value: "Read the case carefully and answer the following questions:\n(a) \n(b) " }],
+      ],
+    },
+  ] satisfies { label: string; tools: [string, MathToolkitInsert][] }[];
 
   return (
-    <div className="hidden max-w-[42vw] items-center gap-1 overflow-x-auto rounded-full border border-[var(--border)] bg-[var(--paper)] px-2 py-1 shadow-[var(--shadow-sm)] lg:flex">
-      <span className="px-2 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Math</span>
-      {tools.map((tool) => (
-        <button
-          key={tool.label}
-          className="min-h-7 rounded-full px-2 text-xs font-black text-[var(--ink-2)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-          onClick={() => onInsert(tool.insert)}
-          type="button"
-        >
-          {tool.label}
+    <div
+      className="fixed z-[70] max-h-[320px] w-[340px] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-3 shadow-[var(--shadow-xl)]"
+      style={{ left: position.x, top: position.y }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">Insert symbol</span>
+        <button className="text-xs font-black text-[var(--ink-3)] hover:text-[var(--ink)]" onClick={() => setPosition(null)} type="button">
+          Esc
         </button>
-      ))}
+      </div>
+      <div className="space-y-3">
+        {groups.map((group) => (
+          <section key={group.label}>
+            <div className="mb-1 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">{group.label}</div>
+            <div className="flex flex-wrap gap-1">
+              {group.tools.map(([label, insert]) => (
+                <button
+                  key={`${group.label}-${label}`}
+                  className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                  onClick={() => {
+                    onInsert(insert);
+                    setPosition(null);
+                  }}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1814,7 +1890,16 @@ function SourceMixSliders({
     <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
       <div className="mb-3 flex items-center justify-between">
         <FlowLabel>Source mix target</FlowLabel>
-        <span className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--ink-3)]">Direct pull vs AI</span>
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--accent-deep)] hover:bg-[var(--accent-soft)]"
+            onClick={() => onChange({ ...normalized, dumpDirect: normalized.ncertDirect + normalized.pyqDirect + normalized.questionBank, aiFromDump: normalized.aiGenerated })}
+            type="button"
+          >
+            Normalize to 100%
+          </button>
+          <span className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--ink-3)]">Direct pull vs AI</span>
+        </div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         {keys.map((key) => {
@@ -3012,6 +3097,31 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
     };
   }
 
+  const addOption = parseAddOptionCommand(normalizedInstruction);
+  if (addOption) {
+    const target = refs.find((ref) => ref.number === addOption.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${addOption.questionNumber} to add an option.` };
+    const options = target.question.options ?? [];
+    const nextOptions = relabelOptions([
+      ...options,
+      {
+        id: crypto.randomUUID(),
+        label: String.fromCharCode(65 + options.length),
+        text: addOption.text || "",
+        richText: richTextFromText(addOption.text || ""),
+        isCorrect: false,
+      },
+    ]);
+    const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, { type: "MCQ", options: nextOptions });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Added option ${String.fromCharCode(65 + options.length)} to Q${addOption.questionNumber}.`,
+      versionLabel: "chat_add_option",
+    };
+  }
+
   const optionCommand = parseOptionCommand(normalizedInstruction);
   if (optionCommand) {
     const target = refs.find((ref) => ref.number === optionCommand.questionNumber);
@@ -3340,6 +3450,16 @@ function parseOptionCommand(instruction: string) {
   return { action, questionNumber, optionLabel };
 }
 
+function parseAddOptionCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(add|create|insert)\b/.test(lower) || !/\b(option|choice)\b/.test(lower)) return null;
+  if (/\b(delete|remove|duplicate|copy)\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  const text = instruction.match(/["']([^"']+)["']/)?.[1] ?? "";
+  return { questionNumber, text };
+}
+
 function parseSubpartCommand(instruction: string) {
   const lower = instruction.toLowerCase();
   const action = /\b(delete|remove)\b/.test(lower) ? "delete" : /\b(duplicate|copy)\b/.test(lower) ? "duplicate" : null;
@@ -3535,6 +3655,16 @@ function choiceFromQuestion(question: PaperQuestion): NonNullable<PaperQuestion[
     id: crypto.randomUUID(),
     text: question.text,
     richText: question.richText,
+    options: question.options?.map((option) => ({ ...option, id: crypto.randomUUID(), imageAssets: option.imageAssets?.map((asset) => ({ ...asset })) })),
+    subparts: question.subparts?.map((subpart) => ({
+      ...subpart,
+      id: crypto.randomUUID(),
+      imageAssets: subpart.imageAssets?.map((asset) => ({ ...asset })),
+      optionalChoice: subpart.optionalChoice
+        ? { ...subpart.optionalChoice, id: crypto.randomUUID(), imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })) }
+        : undefined,
+    })),
+    imageAssets: question.imageAssets?.map((asset) => ({ ...asset })),
     marks: question.marks,
     type: question.type,
     difficulty: question.difficulty,
@@ -3612,13 +3742,19 @@ function cloneQuestion(question: PaperQuestion): PaperQuestion {
   return normalizeRawQuestion({
     ...question,
     id: crypto.randomUUID(),
-    options: question.options?.map((option) => ({ ...option, id: crypto.randomUUID() })),
+    imageAssets: question.imageAssets?.map((asset) => ({ ...asset })),
+    options: question.options?.map((option) => ({ ...option, id: crypto.randomUUID(), imageAssets: option.imageAssets?.map((asset) => ({ ...asset })) })),
     subparts: question.subparts?.map((subpart) => ({
       ...subpart,
       id: crypto.randomUUID(),
-      optionalChoice: subpart.optionalChoice ? { ...subpart.optionalChoice, id: crypto.randomUUID() } : undefined,
+      imageAssets: subpart.imageAssets?.map((asset) => ({ ...asset })),
+      optionalChoice: subpart.optionalChoice
+        ? { ...subpart.optionalChoice, id: crypto.randomUUID(), imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })) }
+        : undefined,
     })),
-    optionalChoice: question.optionalChoice ? { ...question.optionalChoice, id: crypto.randomUUID() } : undefined,
+    optionalChoice: question.optionalChoice
+      ? { ...question.optionalChoice, id: crypto.randomUUID(), imageAssets: question.optionalChoice.imageAssets?.map((asset) => ({ ...asset })) }
+      : undefined,
   });
 }
 
@@ -3626,7 +3762,10 @@ function cloneSubpart(subpart: PaperSubpart): PaperSubpart {
   return {
     ...subpart,
     id: crypto.randomUUID(),
-    optionalChoice: subpart.optionalChoice ? { ...subpart.optionalChoice, id: crypto.randomUUID() } : undefined,
+    imageAssets: subpart.imageAssets?.map((asset) => ({ ...asset })),
+    optionalChoice: subpart.optionalChoice
+      ? { ...subpart.optionalChoice, id: crypto.randomUUID(), imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })) }
+      : undefined,
     diagramBlocks: subpart.diagramBlocks?.map((diagram) => ({ ...diagram, id: crypto.randomUUID() })),
   };
 }
@@ -3651,20 +3790,35 @@ function nextSubpartLabel(subparts: PaperSubpart[]) {
   return String.fromCharCode(97 + subparts.length);
 }
 
+function countedQuestionMarks(question: PaperQuestion) {
+  const subpartTotal = (question.subparts ?? []).reduce((total, subpart) => total + Number(subpart.marks || 0), 0);
+  return subpartTotal > 0 ? subpartTotal : Number(question.marks || 0);
+}
+
+function questionWithComputedMarks(question: PaperQuestion): PaperQuestion {
+  const marks = countedQuestionMarks(question);
+  return marks !== Number(question.marks || 0) ? { ...question, marks } : question;
+}
+
 function recalculatePaper(paper: Paper): Paper {
-  const totalMarks = paper.sections.reduce((paperTotal, section) => paperTotal + section.questions.reduce((sectionTotal, question) => sectionTotal + Number(question.marks || 0), 0), 0);
-  const questionCount = paper.sections.reduce((count, section) => count + section.questions.length, 0);
+  const sections = paper.sections.map((section) => ({
+    ...section,
+    questions: section.questions.map(questionWithComputedMarks),
+  }));
+  const totalMarks = sections.reduce((paperTotal, section) => paperTotal + section.questions.reduce((sectionTotal, question) => sectionTotal + countedQuestionMarks(question), 0), 0);
+  const questionCount = sections.reduce((count, section) => count + section.questions.length, 0);
   const topicWeightage: Record<string, number> = {};
 
-  paper.sections.forEach((section) => {
+  sections.forEach((section) => {
     section.questions.forEach((question) => {
       const topic = question.topic || paper.metadata.topic || paper.metadata.chapter || section.title || "Unassigned";
-      topicWeightage[topic] = (topicWeightage[topic] || 0) + Number(question.marks || 0);
+      topicWeightage[topic] = (topicWeightage[topic] || 0) + countedQuestionMarks(question);
     });
   });
 
   return {
     ...paper,
+    sections,
     summary: {
       ...paper.summary,
       totalMarks,
@@ -3831,23 +3985,23 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
       const questions = section.questions
         .map((question) => {
           const optionsHtml = (question.options ?? [])
-            .map((option) => optionToHtml(option.label || "", option.richText || textToHtml(option.text)))
+            .map((option) => optionToHtml(option.label || "", option.richText || textToHtml(option.text), option.imageAssets))
             .join("");
-          const choiceOptionsHtml = optionListToHtml((question.optionalChoice as { options?: { label?: string; text: string; richText?: string }[] } | undefined)?.options);
+          const choiceOptionsHtml = optionListToHtml(question.optionalChoice?.options);
           const subpartsHtml = (question.subparts ?? [])
             .map(
               (subpart) => `
-                <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${subpart.richText || textToHtml(subpart.text)}</div><span>[${subpart.marks ?? ""} marks]</span></div>
-                ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${subpart.optionalChoice.richText || textToHtml(subpart.optionalChoice.text)}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>` : ""}
+                <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${subpart.richText || textToHtml(subpart.text)}${imageAssetsToHtml(subpart.imageAssets)}</div><span>[${subpart.marks ?? ""} marks]</span></div>
+                ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${subpart.optionalChoice.richText || textToHtml(subpart.optionalChoice.text)}${imageAssetsToHtml(subpart.optionalChoice.imageAssets)}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>` : ""}
               `,
             )
             .join("");
           const html = `
             <div class="question">
-              <div class="q-main"><strong>${questionNumber++}.</strong><div>${question.richText || textToHtml(question.text)}</div><span>[${question.marks} marks]</span></div>
+              <div class="q-main"><strong>${questionNumber++}.</strong><div>${question.richText || textToHtml(question.text)}${imageAssetsToHtml(question.imageAssets)}</div><span>[${question.marks} marks]</span></div>
               ${optionsHtml}
               ${subpartsHtml}
-              ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>${choiceOptionsHtml}` : ""}
+              ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}${imageAssetsToHtml(question.optionalChoice.imageAssets)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>${choiceOptionsHtml}` : ""}
             </div>`;
           return html;
         })
@@ -3861,25 +4015,38 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     @page{size:A4;margin:${Math.max(16, Math.round(documentStyle.margin / 2))}px}
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body{font-family:Georgia,serif;line-height:${documentStyle.lineHeight};margin:0;color:${documentStyle.textColor};background:${documentStyle.pageColor};font-size:${documentStyle.fontSize}px}
-    header{text-align:center;border-bottom:1px solid #cbd5e1;padding-bottom:18px;margin-bottom:18px}
-    h1{font-family:Arial,sans-serif;font-size:22px;text-transform:uppercase;margin:8px 0}
-    h2{font-family:Arial,sans-serif;font-size:14px;text-transform:uppercase;margin-top:24px}
-    .meta{display:flex;justify-content:center;gap:16px;font-family:Arial,sans-serif;font-size:12px;color:#475569}
-    .question{margin:16px 0;break-inside:avoid;page-break-inside:avoid}.q-main,.subpart{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:start}
-    .option{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;margin:6px 0 6px 44px;break-inside:avoid;page-break-inside:avoid}
+    header{text-align:center;border-bottom:1px solid #cbd5e1;padding-bottom:10px;margin-bottom:12px}
+    h1{font-family:Arial,sans-serif;font-size:18px;text-transform:uppercase;margin:6px 0}
+    h2{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;margin:14px 0 6px}
+    .meta{display:flex;justify-content:center;gap:12px;font-family:Arial,sans-serif;font-size:10px;color:#475569}
+    .question{margin:8px 0}.q-main,.subpart{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:start}
+    .option{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;margin:3px 0 3px 32px}
     .option div,.q-main div,.subpart div{min-width:0}
-    .option p,.q-main p,.subpart p{margin:0 0 4px}
-    .subpart{margin:8px 0 8px 32px}
-    .instructions{font-size:14px;color:#475569}.or{text-align:center;font-family:Arial,sans-serif;font-weight:bold;color:#1d4ed8;margin:10px 0}
+    .option p,.q-main p,.subpart p{margin:0 0 2px}
+    .subpart{margin:4px 0 4px 24px}
+    .instructions{font-size:11px;color:#475569;margin:0 0 6px}.or{text-align:center;font-family:Arial,sans-serif;font-weight:bold;color:#1d4ed8;margin:5px 0}
+    .q-image-grid{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
+    .q-image{max-width:180px;border:1px solid #cbd5e1;padding:3px;border-radius:4px}
+    .q-image img{display:block;max-width:100%;max-height:120px;object-fit:contain}
+    .q-image figcaption{font-family:Arial,sans-serif;font-size:8px;color:#64748b;margin-top:2px}
   </style></head><body><header><div>Series: QPG/${escapeHtml(printablePaper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(printablePaper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(printablePaper.title)}</h1><div class="meta"><span>${escapeHtml(printablePaper.metadata.board)} Class ${escapeHtml(printablePaper.metadata.classLevel)}</span><span>${escapeHtml(printablePaper.metadata.subject)}</span><span>Time: ${formatDuration(printablePaper.metadata.durationMinutes)}</span><span>Max Marks: ${printablePaper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
 }
 
-function optionListToHtml(options?: { label?: string; text: string; richText?: string }[]) {
-  return (options ?? []).map((option) => optionToHtml(option.label || "", option.richText || textToHtml(option.text))).join("");
+function optionListToHtml(options?: PaperQuestionOption[]) {
+  return (options ?? []).map((option) => optionToHtml(option.label || "", option.richText || textToHtml(option.text), option.imageAssets)).join("");
 }
 
-function optionToHtml(label: string, contentHtml: string) {
-  return `<div class="option"><strong>${escapeHtml(label)}</strong><div>${contentHtml}</div></div>`;
+function optionToHtml(label: string, contentHtml: string, imageAssets?: PaperImageAsset[]) {
+  return `<div class="option"><strong>${escapeHtml(label)}</strong><div>${contentHtml}${imageAssetsToHtml(imageAssets)}</div></div>`;
+}
+
+function imageAssetsToHtml(assets?: PaperImageAsset[]) {
+  if (!assets || assets.length === 0) return "";
+  return `<div class="q-image-grid">${assets
+    .map(
+      (asset) => `<figure class="q-image"><img src="${escapeAttribute(asset.url)}" alt="${escapeAttribute(asset.altText || asset.caption || asset.filename || "Question image")}">${asset.caption || asset.filename || asset.name ? `<figcaption>${escapeHtml(asset.caption || asset.filename || asset.name || "")}</figcaption>` : ""}</figure>`,
+    )
+    .join("")}</div>`;
 }
 
 function textToHtml(text: string) {
@@ -4033,6 +4200,10 @@ function fileToBase64(file: File) {
 
 function escapeHtml(value: string) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function escapeAttribute(value: string) {
+  return escapeHtml(value).replaceAll("'", "&#39;");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

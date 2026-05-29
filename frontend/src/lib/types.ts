@@ -101,6 +101,9 @@ export type PaperQuestion = {
     id?: string;
     text: string;
     richText?: string;
+    options?: PaperQuestionOption[];
+    subparts?: PaperSubpart[];
+    imageAssets?: PaperImageAsset[];
     marks?: number;
     type?: string;
     difficulty?: string;
@@ -110,14 +113,21 @@ export type PaperQuestion = {
     answer?: string;
     answerRichText?: string;
   };
-  imageAssets?: {
-    id: string;
-    name?: string;
-    url?: string;
-    mimeType?: string;
-  }[];
+  imageAssets?: PaperImageAsset[];
   answer: string;
   answerRichText?: string;
+};
+
+export type PaperImageAsset = {
+  id: string;
+  filename?: string;
+  name?: string;
+  url: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  altText?: string;
+  caption?: string;
 };
 
 export type PaperQuestionOption = {
@@ -125,6 +135,7 @@ export type PaperQuestionOption = {
   label?: string;
   text: string;
   richText?: string;
+  imageAssets?: PaperImageAsset[];
   isCorrect?: boolean;
 };
 
@@ -139,6 +150,7 @@ export type PaperSubpart = {
     caption?: string;
     status: "placeholder";
   }[];
+  imageAssets?: PaperImageAsset[];
   marks?: number;
   answer?: string;
   answerRichText?: string;
@@ -146,6 +158,7 @@ export type PaperSubpart = {
     id?: string;
     text: string;
     richText?: string;
+    imageAssets?: PaperImageAsset[];
     marks?: number;
     answer?: string;
     answerRichText?: string;

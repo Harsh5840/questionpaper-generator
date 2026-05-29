@@ -5,6 +5,7 @@ import {
   DashboardSummary,
   GenerationStatus,
   Paper,
+  PaperImageAsset,
   PaperQuestion,
   PaperRequest,
   PaperVersion,
@@ -349,6 +350,35 @@ export async function importQuestionFromImageViaApi(attrs: {
   }
 }
 
+export async function uploadImageAssetViaApi(file: File): Promise<PaperImageAsset> {
+  try {
+    const body = new FormData();
+    body.append("image", file);
+
+    const response = await fetch(`${API_BASE}/assets/images`, {
+      method: "POST",
+      body,
+    });
+
+    if (!response.ok) throw new Error(await responseErrorMessage(response, "Image upload failed"));
+    const data = asRecord(await response.json());
+    const url = String(data.url ?? "");
+    if (!url) throw new Error("Image upload failed: missing uploaded URL");
+
+    return {
+      id: String(data.id ?? crypto.randomUUID()),
+      url: absoluteAssetUrl(url),
+      filename: data.filename ? String(data.filename) : file.name,
+      name: data.name ? String(data.name) : file.name,
+      mimeType: data.mimeType || data.mime_type ? String(data.mimeType ?? data.mime_type) : file.type,
+      width: data.width === undefined ? undefined : Number(data.width),
+      height: data.height === undefined ? undefined : Number(data.height),
+    };
+  } catch (error) {
+    throw error instanceof TypeError ? new Error("Backend unavailable. Start Phoenix and retry image upload.") : error;
+  }
+}
+
 export async function fetchUsageViaApi(runId?: string): Promise<AiUsageSummary | null> {
   if (!runId) return null;
 
@@ -380,6 +410,12 @@ export async function fetchUsageViaApi(runId?: string): Promise<AiUsageSummary |
   } catch {
     return null;
   }
+}
+
+function absoluteAssetUrl(url: string) {
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:")) return url;
+  const origin = API_BASE.replace(/\/api\/?$/, "");
+  return `${origin}${url.startsWith("/") ? "" : "/"}${url}`;
 }
 
 export async function exportToClassroomViaApi(paper: Paper, attrs: { courseId: string; attachmentUrl: string; title?: string }) {

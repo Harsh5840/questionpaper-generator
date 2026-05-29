@@ -17,6 +17,7 @@ defmodule QpgWeb.Router do
     post("/question-bank", QuestionBankController, :create)
     post("/questions/import-from-source", QuestionImportController, :source)
     post("/questions/import-from-image", QuestionImportController, :image)
+    post("/assets/images", AssetController, :image)
     get("/templates", TemplateController, :index)
     post("/templates", TemplateController, :create)
     post("/generation-runs", GenerationRunController, :create)

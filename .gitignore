@@ -16,6 +16,7 @@ data/pyq/processed/*
 backend/_build/
 backend/deps/
 backend/*.log
+backend/priv/static/uploads/*
 backend-phx.log
 backend-phoenix.log
 frontend/*.log

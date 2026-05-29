@@ -7,6 +7,11 @@ defmodule QpgWeb.Endpoint do
   )
 
   plug(CORSPlug, origin: ["http://localhost:3000", "http://127.0.0.1:3000"])
+  plug(Plug.Static,
+    at: "/",
+    from: {:qpg, "priv/static"},
+    only: ~w(uploads)
+  )
   plug(Plug.RequestId)
   plug(Plug.Telemetry, event_prefix: [:phoenix, :endpoint])
 
