@@ -810,11 +810,13 @@ defmodule Qpg.AI.Gemini do
         "type" => safe_text(question["type"] || question["question_type"], ""),
         "difficulty" => safe_text(question["difficulty"], ""),
         "source" => safe_text(question["source"], "AI generated from retrieved context"),
+        "generationMode" =>
+          safe_generation_mode(question["generationMode"] || question["generation_mode"]),
         "answer" => safe_text(question["answer"], ""),
         "answerRichText" =>
           safe_text(question["answerRichText"] || question["answer_rich_text"], ""),
         "sourceCitations" =>
-          List.wrap(question["sourceCitations"] || question["source_citations"])
+          List.wrap(question["sourceCitations"] || question["source_citations"] || question["citation"])
       }
     end)
     |> Enum.reject(&blank_question?/1)
@@ -1206,6 +1208,13 @@ defmodule Qpg.AI.Gemini do
   end
 
   defp safe_text(value, _default), do: inspect(value)
+
+  defp safe_generation_mode(value) do
+    case safe_text(value, "ai_generated") do
+      mode when mode in ["direct_ncert", "direct_pyq", "question_bank", "ai_generated"] -> mode
+      _ -> "ai_generated"
+    end
+  end
 
   defp encode_text(value, default) do
     case Jason.encode(value) do

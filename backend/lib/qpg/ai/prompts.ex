@@ -121,6 +121,10 @@ defmodule Qpg.AI.Prompts do
       when selected in question_types or section_blueprint.
     - Return a strict JSON paper model with sections, questions, options,
       subparts, OR choices, marks, answers, citations, and metadata.
+    - For each generated question, set generationMode to "ai_generated" and
+      include sourceCitations using the retrieved NCERT/PYQ citation labels when
+      a source inspired the question. Use "direct_ncert", "direct_pyq", or
+      "question_bank" only for untouched imported questions.
     - Produce warnings when coverage or marks drift from the target.
     """
   end

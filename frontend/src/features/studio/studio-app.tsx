@@ -2912,10 +2912,15 @@ function calculateSourceMix(paper: Paper): NonNullable<Paper["sourceMix"]> {
   paper.sections.forEach((section) => {
     section.questions.forEach((question) => {
       const source = `${question.generationMode ?? ""} ${question.source ?? ""} ${(question.sourceCitations ?? []).join(" ")}`.toLowerCase();
-      if (question.generationMode === "direct_ncert" || source.includes("ncert")) counts.ncert += 1;
-      else if (question.generationMode === "direct_pyq" || source.includes("pyq")) counts.pyq += 1;
+      const hasCitation = Boolean(question.sourceCitations?.length);
+      const isManual = source.includes("manual");
+      const isGeneratedFromRequest = source.includes("ai generated") || source.includes("retrieved context") || source.includes("owned corpus");
+      const paperUsedOwnedSources = /ncert|pyq/i.test(paper.metadata.source || "");
+
+      if (question.generationMode === "direct_ncert" || source.includes("direct_ncert")) counts.ncert += 1;
+      else if (question.generationMode === "direct_pyq" || source.includes("direct_pyq")) counts.pyq += 1;
       else if (question.generationMode === "question_bank" || source.includes("question bank")) counts.questionBank += 1;
-      else if (question.sourceCitations && question.sourceCitations.length > 0) counts.aiGenerated += 1;
+      else if (question.generationMode === "ai_generated" || hasCitation || isGeneratedFromRequest || (paperUsedOwnedSources && !isManual)) counts.aiGenerated += 1;
       else counts.uncited += 1;
     });
   });
