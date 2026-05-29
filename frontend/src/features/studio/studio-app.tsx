@@ -3660,8 +3660,18 @@ function choiceFromQuestion(question: PaperQuestion): NonNullable<PaperQuestion[
       ...subpart,
       id: crypto.randomUUID(),
       imageAssets: subpart.imageAssets?.map((asset) => ({ ...asset })),
+      options: subpart.options?.map((option) => ({ ...option, id: crypto.randomUUID(), imageAssets: option.imageAssets?.map((asset) => ({ ...asset })) })),
       optionalChoice: subpart.optionalChoice
-        ? { ...subpart.optionalChoice, id: crypto.randomUUID(), imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })) }
+        ? {
+            ...subpart.optionalChoice,
+            id: crypto.randomUUID(),
+            imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })),
+            options: subpart.optionalChoice.options?.map((option) => ({
+              ...option,
+              id: crypto.randomUUID(),
+              imageAssets: option.imageAssets?.map((asset) => ({ ...asset })),
+            })),
+          }
         : undefined,
     })),
     imageAssets: question.imageAssets?.map((asset) => ({ ...asset })),
@@ -3681,6 +3691,16 @@ function emptyChoiceFromQuestion(question: PaperQuestion): NonNullable<PaperQues
     id: crypto.randomUUID(),
     text: "",
     richText: "",
+    options:
+      question.type === "MCQ"
+        ? Array.from({ length: Math.max(question.options?.length ?? 4, 4) }, (_item, index) => ({
+            id: crypto.randomUUID(),
+            label: String.fromCharCode(65 + index),
+            text: "",
+            richText: "",
+            isCorrect: false,
+          }))
+        : undefined,
     marks: question.marks,
     type: question.type,
     difficulty: question.difficulty,
@@ -3748,12 +3768,31 @@ function cloneQuestion(question: PaperQuestion): PaperQuestion {
       ...subpart,
       id: crypto.randomUUID(),
       imageAssets: subpart.imageAssets?.map((asset) => ({ ...asset })),
+      options: subpart.options?.map((option) => ({ ...option, id: crypto.randomUUID(), imageAssets: option.imageAssets?.map((asset) => ({ ...asset })) })),
       optionalChoice: subpart.optionalChoice
-        ? { ...subpart.optionalChoice, id: crypto.randomUUID(), imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })) }
+        ? {
+            ...subpart.optionalChoice,
+            id: crypto.randomUUID(),
+            imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })),
+            options: subpart.optionalChoice.options?.map((option) => ({
+              ...option,
+              id: crypto.randomUUID(),
+              imageAssets: option.imageAssets?.map((asset) => ({ ...asset })),
+            })),
+          }
         : undefined,
     })),
     optionalChoice: question.optionalChoice
-      ? { ...question.optionalChoice, id: crypto.randomUUID(), imageAssets: question.optionalChoice.imageAssets?.map((asset) => ({ ...asset })) }
+      ? {
+          ...question.optionalChoice,
+          id: crypto.randomUUID(),
+          imageAssets: question.optionalChoice.imageAssets?.map((asset) => ({ ...asset })),
+          options: question.optionalChoice.options?.map((option) => ({
+            ...option,
+            id: crypto.randomUUID(),
+            imageAssets: option.imageAssets?.map((asset) => ({ ...asset })),
+          })),
+        }
       : undefined,
   });
 }
@@ -3763,8 +3802,18 @@ function cloneSubpart(subpart: PaperSubpart): PaperSubpart {
     ...subpart,
     id: crypto.randomUUID(),
     imageAssets: subpart.imageAssets?.map((asset) => ({ ...asset })),
+    options: subpart.options?.map((option) => ({ ...option, id: crypto.randomUUID(), imageAssets: option.imageAssets?.map((asset) => ({ ...asset })) })),
     optionalChoice: subpart.optionalChoice
-      ? { ...subpart.optionalChoice, id: crypto.randomUUID(), imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })) }
+      ? {
+          ...subpart.optionalChoice,
+          id: crypto.randomUUID(),
+          imageAssets: subpart.optionalChoice.imageAssets?.map((asset) => ({ ...asset })),
+          options: subpart.optionalChoice.options?.map((option) => ({
+            ...option,
+            id: crypto.randomUUID(),
+            imageAssets: option.imageAssets?.map((asset) => ({ ...asset })),
+          })),
+        }
       : undefined,
     diagramBlocks: subpart.diagramBlocks?.map((diagram) => ({ ...diagram, id: crypto.randomUUID() })),
   };
@@ -3990,10 +4039,15 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
           const choiceOptionsHtml = optionListToHtml(question.optionalChoice?.options);
           const subpartsHtml = (question.subparts ?? [])
             .map(
-              (subpart) => `
-                <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${subpart.richText || textToHtml(subpart.text)}${imageAssetsToHtml(subpart.imageAssets)}</div><span>[${subpart.marks ?? ""} marks]</span></div>
-                ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${subpart.optionalChoice.richText || textToHtml(subpart.optionalChoice.text)}${imageAssetsToHtml(subpart.optionalChoice.imageAssets)}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>` : ""}
-              `,
+              (subpart) => {
+                const subpartOptionsHtml = optionListToHtml(subpart.options);
+                const subpartChoiceOptionsHtml = optionListToHtml(subpart.optionalChoice?.options);
+
+                return `
+                  <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${subpart.richText || textToHtml(subpart.text)}${imageAssetsToHtml(subpart.imageAssets)}${subpartOptionsHtml}</div><span>[${subpart.marks ?? ""} marks]</span></div>
+                  ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${subpart.optionalChoice.richText || textToHtml(subpart.optionalChoice.text)}${imageAssetsToHtml(subpart.optionalChoice.imageAssets)}${subpartChoiceOptionsHtml}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>` : ""}
+                `;
+              },
             )
             .join("");
           const html = `

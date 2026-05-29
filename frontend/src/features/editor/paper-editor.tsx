@@ -14,7 +14,7 @@ import {
   Shapes,
   Trash2,
 } from "lucide-react";
-import { DocumentStyle, Paper, PaperImageAsset, PaperQuestion, PaperSection, PaperSubpart } from "@/lib/types";
+import { DocumentStyle, Paper, PaperImageAsset, PaperQuestion, PaperQuestionOption, PaperSection, PaperSubpart } from "@/lib/types";
 import { normalizePaperStructure } from "@/lib/normalize-paper-structure";
 import { RichTextEditor } from "./rich-text-editor";
 
@@ -113,6 +113,22 @@ export function PaperEditor({
     }));
   };
 
+  const emptyOption = (index: number): PaperQuestionOption => ({
+    id: crypto.randomUUID(),
+    label: String.fromCharCode(65 + index),
+    text: "",
+    richText: "",
+    isCorrect: false,
+  });
+
+  const relabelOptions = (options: PaperQuestionOption[]) => options.map((option, index) => ({ ...option, label: String.fromCharCode(65 + index) }));
+
+  const ensureMcqOptions = (options: PaperQuestionOption[] | undefined, minimum = 4) => {
+    const current = options ?? [];
+    const missing = Math.max(minimum - current.length, 0);
+    return relabelOptions([...current, ...Array.from({ length: missing }, (_item, index) => emptyOption(current.length + index))]);
+  };
+
   const updateQuestionOption = (
     sectionId: string,
     questionId: string,
@@ -157,16 +173,7 @@ export function PaperEditor({
 
     updateQuestion(sectionId, questionId, {
       type: "MCQ",
-      options: [
-        ...options,
-        {
-          id: crypto.randomUUID(),
-          label: String.fromCharCode(65 + options.length),
-          text: "",
-          richText: "",
-          isCorrect: false,
-        },
-      ].map((option, index) => ({ ...option, label: String.fromCharCode(65 + index) })),
+      options: relabelOptions([...options, emptyOption(options.length)]),
     });
   };
 
@@ -515,6 +522,37 @@ export function PaperEditor({
     });
   };
 
+  const attachSubpartOptionImage = async (sectionId: string, questionId: string, subpartId: string, optionIndex: number, file: File) => {
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.options ?? [];
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      options: options.map((option, index) =>
+        index === optionIndex ? { ...option, imageAssets: [...(option.imageAssets ?? []), asset] } : option,
+      ),
+    });
+  };
+
+  const removeSubpartOptionImage = (sectionId: string, questionId: string, subpartId: string, optionIndex: number, assetId: string) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.options ?? [];
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      options: options.map((option, index) =>
+        index === optionIndex ? { ...option, imageAssets: (option.imageAssets ?? []).filter((asset) => asset.id !== assetId) } : option,
+      ),
+    });
+  };
+
   const removeQuestionChoiceImage = (sectionId: string, questionId: string, assetId: string) => {
     const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
     if (!question?.optionalChoice) return;
@@ -533,6 +571,37 @@ export function PaperEditor({
 
     updateSubpartChoice(sectionId, questionId, subpartId, {
       imageAssets: (subpart.optionalChoice.imageAssets ?? []).filter((asset) => asset.id !== assetId),
+    });
+  };
+
+  const attachSubpartChoiceOptionImage = async (sectionId: string, questionId: string, subpartId: string, optionIndex: number, file: File) => {
+    const asset = await uploadAsset(file);
+    if (!asset) return;
+
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.optionalChoice?.options ?? [];
+
+    updateSubpartChoice(sectionId, questionId, subpartId, {
+      options: options.map((option, index) =>
+        index === optionIndex ? { ...option, imageAssets: [...(option.imageAssets ?? []), asset] } : option,
+      ),
+    });
+  };
+
+  const removeSubpartChoiceOptionImage = (sectionId: string, questionId: string, subpartId: string, optionIndex: number, assetId: string) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.optionalChoice?.options ?? [];
+
+    updateSubpartChoice(sectionId, questionId, subpartId, {
+      options: options.map((option, index) =>
+        index === optionIndex ? { ...option, imageAssets: (option.imageAssets ?? []).filter((asset) => asset.id !== assetId) } : option,
+      ),
     });
   };
 
@@ -600,16 +669,16 @@ export function PaperEditor({
 
     updateInternalChoice(sectionId, questionId, {
       type: "MCQ",
-      options: [
-        ...options,
-        {
-          id: crypto.randomUUID(),
-          label: String.fromCharCode(65 + options.length),
-          text: "",
-          richText: "",
-          isCorrect: false,
-        },
-      ].map((option, index) => ({ ...option, label: String.fromCharCode(65 + index) })),
+      options: relabelOptions([...options, emptyOption(options.length)]),
+    });
+  };
+
+  const createInternalChoiceMcq = (sectionId: string, questionId: string) => {
+    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+
+    updateInternalChoice(sectionId, questionId, {
+      type: "MCQ",
+      options: ensureMcqOptions(question?.optionalChoice?.options, 4),
     });
   };
 
@@ -620,11 +689,7 @@ export function PaperEditor({
     if (!option) return;
 
     updateInternalChoice(sectionId, questionId, {
-      options: [
-        ...options.slice(0, optionIndex + 1),
-        { ...option, id: crypto.randomUUID() },
-        ...options.slice(optionIndex + 1),
-      ].map((item, index) => ({ ...item, label: String.fromCharCode(65 + index) })),
+      options: relabelOptions([...options.slice(0, optionIndex + 1), { ...option, id: crypto.randomUUID() }, ...options.slice(optionIndex + 1)]),
     });
   };
 
@@ -633,7 +698,7 @@ export function PaperEditor({
     const options = question?.optionalChoice?.options ?? [];
 
     updateInternalChoice(sectionId, questionId, {
-      options: options.filter((_option, index) => index !== optionIndex).map((option, index) => ({ ...option, label: String.fromCharCode(65 + index) })),
+      options: relabelOptions(options.filter((_option, index) => index !== optionIndex)),
     });
   };
 
@@ -667,6 +732,73 @@ export function PaperEditor({
 
     updateQuestion(sectionId, questionId, {
       subparts: question.subparts.map((subpart) => (subpart.id === subpartId ? { ...subpart, ...patch } : subpart)),
+    });
+  };
+
+  const updateSubpartOption = (
+    sectionId: string,
+    questionId: string,
+    subpartId: string,
+    optionIndex: number,
+    patch: Partial<PaperQuestionOption>,
+  ) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.options ?? [];
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      options: options.map((option, index) => (index === optionIndex ? { ...option, ...patch } : option)),
+    });
+  };
+
+  const addSubpartOption = (sectionId: string, questionId: string, subpartId: string) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.options ?? [];
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      options: relabelOptions([...options, emptyOption(options.length)]),
+    });
+  };
+
+  const createSubpartMcq = (sectionId: string, questionId: string, subpartId: string) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      options: ensureMcqOptions(subpart?.options, 4),
+    });
+  };
+
+  const duplicateSubpartOption = (sectionId: string, questionId: string, subpartId: string, optionIndex: number) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.options ?? [];
+    const option = options[optionIndex];
+    if (!option) return;
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      options: relabelOptions([...options.slice(0, optionIndex + 1), { ...option, id: crypto.randomUUID() }, ...options.slice(optionIndex + 1)]),
+    });
+  };
+
+  const deleteSubpartOption = (sectionId: string, questionId: string, subpartId: string, optionIndex: number) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.options ?? [];
+
+    updateSubpart(sectionId, questionId, subpartId, {
+      options: relabelOptions(options.filter((_option, index) => index !== optionIndex)),
     });
   };
 
@@ -715,7 +847,10 @@ export function PaperEditor({
                   id: crypto.randomUUID(),
                   text: source.text,
                   richText: source.richText,
+                  options: source.options?.map((option) => ({ ...option, id: crypto.randomUUID() })),
+                  imageAssets: source.imageAssets?.map((asset) => ({ ...asset })),
                   marks: source.marks,
+                  type: source.options && source.options.length > 0 ? "MCQ" : undefined,
                   answer: source.answer,
                   answerRichText: source.answerRichText,
                 },
@@ -750,6 +885,75 @@ export function PaperEditor({
 
     updateSubpart(sectionId, questionId, subpartId, {
       optionalChoice: { ...subpart.optionalChoice, ...patch },
+    });
+  };
+
+  const updateSubpartChoiceOption = (
+    sectionId: string,
+    questionId: string,
+    subpartId: string,
+    optionIndex: number,
+    patch: Partial<PaperQuestionOption>,
+  ) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.optionalChoice?.options ?? [];
+
+    updateSubpartChoice(sectionId, questionId, subpartId, {
+      options: options.map((option, index) => (index === optionIndex ? { ...option, ...patch } : option)),
+    });
+  };
+
+  const addSubpartChoiceOption = (sectionId: string, questionId: string, subpartId: string) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.optionalChoice?.options ?? [];
+
+    updateSubpartChoice(sectionId, questionId, subpartId, {
+      type: "MCQ",
+      options: relabelOptions([...options, emptyOption(options.length)]),
+    });
+  };
+
+  const createSubpartChoiceMcq = (sectionId: string, questionId: string, subpartId: string) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+
+    updateSubpartChoice(sectionId, questionId, subpartId, {
+      type: "MCQ",
+      options: ensureMcqOptions(subpart?.optionalChoice?.options, 4),
+    });
+  };
+
+  const duplicateSubpartChoiceOption = (sectionId: string, questionId: string, subpartId: string, optionIndex: number) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.optionalChoice?.options ?? [];
+    const option = options[optionIndex];
+    if (!option) return;
+
+    updateSubpartChoice(sectionId, questionId, subpartId, {
+      options: relabelOptions([...options.slice(0, optionIndex + 1), { ...option, id: crypto.randomUUID() }, ...options.slice(optionIndex + 1)]),
+    });
+  };
+
+  const deleteSubpartChoiceOption = (sectionId: string, questionId: string, subpartId: string, optionIndex: number) => {
+    const subpart = paper.sections
+      .find((section) => section.id === sectionId)
+      ?.questions.find((item) => item.id === questionId)
+      ?.subparts?.find((item) => item.id === subpartId);
+    const options = subpart?.optionalChoice?.options ?? [];
+
+    updateSubpartChoice(sectionId, questionId, subpartId, {
+      options: relabelOptions(options.filter((_option, index) => index !== optionIndex)),
     });
   };
 
@@ -1180,6 +1384,53 @@ export function PaperEditor({
                                         compact
                                         onDelete={(assetId) => removeSubpartImage(section.id, question.id, subpart.id, assetId)}
                                       />
+                                      {subpart.options && subpart.options.length > 0 && (
+                                        <div className="space-y-2 rounded-md border border-amber-100 bg-amber-50/50 p-2">
+                                          {subpart.options.map((option, optionIndex) => (
+                                            <div key={option.id ?? `${subpart.id}-option-${optionIndex}`} className="group/subpart-option grid grid-cols-[44px_1fr_auto] gap-2">
+                                              <input
+                                                aria-label={`Question ${questionNumber} subpart ${subpart.label} option ${optionIndex + 1} label`}
+                                                className="h-9 rounded-md border border-amber-100 bg-white px-2 text-center text-xs font-black text-slate-700"
+                                                value={option.label ?? String.fromCharCode(65 + optionIndex)}
+                                                onChange={(event) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { label: event.target.value })}
+                                              />
+                                              <div className="min-w-0 space-y-2">
+                                                <RichTextEditor
+                                                  label={`Question ${questionNumber} part ${subpart.label} option ${option.label ?? optionIndex + 1}`}
+                                                  minHeight="compact"
+                                                  placeholder="Write part option..."
+                                                  value={option.text}
+                                                  htmlValue={option.richText}
+                                                  onFocus={onTextEditorFocus}
+                                                  onChange={(text) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { text })}
+                                                  onHtmlChange={(richText) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { richText })}
+                                                />
+                                                <ImageAssetList
+                                                  assets={option.imageAssets}
+                                                  compact
+                                                  onDelete={(assetId) => removeSubpartOptionImage(section.id, question.id, subpart.id, optionIndex, assetId)}
+                                                />
+                                              </div>
+                                              <TextBlockActions
+                                                className="opacity-100 lg:opacity-0 lg:group-hover/subpart-option:opacity-100"
+                                                onDuplicate={() => duplicateSubpartOption(section.id, question.id, subpart.id, optionIndex)}
+                                                onAddImage={onUploadImage ? (file) => void attachSubpartOptionImage(section.id, question.id, subpart.id, optionIndex, file) : undefined}
+                                                onDelete={() => deleteSubpartOption(section.id, question.id, subpart.id, optionIndex)}
+                                              />
+                                            </div>
+                                          ))}
+                                          <button className="editor-mini-button ml-11" onClick={() => addSubpartOption(section.id, question.id, subpart.id)} type="button">
+                                            <Plus size={14} />
+                                            Add part option
+                                          </button>
+                                        </div>
+                                      )}
+                                      {(!subpart.options || subpart.options.length === 0) && (
+                                        <button className="editor-mini-button" onClick={() => createSubpartMcq(section.id, question.id, subpart.id)} type="button">
+                                          <Plus size={14} />
+                                          Create MCQ in part
+                                        </button>
+                                      )}
                                     </div>
                                     <TextBlockActions
                                       className="opacity-100 lg:opacity-0 lg:group-hover/subpart:opacity-100"
@@ -1228,6 +1479,100 @@ export function PaperEditor({
                                             compact
                                             onDelete={(assetId) => removeSubpartChoiceImage(section.id, question.id, subpart.id, assetId)}
                                           />
+                                          {subpart.optionalChoice.options && subpart.optionalChoice.options.length > 0 && (
+                                            <div className="space-y-2 rounded-md border border-blue-100 bg-white/80 p-2">
+                                              {subpart.optionalChoice.options.map((option, optionIndex) => (
+                                                <div key={option.id ?? `${subpart.id}-choice-option-${optionIndex}`} className="group/subpart-or-option grid grid-cols-[44px_1fr_auto] gap-2">
+                                                  <input
+                                                    aria-label={`Question ${questionNumber} subpart ${subpart.label} OR option ${optionIndex + 1} label`}
+                                                    className="h-9 rounded-md border border-blue-100 bg-white px-2 text-center text-xs font-black text-slate-700"
+                                                    value={option.label ?? String.fromCharCode(65 + optionIndex)}
+                                                    onChange={(event) =>
+                                                      updateSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex, { label: event.target.value })
+                                                    }
+                                                  />
+                                                  <div className="min-w-0 space-y-2">
+                                                    <RichTextEditor
+                                                      label={`Question ${questionNumber} part ${subpart.label} OR option ${option.label ?? optionIndex + 1}`}
+                                                      minHeight="compact"
+                                                      placeholder="Write OR option..."
+                                                      value={option.text}
+                                                      htmlValue={option.richText}
+                                                      onFocus={onTextEditorFocus}
+                                                      onChange={(text) =>
+                                                        updateSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex, { text })
+                                                      }
+                                                      onHtmlChange={(richText) =>
+                                                        updateSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex, { richText })
+                                                      }
+                                                    />
+                                                    <ImageAssetList
+                                                      assets={option.imageAssets}
+                                                      compact
+                                                      onDelete={(assetId) =>
+                                                        removeSubpartChoiceOptionImage(section.id, question.id, subpart.id, optionIndex, assetId)
+                                                      }
+                                                    />
+                                                  </div>
+                                                  <TextBlockActions
+                                                    className="opacity-100 lg:opacity-0 lg:group-hover/subpart-or-option:opacity-100"
+                                                    onDuplicate={() => duplicateSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex)}
+                                                    onAddImage={
+                                                      onUploadImage
+                                                        ? (file) => void attachSubpartChoiceOptionImage(section.id, question.id, subpart.id, optionIndex, file)
+                                                        : undefined
+                                                    }
+                                                    onDelete={() => deleteSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex)}
+                                                  />
+                                                </div>
+                                              ))}
+                                              <button className="editor-mini-button ml-11" onClick={() => addSubpartChoiceOption(section.id, question.id, subpart.id)} type="button">
+                                                <Plus size={14} />
+                                                Add OR option
+                                              </button>
+                                            </div>
+                                          )}
+                                          {(!subpart.optionalChoice.options || subpart.optionalChoice.options.length === 0) && (
+                                            <button className="editor-mini-button" onClick={() => createSubpartChoiceMcq(section.id, question.id, subpart.id)} type="button">
+                                              <Plus size={14} />
+                                              Create MCQ OR
+                                            </button>
+                                          )}
+                                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-blue-700">
+                                            <input
+                                              aria-label={`Question ${questionNumber} subpart ${subpart.label} OR marks`}
+                                              className="w-14 rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-800"
+                                              min={0}
+                                              type="number"
+                                              value={subpart.optionalChoice.marks ?? subpart.marks ?? 0}
+                                              onChange={(event) => updateSubpartChoice(section.id, question.id, subpart.id, { marks: Number(event.target.value) })}
+                                            />
+                                            <span>Marks</span>
+                                            <select
+                                              className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                              value={subpart.optionalChoice.type ?? ((subpart.optionalChoice.options?.length ?? 0) > 0 ? "MCQ" : "SA")}
+                                              onChange={(event) => {
+                                                const type = event.target.value;
+                                                updateSubpartChoice(section.id, question.id, subpart.id, {
+                                                  type,
+                                                  options: type === "MCQ" ? ensureMcqOptions(subpart.optionalChoice?.options, 4) : subpart.optionalChoice?.options,
+                                                });
+                                              }}
+                                            >
+                                              {["MCQ", "VSA", "SA", "LA", "Case Study"].map((type) => (
+                                                <option key={type}>{type}</option>
+                                              ))}
+                                            </select>
+                                            <select
+                                              className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                              value={subpart.optionalChoice.difficulty ?? question.difficulty}
+                                              onChange={(event) => updateSubpartChoice(section.id, question.id, subpart.id, { difficulty: event.target.value })}
+                                            >
+                                              {["Low", "Medium", "High", "Easy", "Hard"].map((difficulty) => (
+                                                <option key={difficulty}>{difficulty}</option>
+                                              ))}
+                                            </select>
+                                          </div>
                                         </div>
                                         <TextBlockActions
                                           onAddImage={onUploadImage ? (file) => void attachSubpartChoiceImage(section.id, question.id, subpart.id, file) : undefined}
@@ -1262,6 +1607,12 @@ export function PaperEditor({
                                     compact
                                     onDelete={(assetId) => removeQuestionChoiceImage(section.id, question.id, assetId)}
                                   />
+                                  {(!question.optionalChoice.options || question.optionalChoice.options.length === 0) && (
+                                    <button className="editor-mini-button" onClick={() => createInternalChoiceMcq(section.id, question.id)} type="button">
+                                      <Plus size={14} />
+                                      Create MCQ OR
+                                    </button>
+                                  )}
                                   {question.optionalChoice.options && question.optionalChoice.options.length > 0 && (
                                     <div className="space-y-2 rounded-md border border-blue-100 bg-white/80 p-2">
                                       {question.optionalChoice.options.map((option, optionIndex) => (
@@ -1318,7 +1669,13 @@ export function PaperEditor({
                                     <select
                                       className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
                                       value={question.optionalChoice.type ?? question.type}
-                                      onChange={(event) => updateInternalChoice(section.id, question.id, { type: event.target.value })}
+                                      onChange={(event) => {
+                                        const type = event.target.value;
+                                        updateInternalChoice(section.id, question.id, {
+                                          type,
+                                          options: type === "MCQ" ? ensureMcqOptions(question.optionalChoice?.options, 4) : question.optionalChoice?.options,
+                                        });
+                                      }}
                                     >
                                       {["MCQ", "VSA", "SA", "LA", "Case Study"].map((type) => (
                                         <option key={type}>{type}</option>
@@ -1872,12 +2229,24 @@ function templateToneFor(templateName: string) {
 }
 
 function blankQuestionChoice(question?: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
+  const type = question?.type ?? "SA";
+
   return {
     id: crypto.randomUUID(),
     text: "",
     richText: "",
     marks: question?.marks ?? 1,
-    type: question?.type ?? "SA",
+    type,
+    options:
+      type === "MCQ"
+        ? Array.from({ length: Math.max(question?.options?.length ?? 4, 4) }, (_item, index) => ({
+            id: crypto.randomUUID(),
+            label: String.fromCharCode(65 + index),
+            text: "",
+            richText: "",
+            isCorrect: false,
+          }))
+        : undefined,
     difficulty: question?.difficulty ?? "Medium",
     source: "Manual OR",
     topic: question?.topic,

@@ -202,6 +202,7 @@ function normalizeRawSubparts(value: unknown): PaperSubpart[] | undefined {
       label: optionalString(record.label) || String.fromCharCode(97 + index),
       text: stringValue(record.text, ""),
       richText: optionalString(record.richText ?? record.rich_text),
+      options: normalizeRawOptions(record.options),
       diagramBlocks: normalizeDiagramBlocks(record.diagramBlocks ?? record.diagram_blocks),
       imageAssets: normalizeImageAssets(record.imageAssets ?? record.image_assets),
       marks: record.marks === undefined ? undefined : numberValue(record.marks, 0),

@@ -144,6 +144,7 @@ export type PaperSubpart = {
   label?: string;
   text: string;
   richText?: string;
+  options?: PaperQuestionOption[];
   diagramBlocks?: {
     id: string;
     title: string;
@@ -158,8 +159,14 @@ export type PaperSubpart = {
     id?: string;
     text: string;
     richText?: string;
+    options?: PaperQuestionOption[];
     imageAssets?: PaperImageAsset[];
     marks?: number;
+    type?: string;
+    difficulty?: string;
+    source?: string;
+    topic?: string;
+    tags?: string[];
     answer?: string;
     answerRichText?: string;
   };
