@@ -60,6 +60,7 @@ import {
   QuestionBankItem,
   RetrievalPreview,
   RetrievalResult,
+  SourceAvailability,
 } from "@/lib/types";
 
 type Mode = "structured" | "prompt";
@@ -236,6 +237,40 @@ export function StudioApp() {
   async function refreshRetrievalPreview(nextRequest = requestPreview) {
     const preview = await fetchRetrievalPreviewViaApi(nextRequest);
     setRetrievalPreview(preview);
+    reconcileRequestWithAvailability(preview?.availability);
+  }
+
+  function reconcileRequestWithAvailability(availability?: SourceAvailability) {
+    if (!availability) return;
+
+    setRequest((current) => {
+      const hasNcert = availability.totals.ncert > 0;
+      const hasPyq = availability.totals.pyq > 0;
+      const availableBooks = new Set(availability.books.flatMap((book) => [book.sourceGroup, book.title].filter(Boolean)));
+      const availableCategories = new Set(availability.categories.map((category) => category.category));
+      let source = current.source;
+
+      if (source === "PYQ" && !hasPyq && hasNcert) source = "NCERT";
+      if (source === "NCERT" && !hasNcert && hasPyq) source = "PYQ";
+      if (source === "NCERT + PYQ" && (!hasNcert || !hasPyq)) source = hasNcert ? "NCERT" : hasPyq ? "PYQ" : source;
+
+      const nextSourceBooks = (current.sourceBooks ?? []).filter((book) => availableBooks.has(book));
+      const nextSourceCategories = (current.sourceCategories ?? []).filter((category) => availableCategories.has(category));
+      const changed =
+        source !== current.source ||
+        nextSourceBooks.length !== (current.sourceBooks ?? []).length ||
+        nextSourceCategories.length !== (current.sourceCategories ?? []).length;
+
+      if (!changed) return current;
+
+      return {
+        ...current,
+        source,
+        sourceBooks: nextSourceBooks,
+        sourceCategories: nextSourceCategories,
+        directSourceMix: source === current.source ? current.directSourceMix : sourceMixPresets[source],
+      };
+    });
   }
 
   async function refreshQuestionBank() {
@@ -774,6 +809,7 @@ export function StudioApp() {
           onToggleQuestionType={toggleQuestionType}
           onUpdateRequest={updateRequest}
           questionTypeOptions={questionTypeOptions}
+          retrievalPreview={retrievalPreview}
           request={request}
           step={wizardStep}
         />
@@ -1184,6 +1220,7 @@ function GuidedSetupModal({
   onToggleQuestionType,
   onUpdateRequest,
   questionTypeOptions,
+  retrievalPreview,
   request,
   step,
 }: {
@@ -1196,6 +1233,7 @@ function GuidedSetupModal({
   onToggleQuestionType: (questionType: string) => void;
   onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
   questionTypeOptions: string[];
+  retrievalPreview: RetrievalPreview | null;
   request: PaperRequest;
   step: number;
 }) {
@@ -1223,7 +1261,7 @@ function GuidedSetupModal({
           {step === 0 && <StepBoardClass dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 1 && <StepSubject availableChapters={availableChapters} availableSubjects={availableSubjects} dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 2 && <StepChapters availableChapters={availableChapters} onUpdateRequest={onUpdateRequest} request={request} />}
-          {step === 3 && <StepFineTune onToggleQuestionType={onToggleQuestionType} onUpdateRequest={onUpdateRequest} questionTypeOptions={questionTypeOptions} request={request} />}
+          {step === 3 && <StepFineTune onToggleQuestionType={onToggleQuestionType} onUpdateRequest={onUpdateRequest} questionTypeOptions={questionTypeOptions} retrievalPreview={retrievalPreview} request={request} />}
         </div>
 
         <CreateFlowFooter
@@ -1455,7 +1493,7 @@ function StepChapters({ availableChapters, onUpdateRequest, request }: { availab
         <span className="text-sm text-[var(--ink-3)]">{request.chapters.length} selected</span>
       </div>
       <div className="grid gap-2.5 md:grid-cols-2">
-        {chapters.map((chapter, index) => {
+        {chapters.map((chapter) => {
           const active = request.chapters.includes(chapter);
           return (
             <button
@@ -1469,7 +1507,7 @@ function StepChapters({ availableChapters, onUpdateRequest, request }: { availab
               </span>
               <span>
                 <span className="block text-base text-[var(--ink)]">{chapter}</span>
-                <span className="block text-xs text-[var(--ink-3)]">{8 + ((index * 3) % 17)} questions indexed</span>
+                <span className="block text-xs text-[var(--ink-3)]">Available in selected dump catalog</span>
               </span>
             </button>
           );
@@ -1479,7 +1517,19 @@ function StepChapters({ availableChapters, onUpdateRequest, request }: { availab
   );
 }
 
-function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptions, request }: { onToggleQuestionType: (questionType: string) => void; onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void; questionTypeOptions: string[]; request: PaperRequest }) {
+function StepFineTune({
+  onToggleQuestionType,
+  onUpdateRequest,
+  questionTypeOptions,
+  retrievalPreview,
+  request,
+}: {
+  onToggleQuestionType: (questionType: string) => void;
+  onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
+  questionTypeOptions: string[];
+  retrievalPreview: RetrievalPreview | null;
+  request: PaperRequest;
+}) {
   const updateDifficulty = (difficulty: PaperRequest["difficulty"]) => {
     onUpdateRequest("difficulty", difficulty);
     onUpdateRequest("difficultyMix", difficultyPresets[difficulty]);
@@ -1490,6 +1540,17 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
   };
   const mix = request.difficultyMix ?? difficultyPresets[request.difficulty];
   const sourceMix = request.directSourceMix ?? sourceMixPresets[request.source];
+  const availability = retrievalPreview?.availability;
+  const hasNcert = !availability || availability.totals.ncert > 0;
+  const hasPyq = !availability || availability.totals.pyq > 0;
+  const hasQuestionBank = !availability || availability.totals.questionBank > 0;
+  const sourceOptions = [
+    { value: "NCERT" as const, label: "NCERT only", count: availability?.totals.ncert ?? 0, disabled: availability ? !hasNcert : false },
+    { value: "PYQ" as const, label: "PYQ only", count: availability?.totals.pyq ?? 0, disabled: availability ? !hasPyq : false },
+    { value: "NCERT + PYQ" as const, label: "NCERT + PYQ", count: (availability?.totals.ncert ?? 0) + (availability?.totals.pyq ?? 0), disabled: availability ? !hasNcert || !hasPyq : false },
+  ];
+  const bookOptions = uniqueSourceOptions(availability?.books ?? []);
+  const categoryOptions = (availability?.categories ?? []).map((category) => category.category);
 
   return (
     <div className="mx-auto max-w-[880px] space-y-6">
@@ -1519,23 +1580,32 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
       <div>
         <FlowLabel>Source</FlowLabel>
         <div className="flex flex-wrap gap-2">
-          {[
-            ["NCERT", "NCERT only"],
-            ["PYQ", "PYQ only"],
-            ["NCERT + PYQ", "NCERT + PYQ"],
-          ].map(([value, label]) => (
-            <button key={value} className={`rounded-full border px-4 py-2 text-sm ${request.source === value ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)]"}`} onClick={() => updateSource(value as PaperRequest["source"])} type="button">
+          {sourceOptions.map(({ value, label, count, disabled }) => (
+            <button
+              key={value}
+              className={`rounded-full border px-4 py-2 text-sm ${request.source === value ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)]"} ${disabled ? "cursor-not-allowed opacity-45" : "hover:bg-[var(--accent-soft-2)]"}`}
+              disabled={disabled}
+              onClick={() => updateSource(value)}
+              type="button"
+              title={disabled ? "No matching source rows in the dump for the selected chapter." : `${count} available source item(s)`}
+            >
               {label}
+              {availability ? <span className="ml-2 font-mono text-[10px] opacity-70">{count}</span> : null}
             </button>
           ))}
         </div>
+        {availability ? (
+          <div className="mt-2 text-xs text-[var(--ink-3)]">
+            Available now: {availability.totals.ncert} textbook item(s), {availability.totals.pyq} PYQ item(s), {availability.totals.questionBank} saved bank item(s).
+          </div>
+        ) : null}
       </div>
 
       <SourceMixSliders
         disabledSources={{
-          ncertDirect: request.source === "PYQ",
-          pyqDirect: request.source === "NCERT",
-          questionBank: false,
+          ncertDirect: request.source === "PYQ" || !hasNcert,
+          pyqDirect: request.source === "NCERT" || !hasPyq,
+          questionBank: !hasQuestionBank,
         }}
         mix={sourceMix}
         onChange={(nextMix) => onUpdateRequest("directSourceMix", nextMix)}
@@ -1544,13 +1614,15 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
       <div className="grid gap-5 md:grid-cols-2">
         <ChipMultiSelect
           label="Books to pull from"
-          options={["NCERT", "RD Sharma", "OSWAL PYQ", "Most Likely Question Bank", "Selina"]}
+          emptyText="No source books match this chapter yet."
+          options={bookOptions}
           selected={request.sourceBooks ?? []}
           onChange={(values) => onUpdateRequest("sourceBooks", values)}
         />
         <ChipMultiSelect
           label="Source categories"
-          options={["exercise", "pyq", "chapter_review", "example", "try_these", "mcq", "case_study"]}
+          emptyText="No tagged categories match this chapter yet."
+          options={categoryOptions}
           selected={request.sourceCategories ?? []}
           onChange={(values) => onUpdateRequest("sourceCategories", values)}
         />
@@ -1593,11 +1665,24 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
   );
 }
 
-function ChipMultiSelect({ label, options, selected, onChange }: { label: string; options: string[]; selected: string[]; onChange: (values: string[]) => void }) {
+function ChipMultiSelect({
+  emptyText,
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  emptyText?: string;
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
   return (
     <div>
       <FlowLabel>{label}</FlowLabel>
       <div className="flex flex-wrap gap-2">
+        {options.length === 0 ? <span className="rounded-full border border-dashed border-[var(--border)] px-3 py-1.5 text-xs text-[var(--ink-3)]">{emptyText ?? "No options available."}</span> : null}
         {options.map((option) => {
           const isSelected = selected.includes(option);
           return (
@@ -1614,6 +1699,18 @@ function ChipMultiSelect({ label, options, selected, onChange }: { label: string
       </div>
     </div>
   );
+}
+
+function uniqueSourceOptions(books: NonNullable<RetrievalPreview["availability"]>["books"]) {
+  const preferredOrder = ["NCERT", "RD Sharma", "Selina", "OSWAL PYQ", "Most Likely Question Bank", "PYQ"];
+  const options = Array.from(new Set(books.map((book) => book.sourceGroup || book.title).filter(Boolean)));
+
+  return options.sort((left, right) => {
+    const leftIndex = preferredOrder.indexOf(left);
+    const rightIndex = preferredOrder.indexOf(right);
+    if (leftIndex !== -1 || rightIndex !== -1) return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+    return left.localeCompare(right);
+  });
 }
 
 function DifficultyMixSliders({ mix, onChange }: { mix: NonNullable<PaperRequest["difficultyMix"]>; onChange: (mix: NonNullable<PaperRequest["difficultyMix"]>) => void }) {

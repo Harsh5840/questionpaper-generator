@@ -502,6 +502,7 @@ defmodule Qpg.Sources.DumpCorpus do
       pyq: Enum.map(pyq_questions ++ pyq_chunks, &preview_result/1),
       question_bank: Enum.map(question_bank, &preview_result/1),
       marking_scheme: marking_scheme,
+      availability: source_availability(filters, question_bank),
       section_sources: section_sources(filters, ncert_questions, pyq_questions),
       warnings:
         retrieval_warnings(
@@ -520,6 +521,142 @@ defmodule Qpg.Sources.DumpCorpus do
     })
 
     preview
+  end
+
+  defp source_availability(filters, question_bank) do
+    base_filters = availability_filters(filters)
+
+    params = [
+      blank_to_nil(base_filters["class_level"] || base_filters["classLevel"]),
+      subject_aliases(base_filters["subject_focus"] || base_filters["subject"]),
+      normalized_chapters_for_sql(base_filters),
+      board_filter(base_filters)
+    ]
+
+    %Postgrex.Result{rows: book_rows} =
+      SQL.query!(
+        Repo,
+        """
+        SELECT
+          t.id::text,
+          t.title,
+          t.publisher,
+          t.book_type,
+          t.subject,
+          t.grade,
+          count(DISTINCT q.id)::int AS question_count,
+          count(DISTINCT ch.id)::int AS chunk_count,
+          count(DISTINCT q.id) FILTER (
+            WHERE lower(coalesce(q.category, '')) = 'pyq'
+              OR lower(coalesce(t.book_type, '')) = 'pyq'
+              OR lower(t.title) LIKE '%pyq%'
+              OR lower(t.title) LIKE '%question bank%'
+              OR lower(t.title) LIKE '%oswal%'
+          )::int AS pyq_count
+        FROM ingested_textbooks t
+        JOIN ingested_chapters c ON c.textbook_id = t.id
+        LEFT JOIN ingested_questions q ON q.chapter_id = c.id
+        LEFT JOIN chapter_chunks ch ON ch.chapter_id = c.id
+        WHERE ($1::text IS NULL OR t.grade = $1)
+          AND (cardinality($2::text[]) = 0 OR lower(t.subject) = ANY($2::text[]))
+          AND (cardinality($3::text[]) = 0 OR lower(c.title) = ANY($3::text[]))
+          AND #{board_sql_condition("$4")}
+        GROUP BY t.id
+        HAVING count(DISTINCT q.id) > 0 OR count(DISTINCT ch.id) > 0
+        ORDER BY
+          CASE
+            WHEN lower(coalesce(t.publisher, '')) = 'ncert' THEN 1
+            WHEN lower(t.title) LIKE '%rd sharma%' THEN 2
+            WHEN lower(t.title) LIKE '%selina%' THEN 3
+            WHEN lower(coalesce(t.book_type, '')) = 'pyq' OR lower(t.title) LIKE '%pyq%' OR lower(t.title) LIKE '%oswal%' THEN 4
+            ELSE 10
+          END,
+          t.title
+        """,
+        params
+      )
+
+    %Postgrex.Result{rows: category_rows} =
+      SQL.query!(
+        Repo,
+        """
+        SELECT lower(coalesce(NULLIF(q.category, ''), 'uncategorized')) AS category, count(q.id)::int
+        FROM ingested_questions q
+        JOIN ingested_chapters c ON c.id = q.chapter_id
+        JOIN ingested_textbooks t ON t.id = c.textbook_id
+        WHERE ($1::text IS NULL OR t.grade = $1)
+          AND (cardinality($2::text[]) = 0 OR lower(t.subject) = ANY($2::text[]))
+          AND (cardinality($3::text[]) = 0 OR lower(c.title) = ANY($3::text[]))
+          AND #{board_sql_condition("$4")}
+        GROUP BY lower(coalesce(NULLIF(q.category, ''), 'uncategorized'))
+        ORDER BY count(q.id) DESC, category
+        """,
+        params
+      )
+
+    books =
+      Enum.map(book_rows, fn [
+                               id,
+                               title,
+                               publisher,
+                               book_type,
+                               subject,
+                               grade,
+                               question_count,
+                               chunk_count,
+                               pyq_count
+                             ] ->
+        %{
+          id: id,
+          title: title,
+          publisher: publisher,
+          book_type: book_type,
+          subject: subject,
+          grade: grade,
+          question_count: question_count,
+          chunk_count: chunk_count,
+          pyq_count: pyq_count,
+          source_group: availability_source_group(publisher, book_type, title)
+        }
+      end)
+
+    categories =
+      Enum.map(category_rows, fn [category, count] -> %{category: category, count: count} end)
+
+    ncert_count =
+      books
+      |> Enum.reject(&pyq_source?(&1.book_type, &1.title, nil))
+      |> Enum.map(&(&1.question_count + &1.chunk_count))
+      |> Enum.sum()
+
+    pyq_count =
+      books
+      |> Enum.map(& &1.pyq_count)
+      |> Enum.sum()
+
+    %{
+      books: books,
+      categories: categories,
+      totals: %{
+        ncert: ncert_count,
+        pyq: pyq_count,
+        question_bank: length(question_bank),
+        questions: Enum.map(books, & &1.question_count) |> Enum.sum(),
+        chunks: Enum.map(books, & &1.chunk_count) |> Enum.sum()
+      }
+    }
+  rescue
+    error ->
+      Logging.error("sources.dump.source_availability.failed", %{
+        filters: filters,
+        error: Exception.message(error)
+      })
+
+      %{
+        books: [],
+        categories: [],
+        totals: %{ncert: 0, pyq: 0, question_bank: length(question_bank), questions: 0, chunks: 0}
+      }
   end
 
   def marking_scheme_context(filters) do
@@ -1210,6 +1347,14 @@ defmodule Qpg.Sources.DumpCorpus do
     |> Enum.reject(&(&1 == ""))
   end
 
+  defp availability_filters(filters) do
+    filters
+    |> Map.delete("source_books")
+    |> Map.delete("sourceBooks")
+    |> Map.delete("source_categories")
+    |> Map.delete("sourceCategories")
+  end
+
   defp board_filter(filters) do
     case filters["board"] || filters["boardCode"] do
       nil -> nil
@@ -1249,6 +1394,33 @@ defmodule Qpg.Sources.DumpCorpus do
       "icse" -> %{code: "ICSE", name: "ICSE"}
       "cbse" -> %{code: "CBSE", name: "CBSE"}
       _ -> nil
+    end
+  end
+
+  defp availability_source_group(publisher, book_type, title) do
+    text = [publisher, book_type, title] |> compact_join(" ") |> String.downcase()
+
+    cond do
+      String.contains?(text, "selina") or String.contains?(text, "icse") ->
+        "Selina"
+
+      String.contains?(text, "rd sharma") ->
+        "RD Sharma"
+
+      String.contains?(text, "oswal") ->
+        "OSWAL PYQ"
+
+      String.contains?(text, "most likely") or String.contains?(text, "question bank") ->
+        "Most Likely Question Bank"
+
+      String.contains?(text, "pyq") ->
+        "PYQ"
+
+      String.contains?(text, "ncert") ->
+        "NCERT"
+
+      true ->
+        title || publisher || "Other"
     end
   end
 

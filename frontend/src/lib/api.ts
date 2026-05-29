@@ -696,9 +696,53 @@ function normalizeRetrievalPreview(raw: unknown): RetrievalPreview {
     ncert: normalizeRetrievalResults(record.ncert),
     pyq: normalizeRetrievalResults(record.pyq),
     questionBank: normalizeRetrievalResults(record.question_bank ?? record.questionBank),
+    availability: normalizeSourceAvailability(record.availability),
     sectionSources: normalizeSectionSources(record.section_sources ?? record.sectionSources),
     markingScheme: asRecord(record.marking_scheme ?? record.markingScheme),
     warnings: Array.isArray(record.warnings) ? record.warnings.map(String) : [],
+  };
+}
+
+function normalizeSourceAvailability(value: unknown): RetrievalPreview["availability"] {
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) return undefined;
+
+  const totals = asRecord(record.totals);
+  const books = Array.isArray(record.books) ? record.books : [];
+  const categories = Array.isArray(record.categories) ? record.categories : [];
+
+  return {
+    books: books.map((book) => {
+      const item = asRecord(book);
+
+      return {
+        id: String(item.id ?? ""),
+        title: String(item.title ?? "Source book"),
+        publisher: item.publisher ? String(item.publisher) : undefined,
+        bookType: item.book_type || item.bookType ? String(item.book_type ?? item.bookType) : undefined,
+        subject: item.subject ? String(item.subject) : undefined,
+        grade: item.grade ? String(item.grade) : undefined,
+        questionCount: Number(item.question_count ?? item.questionCount ?? 0),
+        chunkCount: Number(item.chunk_count ?? item.chunkCount ?? 0),
+        pyqCount: Number(item.pyq_count ?? item.pyqCount ?? 0),
+        sourceGroup: String(item.source_group ?? item.sourceGroup ?? item.title ?? "Other"),
+      };
+    }),
+    categories: categories.map((category) => {
+      const item = asRecord(category);
+
+      return {
+        category: String(item.category ?? "uncategorized"),
+        count: Number(item.count ?? 0),
+      };
+    }),
+    totals: {
+      ncert: Number(totals.ncert ?? 0),
+      pyq: Number(totals.pyq ?? 0),
+      questionBank: Number(totals.question_bank ?? totals.questionBank ?? 0),
+      questions: Number(totals.questions ?? 0),
+      chunks: Number(totals.chunks ?? 0),
+    },
   };
 }
 

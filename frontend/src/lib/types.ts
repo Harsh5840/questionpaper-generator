@@ -275,6 +275,7 @@ export type RetrievalPreview = {
   ncert: RetrievalResult[];
   pyq: RetrievalResult[];
   questionBank: RetrievalResult[];
+  availability?: SourceAvailability;
   sectionSources?: {
     chapters: RetrievalChapter[];
     ncertCount: number;
@@ -282,6 +283,32 @@ export type RetrievalPreview = {
   };
   markingScheme: Record<string, unknown>;
   warnings: string[];
+};
+
+export type SourceAvailability = {
+  books: {
+    id: string;
+    title: string;
+    publisher?: string;
+    bookType?: string;
+    subject?: string;
+    grade?: string;
+    questionCount: number;
+    chunkCount: number;
+    pyqCount: number;
+    sourceGroup: string;
+  }[];
+  categories: {
+    category: string;
+    count: number;
+  }[];
+  totals: {
+    ncert: number;
+    pyq: number;
+    questionBank: number;
+    questions: number;
+    chunks: number;
+  };
 };
 
 export type QuestionBankItem = {
