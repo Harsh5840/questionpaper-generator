@@ -49,7 +49,9 @@ import {
   GenerationStatus,
   Paper,
   PaperQuestion,
+  PaperSection,
   PaperRequest,
+  PaperSubpart,
   PaperTemplate,
   PaperVersion,
   QuestionBankItem,
@@ -333,11 +335,24 @@ export function StudioApp() {
       return;
     }
 
+    const command = applyChatPaperCommand(selectedPaper, instruction, documentStyle);
+    if (command.handled) {
+      const nextPaper = applyDocumentStyle(recalculatePaper(command.paper), documentStyle);
+      updateSelectedPaper(nextPaper);
+      await saveVersionViaApi(nextPaper, command.versionLabel ?? "chat_structured_edit");
+      await refreshVersions(nextPaper.paperId);
+      setStatus({ status: "completed", step: "chat_edit", message: "Structured edit applied", progress: 100 });
+      addAssistantMessage(command.message);
+      return;
+    }
+
+    const refinementInstruction = command.providerInstruction ?? buildTargetedRefinementInstruction(selectedPaper, instruction);
+
     setIsChatting(true);
     setStatus({ status: "running", step: "refining", message: "Applying refinement", progress: 65 });
 
     try {
-      const refinement = await refineViaApi(selectedPaper, instruction);
+      const refinement = await refineViaApi(selectedPaper, refinementInstruction);
       const nextPaper = applyDocumentStyle(recalculatePaper(refinement.preview), documentStyle);
       updateSelectedPaper(nextPaper);
       await saveVersionViaApi(nextPaper, "ai_refinement");
@@ -2398,6 +2413,472 @@ function describeRequest(request: PaperRequest) {
     ? ` Sections: ${request.sectionBlueprint.map((section) => `${section.title} ${section.questionCount}x${section.marksEach} ${section.questionTypes.join("/")}`).join("; ")}.`
     : "";
   return `${request.board} class ${request.classLevel} ${request.subject}, ${request.totalMarks} marks, ${request.chapters.join(", ") || "whole syllabus"}, types: ${request.questionTypes.join(", ")}.${blueprint}`;
+}
+
+type ChatPaperCommandResult =
+  | { handled: true; paper: Paper; message: string; versionLabel?: string }
+  | { handled: false; providerInstruction?: string };
+
+type QuestionRef = {
+  number: number;
+  section: PaperSection;
+  sectionIndex: number;
+  question: PaperQuestion;
+  questionIndex: number;
+};
+
+function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle: DocumentStyle): ChatPaperCommandResult {
+  const normalizedInstruction = instruction.trim();
+  const lower = normalizedInstruction.toLowerCase();
+  const refs = getQuestionRefs(paper);
+
+  if (isSaveVersionCommand(lower)) {
+    return {
+      handled: true,
+      paper,
+      message: "Saved this as a new version.",
+      versionLabel: "chat_save_version",
+    };
+  }
+
+  if (isAddSectionCommand(lower)) {
+    const nextPaper = normalizePaperStructure({
+      ...paper,
+      sections: [
+        ...paper.sections,
+        {
+          id: crypto.randomUUID(),
+          title: inferSectionTitle(normalizedInstruction, paper.sections.length),
+          instructions: "Add questions or import source-backed questions into this section.",
+          difficulty: inferDifficulty(normalizedInstruction),
+          targetMarks: inferMarks(normalizedInstruction),
+          questions: [],
+        },
+      ],
+    });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: "Added a new editable section. You can now drag questions into it or import questions there.",
+      versionLabel: "chat_add_section",
+    };
+  }
+
+  if (isCreateMcqCommand(lower)) {
+    const target = findQuestionRefFromInstruction(refs, normalizedInstruction);
+    const targetSectionId = target?.section.id ?? paper.sections[0]?.id;
+    if (!targetSectionId) return { handled: false };
+
+    const nextQuestion = createBlankMcqQuestion(paper);
+    const nextPaper = normalizePaperStructure({
+      ...paper,
+      sections: paper.sections.map((section) =>
+        section.id === targetSectionId
+          ? {
+              ...section,
+              questions: [...section.questions, nextQuestion],
+            }
+          : section,
+      ),
+    });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: "Created a structured MCQ with four separate option rows and an answer field.",
+      versionLabel: "chat_create_mcq",
+    };
+  }
+
+  const moveToOr = parseMoveQuestionToOrCommand(normalizedInstruction);
+  if (moveToOr) {
+    const source = refs.find((ref) => ref.number === moveToOr.source);
+    const target = refs.find((ref) => ref.number === moveToOr.target);
+
+    if (!source || !target) {
+      return { handled: true, paper, message: `I could not find Q${moveToOr.source} or Q${moveToOr.target} in this paper.` };
+    }
+
+    if (source.question.id === target.question.id) {
+      return { handled: true, paper, message: "A question cannot be moved into its own OR slot." };
+    }
+
+    const nextPaper = moveQuestionIntoInternalChoice(paper, source, target);
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Moved Q${moveToOr.source} into the OR choice of Q${moveToOr.target}. Marks still count only once for that question.`,
+      versionLabel: "chat_move_question_to_or",
+    };
+  }
+
+  const duplicateNumber = parseQuestionTarget(lower, ["duplicate", "copy"]);
+  if (duplicateNumber) {
+    const target = refs.find((ref) => ref.number === duplicateNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${duplicateNumber} to duplicate.` };
+
+    const nextPaper = updateSectionQuestions(paper, target.section.id, (questions) => [
+      ...questions.slice(0, target.questionIndex + 1),
+      cloneQuestion(target.question),
+      ...questions.slice(target.questionIndex + 1),
+    ]);
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Duplicated Q${duplicateNumber}. Question numbering has been recalculated.`,
+      versionLabel: "chat_duplicate_question",
+    };
+  }
+
+  const deleteNumber = parseQuestionTarget(lower, ["delete", "remove"]);
+  if (deleteNumber) {
+    const target = refs.find((ref) => ref.number === deleteNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${deleteNumber} to delete.` };
+
+    const nextPaper = updateSectionQuestions(paper, target.section.id, (questions) => questions.filter((question) => question.id !== target.question.id));
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Deleted Q${deleteNumber}. The remaining questions have been renumbered automatically.`,
+      versionLabel: "chat_delete_question",
+    };
+  }
+
+  const addPart = parseAddPartCommand(normalizedInstruction);
+  if (addPart) {
+    const target = refs.find((ref) => ref.number === addPart.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${addPart.questionNumber} to add a part.` };
+
+    const subparts = target.question.subparts ?? [];
+    const nextLabel = nextSubpartLabel(subparts);
+    const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, {
+      subparts: [
+        ...subparts,
+        {
+          id: crypto.randomUUID(),
+          label: nextLabel,
+          text: "",
+          richText: "",
+          marks: addPart.marks ?? 1,
+          answer: "",
+          answerRichText: "",
+        },
+      ],
+    });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Added part (${nextLabel}) to Q${addPart.questionNumber}.`,
+      versionLabel: "chat_add_subpart",
+    };
+  }
+
+  const partChoice = parseAddSubpartChoiceCommand(normalizedInstruction);
+  if (partChoice) {
+    const target = refs.find((ref) => ref.number === partChoice.questionNumber);
+    const subpart = target?.question.subparts?.find((item) => (item.label ?? "").toLowerCase() === partChoice.label);
+    if (!target || !subpart) return { handled: true, paper, message: `I could not find part (${partChoice.label}) in Q${partChoice.questionNumber}.` };
+
+    const nextPaper = updateSubpartInPaper(paper, target.section.id, target.question.id, subpart.id, {
+      optionalChoice: {
+        id: crypto.randomUUID(),
+        text: "",
+        richText: "",
+        marks: subpart.marks,
+        answer: "",
+        answerRichText: "",
+      },
+    });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Added an OR alternative for Q${partChoice.questionNumber} part (${partChoice.label}).`,
+      versionLabel: "chat_add_subpart_or",
+    };
+  }
+
+  const wholeChoiceNumber = parseAddWholeQuestionChoiceCommand(normalizedInstruction);
+  if (wholeChoiceNumber) {
+    const target = refs.find((ref) => ref.number === wholeChoiceNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${wholeChoiceNumber} to add OR.` };
+
+    const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, {
+      optionalChoice: emptyChoiceFromQuestion(target.question),
+    });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Added an OR internal choice block to Q${wholeChoiceNumber}.`,
+      versionLabel: "chat_add_question_or",
+    };
+  }
+
+  return { handled: false };
+}
+
+function buildTargetedRefinementInstruction(paper: Paper, instruction: string) {
+  const target = findQuestionRefFromInstruction(getQuestionRefs(paper), instruction);
+  if (!target) return instruction;
+
+  return [
+    instruction,
+    "",
+    `Target global question: Q${target.number}`,
+    `Target question id: ${target.question.id}`,
+    `Target section: ${target.section.title}`,
+    `Current stem: ${target.question.text}`,
+    `Current marks/type/difficulty: ${target.question.marks} marks, ${target.question.type}, ${target.question.difficulty}`,
+    "Apply the requested change only to this target unless the teacher explicitly asks for a broader paper-level edit.",
+    "Preserve structured fields: put MCQ options in options[], subparts in subparts[], and OR choices in optionalChoice fields.",
+  ].join("\n");
+}
+
+function getQuestionRefs(paper: Paper): QuestionRef[] {
+  const refs: QuestionRef[] = [];
+  let number = 1;
+
+  paper.sections.forEach((section, sectionIndex) => {
+    section.questions.forEach((question, questionIndex) => {
+      refs.push({ number, section, sectionIndex, question, questionIndex });
+      number += 1;
+    });
+  });
+
+  return refs;
+}
+
+function parseMoveQuestionToOrCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(move|put|add|shift)\b/.test(lower) || !/\bor\b/.test(lower)) return null;
+
+  const numbers = questionNumbersFromText(lower);
+  if (numbers.length < 2) return null;
+
+  return { source: numbers[0], target: numbers[1] };
+}
+
+function parseAddPartCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(add|create|insert)\b/.test(lower) || !/\b(part|subpart|sub-question|sub question)\b/.test(lower) || /\bor\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  return { questionNumber, marks: inferMarks(instruction) };
+}
+
+function parseAddSubpartChoiceCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\bor\b/.test(lower) || !/\b(part|subpart|sub-question|sub question)\b/.test(lower)) return null;
+
+  const questionNumber = questionNumbersFromText(lower)[0];
+  const label = lower.match(/\bpart\s*\(?([a-z])\)?/)?.[1] ?? lower.match(/\(([a-z])\)/)?.[1];
+  if (!questionNumber || !label) return null;
+  return { questionNumber, label };
+}
+
+function parseAddWholeQuestionChoiceCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(add|create|insert)\b/.test(lower) || !/\bor\b|internal choice/.test(lower)) return null;
+  if (/\b(part|subpart|sub-question|sub question)\b/.test(lower)) return null;
+  return questionNumbersFromText(lower)[0] ?? null;
+}
+
+function parseQuestionTarget(instruction: string, verbs: string[]) {
+  if (!verbs.some((verb) => instruction.includes(verb))) return null;
+  return questionNumbersFromText(instruction)[0] ?? null;
+}
+
+function questionNumbersFromText(text: string) {
+  const numbers = Array.from(text.matchAll(/\b(?:q|ques|question|quesion)\s*\.?\s*(\d+)\b/g)).map((match) => Number(match[1]));
+  if (numbers.length > 0) return numbers.filter(Number.isFinite);
+
+  const ordinal = text.match(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+(?:q|ques|question|quesion)\b/)?.[1];
+  const ordinalNumber = ordinal ? ordinalToNumber(ordinal) : null;
+  return ordinalNumber ? [ordinalNumber] : [];
+}
+
+function findQuestionRefFromInstruction(refs: QuestionRef[], instruction: string) {
+  const questionNumber = questionNumbersFromText(instruction.toLowerCase())[0];
+  return questionNumber ? refs.find((ref) => ref.number === questionNumber) : undefined;
+}
+
+function ordinalToNumber(value: string) {
+  const map: Record<string, number> = {
+    first: 1,
+    second: 2,
+    third: 3,
+    fourth: 4,
+    fifth: 5,
+    sixth: 6,
+    seventh: 7,
+    eighth: 8,
+    ninth: 9,
+    tenth: 10,
+  };
+  return map[value] ?? null;
+}
+
+function isSaveVersionCommand(instruction: string) {
+  return /\bsave\b/.test(instruction) && /\b(version|draft|paper)\b/.test(instruction);
+}
+
+function isAddSectionCommand(instruction: string) {
+  return /\b(add|create|insert)\b/.test(instruction) && /\bsection\b/.test(instruction);
+}
+
+function isCreateMcqCommand(instruction: string) {
+  return /\b(create|add|insert)\b/.test(instruction) && /\b(mcq|multiple choice)\b/.test(instruction);
+}
+
+function inferSectionTitle(instruction: string, existingCount: number) {
+  const quoted = instruction.match(/["']([^"']+)["']/)?.[1];
+  if (quoted) return quoted;
+  const letter = String.fromCharCode(65 + existingCount);
+  return `Section ${letter}`;
+}
+
+function inferDifficulty(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (lower.includes("hard")) return "Hard";
+  if (lower.includes("easy")) return "Easy";
+  if (lower.includes("mixed")) return "Mixed";
+  return "Medium";
+}
+
+function inferMarks(instruction: string) {
+  const value = Number(instruction.match(/(\d+)\s*(?:mark|marks)/i)?.[1]);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function updateSectionQuestions(paper: Paper, sectionId: string, updater: (questions: PaperQuestion[]) => PaperQuestion[]) {
+  return normalizePaperStructure({
+    ...paper,
+    sections: paper.sections.map((section) => (section.id === sectionId ? { ...section, questions: updater(section.questions) } : section)),
+  });
+}
+
+function updateQuestionInPaper(paper: Paper, sectionId: string, questionId: string, patch: Partial<PaperQuestion>) {
+  return updateSectionQuestions(paper, sectionId, (questions) =>
+    questions.map((question) => (question.id === questionId ? { ...question, ...patch } : question)),
+  );
+}
+
+function updateSubpartInPaper(paper: Paper, sectionId: string, questionId: string, subpartId: string, patch: Partial<PaperSubpart>) {
+  const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+  if (!question) return paper;
+
+  return updateQuestionInPaper(paper, sectionId, questionId, {
+    subparts: (question.subparts ?? []).map((subpart) => (subpart.id === subpartId ? { ...subpart, ...patch } : subpart)),
+  });
+}
+
+function moveQuestionIntoInternalChoice(paper: Paper, source: QuestionRef, target: QuestionRef) {
+  let movingQuestion: PaperQuestion | null = null;
+
+  const sectionsWithoutSource = paper.sections.map((section) => ({
+    ...section,
+    questions: section.questions.filter((question) => {
+      if (section.id === source.section.id && question.id === source.question.id) {
+        movingQuestion = question;
+        return false;
+      }
+
+      return true;
+    }),
+  }));
+
+  if (!movingQuestion) return paper;
+
+  return normalizePaperStructure({
+    ...paper,
+    sections: sectionsWithoutSource.map((section) => ({
+      ...section,
+      questions: section.questions.map((question) =>
+        question.id === target.question.id
+          ? {
+              ...question,
+              optionalChoice: choiceFromQuestion(movingQuestion as PaperQuestion),
+            }
+          : question,
+      ),
+    })),
+  });
+}
+
+function choiceFromQuestion(question: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
+  return {
+    id: crypto.randomUUID(),
+    text: question.text,
+    richText: question.richText,
+    marks: question.marks,
+    type: question.type,
+    difficulty: question.difficulty,
+    source: question.source || "Moved OR",
+    topic: question.topic,
+    tags: question.tags,
+    answer: question.answer,
+    answerRichText: question.answerRichText,
+  };
+}
+
+function emptyChoiceFromQuestion(question: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
+  return {
+    id: crypto.randomUUID(),
+    text: "",
+    richText: "",
+    marks: question.marks,
+    type: question.type,
+    difficulty: question.difficulty,
+    source: "Manual OR",
+    topic: question.topic,
+    tags: question.tags,
+    answer: "",
+    answerRichText: "",
+  };
+}
+
+function createBlankMcqQuestion(paper: Paper): PaperQuestion {
+  return normalizeRawQuestion({
+    id: crypto.randomUUID(),
+    text: "Write the MCQ stem here.",
+    richText: richTextFromText("Write the MCQ stem here."),
+    marks: 1,
+    type: "MCQ",
+    difficulty: paper.summary.difficulty || "Medium",
+    source: "Manual",
+    topic: paper.metadata.topic || paper.metadata.chapter,
+    options: ["Option A", "Option B", "Option C", "Option D"].map((text, index) => ({
+      id: crypto.randomUUID(),
+      label: String.fromCharCode(65 + index),
+      text,
+      richText: richTextFromText(text),
+      isCorrect: index === 0,
+    })),
+    answer: "A",
+    answerRichText: richTextFromText("A"),
+  });
+}
+
+function cloneQuestion(question: PaperQuestion): PaperQuestion {
+  return normalizeRawQuestion({
+    ...question,
+    id: crypto.randomUUID(),
+    options: question.options?.map((option) => ({ ...option, id: crypto.randomUUID() })),
+    subparts: question.subparts?.map((subpart) => ({
+      ...subpart,
+      id: crypto.randomUUID(),
+      optionalChoice: subpart.optionalChoice ? { ...subpart.optionalChoice, id: crypto.randomUUID() } : undefined,
+    })),
+    optionalChoice: question.optionalChoice ? { ...question.optionalChoice, id: crypto.randomUUID() } : undefined,
+  });
+}
+
+function nextSubpartLabel(subparts: PaperSubpart[]) {
+  return String.fromCharCode(97 + subparts.length);
 }
 
 function recalculatePaper(paper: Paper): Paper {
