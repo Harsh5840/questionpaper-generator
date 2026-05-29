@@ -3054,18 +3054,16 @@ function appendQuestionToPaper(paper: Paper, question: PaperQuestion, sectionId?
 }
 
 function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
+  const printablePaper = normalizePaperStructure(paper);
   let questionNumber = 1;
-  const sectionHtml = paper.sections
+  const sectionHtml = printablePaper.sections
     .map((section) => {
       const questions = section.questions
         .map((question) => {
           const optionsHtml = (question.options ?? [])
-            .map(
-              (option) => `
-                <div class="option"><strong>${escapeHtml(option.label || "")}</strong><div>${option.richText || textToHtml(option.text)}</div></div>
-              `,
-            )
+            .map((option) => optionToHtml(option.label || "", option.richText || textToHtml(option.text)))
             .join("");
+          const choiceOptionsHtml = optionListToHtml((question.optionalChoice as { options?: { label?: string; text: string; richText?: string }[] } | undefined)?.options);
           const subpartsHtml = (question.subparts ?? [])
             .map(
               (subpart) => `
@@ -3079,7 +3077,7 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
               <div class="q-main"><strong>${questionNumber++}.</strong><div>${question.richText || textToHtml(question.text)}</div><span>[${question.marks} marks]</span></div>
               ${optionsHtml}
               ${subpartsHtml}
-              ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>` : ""}
+              ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>${choiceOptionsHtml}` : ""}
             </div>`;
           return html;
         })
@@ -3089,17 +3087,29 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     })
     .join("");
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(paper.title)}</title><style>
-    body{font-family:Georgia,serif;line-height:${documentStyle.lineHeight};margin:${documentStyle.margin}px;color:${documentStyle.textColor};background:${documentStyle.pageColor}}
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(printablePaper.title)}</title><style>
+    @page{size:A4;margin:${Math.max(16, Math.round(documentStyle.margin / 2))}px}
+    *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{font-family:Georgia,serif;line-height:${documentStyle.lineHeight};margin:0;color:${documentStyle.textColor};background:${documentStyle.pageColor};font-size:${documentStyle.fontSize}px}
     header{text-align:center;border-bottom:1px solid #cbd5e1;padding-bottom:18px;margin-bottom:18px}
     h1{font-family:Arial,sans-serif;font-size:22px;text-transform:uppercase;margin:8px 0}
     h2{font-family:Arial,sans-serif;font-size:14px;text-transform:uppercase;margin-top:24px}
     .meta{display:flex;justify-content:center;gap:16px;font-family:Arial,sans-serif;font-size:12px;color:#475569}
-    .question{margin:16px 0}.q-main,.subpart{display:grid;grid-template-columns:32px 1fr auto;gap:12px;align-items:start}
-    .option{display:grid;grid-template-columns:32px 1fr;gap:12px;margin:6px 0 6px 44px}
+    .question{margin:16px 0;break-inside:avoid;page-break-inside:avoid}.q-main,.subpart{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:start}
+    .option{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;margin:6px 0 6px 44px;break-inside:avoid;page-break-inside:avoid}
+    .option div,.q-main div,.subpart div{min-width:0}
+    .option p,.q-main p,.subpart p{margin:0 0 4px}
     .subpart{margin:8px 0 8px 32px}
     .instructions{font-size:14px;color:#475569}.or{text-align:center;font-family:Arial,sans-serif;font-weight:bold;color:#1d4ed8;margin:10px 0}
-  </style></head><body><header><div>Series: QPG/${escapeHtml(paper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(paper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(paper.title)}</h1><div class="meta"><span>${escapeHtml(paper.metadata.board)} Class ${escapeHtml(paper.metadata.classLevel)}</span><span>${escapeHtml(paper.metadata.subject)}</span><span>Time: ${formatDuration(paper.metadata.durationMinutes)}</span><span>Max Marks: ${paper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
+  </style></head><body><header><div>Series: QPG/${escapeHtml(printablePaper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(printablePaper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(printablePaper.title)}</h1><div class="meta"><span>${escapeHtml(printablePaper.metadata.board)} Class ${escapeHtml(printablePaper.metadata.classLevel)}</span><span>${escapeHtml(printablePaper.metadata.subject)}</span><span>Time: ${formatDuration(printablePaper.metadata.durationMinutes)}</span><span>Max Marks: ${printablePaper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
+}
+
+function optionListToHtml(options?: { label?: string; text: string; richText?: string }[]) {
+  return (options ?? []).map((option) => optionToHtml(option.label || "", option.richText || textToHtml(option.text))).join("");
+}
+
+function optionToHtml(label: string, contentHtml: string) {
+  return `<div class="option"><strong>${escapeHtml(label)}</strong><div>${contentHtml}</div></div>`;
 }
 
 function textToHtml(text: string) {

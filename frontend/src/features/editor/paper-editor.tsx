@@ -678,27 +678,18 @@ export function PaperEditor({
           Add section
         </button>
       </div>
-      </div>
 
-      <div className="space-y-8">
-        {paper.sections.map((section, sectionIndex) => {
+      <div className="mt-8 space-y-8">
+        {paper.sections.map((section) => {
           const sectionMarks = section.questions.reduce((total, question) => total + Number(question.marks || 0), 0);
 
           return (
             <section
               key={section.id}
-              className={`paper-page relative mx-auto min-h-[1120px] w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
-              style={{
-                backgroundColor: documentStyle.pageColor,
-                color: documentStyle.textColor,
-                fontSize: documentStyle.fontSize,
-                lineHeight: documentStyle.lineHeight,
-                padding: documentStyle.margin,
-              }}
+              className="paper-section relative rounded-lg border border-transparent"
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => moveDraggedQuestion(section.id)}
             >
-              <div className="absolute bottom-4 right-6 font-mono text-[10px] font-bold text-slate-400">Page {sectionIndex + 2}</div>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
                 <input
                   aria-label="Section title"
@@ -1128,6 +1119,7 @@ export function PaperEditor({
             </section>
           );
         })}
+      </div>
       </div>
 
       {replacePrompt && (
