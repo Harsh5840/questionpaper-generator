@@ -26,6 +26,72 @@ defmodule Qpg.Sources.DumpCorpus do
     _ -> false
   end
 
+  def list_subjects(filters) do
+    params = [
+      blank_to_nil(filters["class_level"] || filters["classLevel"]),
+      board_filter(filters)
+    ]
+
+    %Postgrex.Result{rows: rows} =
+      SQL.query!(
+        Repo,
+        """
+        WITH source_subjects AS (
+          SELECT
+            CASE
+              WHEN lower(t.subject) IN ('math', 'maths', 'mathematics', 'math') THEN 'Maths'
+              ELSE initcap(t.subject)
+            END AS value,
+            CASE
+              WHEN lower(t.subject) IN ('math', 'maths', 'mathematics', 'math') THEN 'Mathematics'
+              ELSE initcap(t.subject)
+            END AS label,
+            t.id AS textbook_id,
+            c.id AS chapter_id
+          FROM ingested_textbooks t
+          LEFT JOIN ingested_chapters c ON c.textbook_id = t.id
+          WHERE ($1::text IS NULL OR t.grade = $1)
+            AND #{board_sql_condition("$2")}
+        )
+        SELECT value, label, count(DISTINCT textbook_id)::int, count(DISTINCT chapter_id)::int
+        FROM source_subjects
+        WHERE value IS NOT NULL AND value <> ''
+        GROUP BY value, label
+        ORDER BY
+          CASE value
+            WHEN 'Maths' THEN 1
+            WHEN 'Science' THEN 2
+            WHEN 'Physics' THEN 3
+            WHEN 'Chemistry' THEN 4
+            WHEN 'Biology' THEN 5
+            ELSE 20
+          END,
+          label
+        """,
+        params
+      )
+
+    subjects =
+      Enum.map(rows, fn [value, label, book_count, chapter_count] ->
+        %{
+          value: value,
+          label: label,
+          book_count: book_count,
+          chapter_count: chapter_count
+        }
+      end)
+
+    maybe_add_combined_science_subject(subjects, filters)
+  rescue
+    error ->
+      Logging.error("sources.dump.list_subjects.failed", %{
+        filters: filters,
+        error: Exception.message(error)
+      })
+
+      []
+  end
+
   def list_chapters(filters) do
     params = chapter_filter_params(filters)
 
@@ -47,6 +113,7 @@ defmodule Qpg.Sources.DumpCorpus do
               WHERE lower(t.title) LIKE '%' || book_filter.value || '%'
             )
           )
+          AND #{board_sql_condition("$4")}
           AND c.title IS NOT NULL
           AND c.title <> ''
           AND NOT (
@@ -54,8 +121,6 @@ defmodule Qpg.Sources.DumpCorpus do
             OR lower(t.title) LIKE '%pyq%'
             OR lower(t.title) LIKE '%question bank%'
             OR lower(t.title) LIKE '%oswal%'
-            OR lower(t.title) LIKE '%selina%'
-            OR lower(t.publisher) = 'icse'
             OR lower(c.title) LIKE 'paper %'
           )
         GROUP BY c.title
@@ -138,12 +203,15 @@ defmodule Qpg.Sources.DumpCorpus do
               WHERE lower(t.title) LIKE '%' || book_filter.value || '%'
             )
           )
-          AND (cardinality($4::text[]) = 0 OR lower(c.title) = ANY($4::text[]))
+          AND #{board_sql_condition("$4")}
+          AND (cardinality($5::text[]) = 0 OR lower(c.title) = ANY($5::text[]))
         GROUP BY t.id, c.id
         ORDER BY t.title, c.order_index NULLS LAST, c.chapter_number NULLS LAST, c.title
         """,
         params ++ [normalized_chapters_for_sql(filters)]
       )
+
+    board = board_for_response(filters)
 
     chapters =
       Enum.map(rows, fn [
@@ -182,12 +250,12 @@ defmodule Qpg.Sources.DumpCorpus do
           },
           subject: %{name: subject},
           class: %{level: grade, name: "Class #{grade}"},
-          board: %{code: "CBSE", name: "CBSE"}
+          board: board
         }
       end)
 
     %{
-      board: %{code: "CBSE", name: "CBSE"},
+      board: board,
       class: first_in(chapters, [:class]),
       subject: first_in(chapters, [:subject]),
       chapters: chapters,
@@ -246,14 +314,15 @@ defmodule Qpg.Sources.DumpCorpus do
               WHERE lower(t.title) LIKE '%' || book_filter.value || '%'
             )
           )
-          AND ($5::text = 'all' OR ($5::text = 'pyq') = (lower(coalesce(t.book_type, '')) = 'pyq' OR lower(t.title) LIKE '%pyq%' OR lower(t.title) LIKE '%question bank%' OR lower(t.title) LIKE '%oswal%'))
-          AND ($6::text = '%%' OR ch.content ILIKE $6 OR ch.section_label ILIKE $6 OR ch.section_title ILIKE $6 OR c.title ILIKE $6)
+          AND #{board_sql_condition("$5")}
+          AND ($6::text = 'all' OR ($6::text = 'pyq') = (lower(coalesce(t.book_type, '')) = 'pyq' OR lower(t.title) LIKE '%pyq%' OR lower(t.title) LIKE '%question bank%' OR lower(t.title) LIKE '%oswal%'))
+          AND ($7::text = '%%' OR ch.content ILIKE $7 OR ch.section_label ILIKE $7 OR ch.section_title ILIKE $7 OR c.title ILIKE $7)
         ORDER BY
-          CASE WHEN ch.content ILIKE $6 THEN 0 ELSE 1 END,
+          CASE WHEN ch.content ILIKE $7 THEN 0 ELSE 1 END,
           c.order_index NULLS LAST,
           ch.page NULLS LAST,
           ch.section_label NULLS LAST
-        LIMIT $7
+        LIMIT $8
         """,
         params
       )
@@ -394,13 +463,14 @@ defmodule Qpg.Sources.DumpCorpus do
               WHERE lower(t.title) LIKE '%' || book_filter.value || '%'
             )
           )
-          AND (cardinality($5::text[]) = 0 OR lower(coalesce(q.category, '')) = ANY($5::text[]))
-          AND ($6::text = 'all' OR ($6::text = 'pyq') = (lower(coalesce(q.category, '')) = 'pyq' OR lower(coalesce(t.book_type, '')) = 'pyq' OR lower(t.title) LIKE '%pyq%' OR lower(t.title) LIKE '%question bank%' OR lower(t.title) LIKE '%oswal%'))
+          AND #{board_sql_condition("$5")}
+          AND (cardinality($6::text[]) = 0 OR lower(coalesce(q.category, '')) = ANY($6::text[]))
+          AND ($7::text = 'all' OR ($7::text = 'pyq') = (lower(coalesce(q.category, '')) = 'pyq' OR lower(coalesce(t.book_type, '')) = 'pyq' OR lower(t.title) LIKE '%pyq%' OR lower(t.title) LIKE '%question bank%' OR lower(t.title) LIKE '%oswal%'))
         ORDER BY
           c.order_index NULLS LAST,
           q.order_index NULLS LAST,
           q.inserted_at ASC
-        LIMIT $7
+        LIMIT $8
         """,
         params
       )
@@ -1082,6 +1152,7 @@ defmodule Qpg.Sources.DumpCorpus do
       subject_aliases(filters["subject_focus"] || filters["subject"]),
       normalized_chapters_for_sql(filters),
       normalized_source_books(filters),
+      board_filter(filters),
       Atom.to_string(source_group)
     ]
   end
@@ -1092,6 +1163,7 @@ defmodule Qpg.Sources.DumpCorpus do
       subject_aliases(filters["subject_focus"] || filters["subject"]),
       normalized_chapters_for_sql(filters),
       normalized_source_books(filters),
+      board_filter(filters),
       normalized_source_categories(filters),
       Atom.to_string(source_group)
     ]
@@ -1101,7 +1173,8 @@ defmodule Qpg.Sources.DumpCorpus do
     [
       blank_to_nil(filters["class_level"] || filters["classLevel"]),
       subject_aliases(filters["subject_focus"] || filters["subject"]),
-      normalized_source_books(filters)
+      normalized_source_books(filters),
+      board_filter(filters)
     ]
   end
 
@@ -1135,6 +1208,81 @@ defmodule Qpg.Sources.DumpCorpus do
     |> List.wrap()
     |> Enum.map(&(to_string(&1) |> String.downcase()))
     |> Enum.reject(&(&1 == ""))
+  end
+
+  defp board_filter(filters) do
+    case filters["board"] || filters["boardCode"] do
+      nil -> nil
+      "" -> nil
+      board -> board |> to_string() |> String.downcase()
+    end
+  end
+
+  defp board_sql_condition(parameter) do
+    """
+    (
+      #{parameter}::text IS NULL
+      OR lower(#{parameter}::text) = ''
+      OR (
+        lower(#{parameter}::text) = 'icse'
+        AND (
+          lower(coalesce(t.publisher, '')) = 'icse'
+          OR lower(coalesce(t.title, '')) LIKE '%icse%'
+          OR lower(coalesce(t.title, '')) LIKE '%selina%'
+        )
+      )
+      OR (
+        lower(#{parameter}::text) = 'cbse'
+        AND NOT (
+          lower(coalesce(t.publisher, '')) = 'icse'
+          OR lower(coalesce(t.title, '')) LIKE '%icse%'
+          OR lower(coalesce(t.title, '')) LIKE '%selina%'
+        )
+      )
+      OR lower(#{parameter}::text) NOT IN ('cbse', 'icse')
+    )
+    """
+  end
+
+  defp board_for_response(filters) do
+    case board_filter(filters) do
+      "icse" -> %{code: "ICSE", name: "ICSE"}
+      "cbse" -> %{code: "CBSE", name: "CBSE"}
+      _ -> nil
+    end
+  end
+
+  defp maybe_add_combined_science_subject(subjects, filters) do
+    board = board_filter(filters)
+
+    has_science? =
+      Enum.any?(subjects, fn subject ->
+        subject.value |> to_string() |> String.downcase() == "science"
+      end)
+
+    science_parts =
+      Enum.filter(subjects, fn subject ->
+        (subject.value |> to_string() |> String.downcase()) in ["physics", "chemistry", "biology"]
+      end)
+
+    if board != "icse" and not has_science? and length(science_parts) >= 2 do
+      combined = %{
+        value: "Science",
+        label: "Science",
+        book_count:
+          science_parts
+          |> Enum.map(& &1.book_count)
+          |> Enum.sum(),
+        chapter_count:
+          science_parts
+          |> Enum.map(& &1.chapter_count)
+          |> Enum.sum()
+      }
+
+      [combined | subjects]
+    else
+      subjects
+    end
   end
 
   defp subject_aliases(subject) do

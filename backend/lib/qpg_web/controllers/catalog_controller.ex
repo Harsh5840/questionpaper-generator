@@ -4,6 +4,17 @@ defmodule QpgWeb.CatalogController do
   alias Qpg.Logging
   alias Qpg.Sources
 
+  def subjects(conn, params) do
+    subjects = Sources.list_subjects(params)
+
+    Logging.info("api.catalog.subjects.completed", %{
+      params: params,
+      subject_count: length(subjects)
+    })
+
+    json(conn, %{subjects: subjects})
+  end
+
   def chapters(conn, params) do
     chapters = Sources.list_chapters(params)
 

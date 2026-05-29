@@ -1,6 +1,7 @@
 import { Socket } from "phoenix";
 import {
   AiUsageSummary,
+  CatalogSubject,
   DashboardSummary,
   GenerationStatus,
   Paper,
@@ -192,6 +193,30 @@ export async function fetchChaptersViaApi(request: Pick<PaperRequest, "board" | 
     if (fallbackSubject && fallbackSubject !== request.subject) return fetchCatalogChapters(request, fallbackSubject);
 
     return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchSubjectsViaApi(request: Pick<PaperRequest, "board" | "classLevel">): Promise<CatalogSubject[]> {
+  try {
+    const params = new URLSearchParams({
+      board: request.board,
+      class_level: request.classLevel,
+    });
+
+    const response = await fetch(`${API_BASE}/catalog/subjects?${params.toString()}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    if (!Array.isArray(data.subjects)) return [];
+
+    return data.subjects.map((subject: Record<string, unknown>) => ({
+      value: String(subject.value ?? subject.name ?? subject.label ?? ""),
+      label: String(subject.label ?? subject.value ?? subject.name ?? ""),
+      chapterCount: Number(subject.chapter_count ?? subject.chapterCount ?? 0),
+      bookCount: Number(subject.book_count ?? subject.bookCount ?? 0),
+      disabled: Boolean(subject.disabled),
+    })).filter((subject: CatalogSubject) => subject.value && subject.label);
   } catch {
     return [];
   }

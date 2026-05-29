@@ -1,7 +1,7 @@
 export type PaperRequest = {
   board: "CBSE" | "ICSE";
   classLevel: "6" | "7" | "8" | "9" | "10" | "11" | "12";
-  subject: "Maths" | "Science" | "Physics" | "Chemistry" | "Biology";
+  subject: string;
   chapter: string;
   chapterScope: "single" | "multiple" | "full_syllabus";
   chapters: string[];
@@ -20,6 +20,14 @@ export type PaperRequest = {
   sourceBooks?: string[];
   sourceCategories?: string[];
   directSourceMix?: DirectSourceMix;
+};
+
+export type CatalogSubject = {
+  value: string;
+  label: string;
+  chapterCount: number;
+  bookCount: number;
+  disabled?: boolean;
 };
 
 export type DifficultyMix = {

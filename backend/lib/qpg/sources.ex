@@ -16,6 +16,32 @@ defmodule Qpg.Sources do
     Import.ingest_path(path)
   end
 
+  def list_subjects(filters) do
+    Logging.info("sources.catalog.list_subjects.started", %{filters: filters})
+
+    cond do
+      DumpCorpus.available?() ->
+        subjects = DumpCorpus.list_subjects(filters)
+
+        Logging.info("sources.catalog.list_subjects.dump_completed", %{
+          count: length(subjects),
+          subjects: subjects
+        })
+
+        subjects
+
+      true ->
+        subjects = list_catalog_subjects(filters)
+
+        Logging.info("sources.catalog.list_subjects.completed", %{
+          count: length(subjects),
+          subjects: subjects
+        })
+
+        subjects
+    end
+  end
+
   def list_chapters(filters) do
     Logging.info("sources.catalog.list_chapters.started", %{filters: filters})
 
@@ -159,6 +185,44 @@ defmodule Qpg.Sources do
       })
 
       %{board: nil, class: nil, subject: nil, chapters: [], chapter_count: 0}
+  end
+
+  defp list_catalog_subjects(filters) do
+    params = [blank_to_nil(filters["board"]), blank_to_nil(filters["class_level"])]
+
+    %Postgrex.Result{rows: rows} =
+      SQL.query!(
+        Repo,
+        """
+        SELECT s.name, count(DISTINCT c.id)::int AS chapter_count, 0::int AS book_count
+        FROM boards b
+        JOIN school_classes sc ON sc.board_id = b.id
+        JOIN subjects s ON s.school_class_id = sc.id
+        LEFT JOIN chapters c ON c.subject_id = s.id
+        WHERE ($1::text IS NULL OR lower(b.code) = lower($1) OR lower(b.name) = lower($1))
+          AND ($2::text IS NULL OR sc.level = $2)
+        GROUP BY s.id, s.name
+        ORDER BY s.name
+        """,
+        params
+      )
+
+    Enum.map(rows, fn [name, chapter_count, book_count] ->
+      %{
+        value: subject_value(name),
+        label: subject_label(name),
+        chapter_count: chapter_count,
+        book_count: book_count
+      }
+    end)
+  rescue
+    error ->
+      Logging.error("sources.catalog.list_subjects.failed", %{
+        filters: filters,
+        error: Exception.message(error)
+      })
+
+      []
   end
 
   def ensure_catalog_entry(%{
@@ -1662,6 +1726,28 @@ defmodule Qpg.Sources do
   end
 
   defp normalize_json_value(value), do: value
+
+  defp subject_value(name) do
+    case name |> to_string() |> String.downcase() do
+      value when value in ["math", "maths", "mathematics"] -> "Maths"
+      value when value in ["physics", "chemistry", "biology", "science"] -> titleize(value)
+      _ -> to_string(name)
+    end
+  end
+
+  defp subject_label(name) do
+    case subject_value(name) do
+      "Maths" -> "Mathematics"
+      value -> value
+    end
+  end
+
+  defp titleize(value) do
+    value
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
 
   defp first_in([head | _], path), do: get_in(head, path)
   defp first_in([], _path), do: nil

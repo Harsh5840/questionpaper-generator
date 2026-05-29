@@ -30,6 +30,7 @@ import {
   fetchDashboardViaApi,
   fetchQuestionBankViaApi,
   fetchRetrievalPreviewViaApi,
+  fetchSubjectsViaApi,
   fetchUsageViaApi,
   generateViaApi,
   getPaperViaApi,
@@ -44,6 +45,7 @@ import { defaultRequest, requestFromPrompt } from "@/lib/request-defaults";
 import { normalizePaperStructure, normalizeRawQuestion, richTextFromText } from "@/lib/normalize-paper-structure";
 import {
   AiUsageSummary,
+  CatalogSubject,
   DashboardSummary,
   DirectSourceMix,
   DocumentStyle,
@@ -124,6 +126,7 @@ export function StudioApp() {
   });
   const [prompt, setPrompt] = useState("CBSE class 10 maths 50 marks from Quadratic Equations using NCERT and PYQ format");
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
+  const [availableSubjects, setAvailableSubjects] = useState<CatalogSubject[]>([]);
   const [documentStyle, setDocumentStyle] = useState<DocumentStyle>(defaultDocumentStyle);
   const [openPapers, setOpenPapers] = useState<Paper[]>([]);
   const [variantPapers, setVariantPapers] = useState<Paper[]>([]);
@@ -148,6 +151,36 @@ export function StudioApp() {
   ]);
 
   const requestPreview = useMemo(() => (mode === "prompt" ? requestFromPrompt(prompt) : request), [mode, prompt, request]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetchSubjectsViaApi({
+      board: request.board,
+      classLevel: request.classLevel,
+    }).then((subjects) => {
+      if (cancelled) return;
+      setAvailableSubjects(subjects);
+
+      setRequest((current) => {
+        if (subjects.length === 0 || subjects.some((subject) => sameSubjectValue(subject.value, current.subject))) return current;
+        const firstSubject = subjects[0];
+
+        return {
+          ...current,
+          subject: firstSubject.value,
+          chapter: "",
+          chapters: [],
+          topic: "",
+          chapterScope: "single",
+        };
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [request.board, request.classLevel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -733,6 +766,7 @@ export function StudioApp() {
       {createFlow === "params" && (
         <GuidedSetupModal
           availableChapters={availableChapters}
+          availableSubjects={availableSubjects}
           dashboard={dashboard}
           onClose={closeCreateFlow}
           onGenerate={generateFromCreateFlow}
@@ -1142,6 +1176,7 @@ function CreatePathCard({
 
 function GuidedSetupModal({
   availableChapters,
+  availableSubjects,
   dashboard,
   onClose,
   onGenerate,
@@ -1153,6 +1188,7 @@ function GuidedSetupModal({
   step,
 }: {
   availableChapters: string[];
+  availableSubjects: CatalogSubject[];
   dashboard: DashboardSummary | null;
   onClose: () => void;
   onGenerate: () => void;
@@ -1185,7 +1221,7 @@ function GuidedSetupModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-16 py-8">
           {step === 0 && <StepBoardClass dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
-          {step === 1 && <StepSubject availableChapters={availableChapters} dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
+          {step === 1 && <StepSubject availableChapters={availableChapters} availableSubjects={availableSubjects} dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 2 && <StepChapters availableChapters={availableChapters} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 3 && <StepFineTune onToggleQuestionType={onToggleQuestionType} onUpdateRequest={onUpdateRequest} questionTypeOptions={questionTypeOptions} request={request} />}
         </div>
@@ -1263,12 +1299,29 @@ function StepBoardClass({
     : "Dump corpus loading";
   const boardOptions = [
     { value: "CBSE", label: "CBSE", detail: cbseDetail, disabled: false },
-    { value: "ICSE", label: "ICSE", detail: "Selina content available as source material · exam flow later", disabled: true },
+    { value: "ICSE", label: "ICSE", detail: "Selina Class 10 Maths, Physics, Chemistry", disabled: false },
     { value: "IB", label: "IB", detail: "Coming soon", disabled: true },
     { value: "State Board", label: "State Board", detail: "Coming soon", disabled: true },
     { value: "IGCSE", label: "IGCSE", detail: "Coming soon", disabled: true },
   ];
   const classOptions = ["6", "7", "8", "9", "10", "11", "12"];
+  const selectBoard = (board: string) => {
+    if (board !== "CBSE" && board !== "ICSE") return;
+
+    onUpdateRequest("board", board);
+    onUpdateRequest("chapter", "");
+    onUpdateRequest("chapters", []);
+    onUpdateRequest("topic", "");
+    onUpdateRequest("chapterScope", "single");
+
+    if (board === "ICSE") {
+      onUpdateRequest("classLevel", "10");
+      onUpdateRequest("source", "NCERT");
+      onUpdateRequest("sourceBooks", ["Selina"]);
+    } else {
+      onUpdateRequest("sourceBooks", []);
+    }
+  };
 
   return (
     <div className="mx-auto grid max-w-[840px] gap-9 md:grid-cols-2">
@@ -1280,7 +1333,7 @@ function StepBoardClass({
               key={board.value}
               className={`flex w-full items-center gap-4 rounded-[var(--radius-md)] border px-4 py-3 text-left transition ${request.board === board.value ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--paper)]"} ${board.disabled ? "cursor-not-allowed opacity-50" : "hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"}`}
               disabled={board.disabled}
-              onClick={() => onUpdateRequest("board", board.value as PaperRequest["board"])}
+              onClick={() => selectBoard(board.value)}
               type="button"
             >
               <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${request.board === board.value ? "border-[var(--accent)] bg-[var(--accent)]" : "border-[var(--border-2)] bg-[var(--paper)]"}`}>
@@ -1299,10 +1352,12 @@ function StepBoardClass({
         <FlowLabel>Class</FlowLabel>
         <div className="grid grid-cols-2 gap-2.5">
           {classOptions.map((classLevel) => {
+            const disabled = request.board === "ICSE" && classLevel !== "10";
             return (
               <button
                 key={classLevel}
-                className={`h-11 rounded-[var(--radius-md)] border text-sm transition ${request.classLevel === classLevel ? "border-[var(--accent)] bg-[var(--accent-soft)] font-black text-[var(--ink)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"}`}
+                className={`h-11 rounded-[var(--radius-md)] border text-sm transition ${request.classLevel === classLevel ? "border-[var(--accent)] bg-[var(--accent-soft)] font-black text-[var(--ink)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"} ${disabled ? "cursor-not-allowed opacity-45 hover:border-[var(--border)] hover:bg-[var(--paper)]" : ""}`}
+                disabled={disabled}
                 onClick={() => onUpdateRequest("classLevel", classLevel as PaperRequest["classLevel"])}
                 type="button"
               >
@@ -1318,45 +1373,65 @@ function StepBoardClass({
 
 function StepSubject({
   availableChapters,
+  availableSubjects,
   dashboard,
   onUpdateRequest,
   request,
 }: {
   availableChapters: string[];
+  availableSubjects: CatalogSubject[];
   dashboard: DashboardSummary | null;
   onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
   request: PaperRequest;
 }) {
   const currentSubjectCount = availableChapters.length;
   const indexedDetail = currentSubjectCount > 0 ? `${currentSubjectCount} chapters indexed` : "Dump-backed corpus";
-  const subjects = [
-    { value: "Maths", label: "Mathematics", count: request.subject === "Maths" ? indexedDetail : "Classes 6-12 indexed", icon: "M", disabled: false },
-    { value: "Science", label: "Science", count: request.subject === "Science" ? indexedDetail : "Classes 6-10 indexed", icon: "S", disabled: false },
-    { value: "English", label: "English", count: "Coming soon", icon: "E", disabled: true },
-    { value: "Social Studies", label: "Social Studies", count: "Coming soon", icon: "SS", disabled: true },
-    { value: "Physics", label: "Physics", count: request.subject === "Physics" ? indexedDetail : "Class 10+ indexed", icon: "P", disabled: false },
-    { value: "Chemistry", label: "Chemistry", count: request.subject === "Chemistry" ? indexedDetail : "Class 10+ indexed", icon: "C", disabled: false },
-    { value: "Biology", label: "Biology", count: request.subject === "Biology" ? indexedDetail : "Class 10+ indexed", icon: "B", disabled: false },
-  ];
+  const fallbackSubjects: CatalogSubject[] =
+    request.board === "ICSE"
+      ? [
+          { value: "Maths", label: "Mathematics", chapterCount: 0, bookCount: 0 },
+          { value: "Physics", label: "Physics", chapterCount: 0, bookCount: 0 },
+          { value: "Chemistry", label: "Chemistry", chapterCount: 0, bookCount: 0 },
+        ]
+      : [
+          { value: "Maths", label: "Mathematics", chapterCount: 0, bookCount: 0 },
+          { value: "Science", label: "Science", chapterCount: 0, bookCount: 0 },
+          { value: "Physics", label: "Physics", chapterCount: 0, bookCount: 0 },
+          { value: "Chemistry", label: "Chemistry", chapterCount: 0, bookCount: 0 },
+          { value: "Biology", label: "Biology", chapterCount: 0, bookCount: 0 },
+        ];
+  const subjects = availableSubjects.length > 0 ? availableSubjects : fallbackSubjects;
+  const selectSubject = (subject: CatalogSubject) => {
+    onUpdateRequest("subject", subject.value);
+    onUpdateRequest("chapter", "");
+    onUpdateRequest("chapters", []);
+    onUpdateRequest("topic", "");
+    onUpdateRequest("chapterScope", "single");
+  };
 
   return (
     <div className="mx-auto max-w-[800px]">
       <FlowLabel>Subject</FlowLabel>
       <div className="grid gap-3 md:grid-cols-3">
-        {subjects.map((subject) => (
+        {subjects.map((subject) => {
+          const selected = sameSubjectValue(request.subject, subject.value);
+          const countLabel = selected && currentSubjectCount > 0 ? indexedDetail : `${subject.chapterCount} chapters · ${subject.bookCount} books`;
+
+          return (
           <button
             key={subject.value}
-            className={`min-h-32 rounded-[var(--radius-md)] border p-5 text-left transition ${request.subject === subject.value ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--paper)]"} ${subject.disabled ? "cursor-not-allowed opacity-45" : "hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"}`}
+            className={`min-h-32 rounded-[var(--radius-md)] border p-5 text-left transition ${selected ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--paper)]"} ${subject.disabled ? "cursor-not-allowed opacity-45" : "hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"}`}
             disabled={subject.disabled}
-            onClick={() => onUpdateRequest("subject", subject.value as PaperRequest["subject"])}
+            onClick={() => selectSubject(subject)}
             type="button"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-2)] text-lg font-black text-[var(--accent-deep)]">{subject.icon}</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-2)] text-lg font-black text-[var(--accent-deep)]">{subjectIcon(subject.value)}</span>
             <span className="mt-4 block font-display text-xl text-[var(--ink)]">{subject.label}</span>
-            <span className="mt-1 block text-xs text-[var(--ink-3)]">{subject.count}</span>
-            {subject.value === request.subject && dashboard?.counts.textbooks ? <span className="mt-1 block text-[11px] text-[var(--ink-3)]">{formatCount(dashboard.counts.textbooks)} total source books</span> : null}
+            <span className="mt-1 block text-xs text-[var(--ink-3)]">{countLabel}</span>
+            {selected && dashboard?.counts.textbooks ? <span className="mt-1 block text-[11px] text-[var(--ink-3)]">{formatCount(dashboard.counts.textbooks)} total source books</span> : null}
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -3415,6 +3490,25 @@ function formatDuration(minutes: number) {
 
 function formatCount(value: number) {
   return new Intl.NumberFormat("en-IN").format(value);
+}
+
+function sameSubjectValue(left: string | undefined, right: string | undefined) {
+  const normalize = (value: string | undefined) => {
+    const lowered = (value || "").trim().toLowerCase();
+    return lowered === "math" || lowered === "maths" || lowered === "mathematics" ? "maths" : lowered;
+  };
+
+  return normalize(left) === normalize(right);
+}
+
+function subjectIcon(subject: string) {
+  const value = subject.toLowerCase();
+  if (value.includes("math")) return "M";
+  if (value.includes("physics")) return "P";
+  if (value.includes("chemistry")) return "C";
+  if (value.includes("biology")) return "B";
+  if (value.includes("science")) return "S";
+  return subject.slice(0, 2).toUpperCase();
 }
 
 function formatShortDate(value?: string) {
