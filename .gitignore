@@ -20,3 +20,5 @@ backend-phoenix.log
 frontend/*.log
 frontend/.next/
 frontend/node_modules/
+
+extracted_books_*/

@@ -63,7 +63,7 @@ defmodule Qpg.Generation do
     })
 
     broadcast(run, "progress", %{
-      message: "Searching NCERT/PYQ and marking scheme context",
+      message: "Pulling dump source questions, chunks, skills, and PYQ format context",
       progress: 35,
       step: "retrieve"
     })

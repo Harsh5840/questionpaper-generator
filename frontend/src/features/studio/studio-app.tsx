@@ -1414,8 +1414,22 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
               {label}
             </button>
           ))}
-          {["Question Bank", "All sources"].map((label) => <button key={label} className="cursor-not-allowed rounded-full border border-[var(--border)] bg-[var(--paper)] px-4 py-2 text-sm text-[var(--ink-3)] opacity-60" disabled type="button">{label}</button>)}
         </div>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2">
+        <ChipMultiSelect
+          label="Books to pull from"
+          options={["NCERT", "RD Sharma", "OSWAL PYQ", "Most Likely Question Bank", "Selina"]}
+          selected={request.sourceBooks ?? []}
+          onChange={(values) => onUpdateRequest("sourceBooks", values)}
+        />
+        <ChipMultiSelect
+          label="Source categories"
+          options={["exercise", "pyq", "chapter_review", "example", "try_these", "mcq", "case_study"]}
+          selected={request.sourceCategories ?? []}
+          onChange={(values) => onUpdateRequest("sourceCategories", values)}
+        />
       </div>
 
       <div>
@@ -1446,9 +1460,32 @@ function StepFineTune({ onToggleQuestionType, onUpdateRequest, questionTypeOptio
           <div className="font-bold text-[var(--ink)]">
             You will generate a {request.totalMarks}-mark, {request.difficulty.toLowerCase()} paper across {request.chapterScope === "full_syllabus" ? "the full syllabus" : `${request.chapters.length} chapter${request.chapters.length === 1 ? "" : "s"}`}.
           </div>
-          <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}. {request.questionTypes.length} question types selected. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
+          <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}{request.sourceBooks?.length ? ` · ${request.sourceBooks.join(", ")}` : ""}. {request.questionTypes.length} question types selected. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
           <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Difficulty mix: {mix.easy}% easy · {mix.medium}% medium · {mix.hard}% hard.</div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ChipMultiSelect({ label, options, selected, onChange }: { label: string; options: string[]; selected: string[]; onChange: (values: string[]) => void }) {
+  return (
+    <div>
+      <FlowLabel>{label}</FlowLabel>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const isSelected = selected.includes(option);
+          return (
+            <button
+              key={option}
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold ${isSelected ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--accent-soft-2)]"}`}
+              onClick={() => onChange(isSelected ? selected.filter((item) => item !== option) : [...selected, option])}
+              type="button"
+            >
+              {option}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -2072,7 +2109,7 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-xs font-black uppercase tracking-wide text-[var(--on-surface)]">{chapter.name}</div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-[var(--on-surface-variant)]">NCERT exercises/examples and matching PYQs</div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-[var(--on-surface-variant)]">Dump-backed textbook questions, exercises, chunks, and matching PYQs</div>
                 </div>
                 {chapter.position !== undefined && <span className="rounded-full bg-[var(--surface-container-lowest)] px-2 py-1 text-[10px] font-black text-[var(--on-surface-variant)]">Ch {chapter.position}</span>}
               </div>
@@ -2113,6 +2150,17 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
 
 function SourceResultButton({ result, onImport }: { result: RetrievalResult; onImport: (result: RetrievalResult) => void }) {
   const sourceLabel = result.sourceType.replaceAll("_", " ").toUpperCase();
+  const bookLine = [result.bookTitle, result.publisher, result.bookType].filter(Boolean).join(" · ");
+  const metaLine = [
+    result.category,
+    result.sectionLabel || result.sectionTitle,
+    result.page ? `p. ${result.page}` : undefined,
+    result.questionType,
+    result.marks ? `${result.marks} marks` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const taxonomy = [...(result.skills ?? []), ...(result.formulas ?? [])].slice(0, 4);
 
   return (
     <button className="w-full rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3 text-left text-xs hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onImport(result)} type="button">
@@ -2120,11 +2168,19 @@ function SourceResultButton({ result, onImport }: { result: RetrievalResult; onI
         <span className="font-bold text-[var(--on-surface)]">{sourceLabel}</span>
         <span className="rounded-full bg-[var(--primary-fixed)] px-2 py-0.5 text-[10px] font-black text-[var(--primary)]">Import</span>
       </span>
+      {bookLine && <span className="mt-1 block text-[11px] font-black uppercase tracking-[0.08em] text-[var(--accent)]">{bookLine}</span>}
       <span className="mt-1 block font-semibold text-[var(--on-surface)]">{result.title}</span>
       <span className="mt-1 line-clamp-4 block text-[var(--on-surface-variant)]">{result.excerpt}</span>
-      <span className="mt-2 block text-[11px] font-bold text-[var(--primary)]">
-        {result.sectionLabel ?? result.questionType ?? "source"} · {result.marks ?? "?"} marks
-      </span>
+      {metaLine && <span className="mt-2 block text-[11px] font-bold text-[var(--primary)]">{metaLine}</span>}
+      {taxonomy.length > 0 && (
+        <span className="mt-2 flex flex-wrap gap-1">
+          {taxonomy.map((item) => (
+            <span key={item} className="rounded-full border border-[var(--outline-variant)] px-2 py-0.5 text-[10px] font-bold text-[var(--on-surface-variant)]">
+              {item}
+            </span>
+          ))}
+        </span>
+      )}
     </button>
   );
 }

@@ -4,6 +4,7 @@ defmodule QpgWeb.DashboardController do
   alias Ecto.Adapters.SQL
   alias Qpg.Logging
   alias Qpg.Repo
+  alias Qpg.Sources.DumpCorpus
 
   def show(conn, _params) do
     summary = %{
@@ -25,39 +26,53 @@ defmodule QpgWeb.DashboardController do
   end
 
   defp counts do
+    dump_counts = if DumpCorpus.available?(), do: DumpCorpus.corpus_counts(), else: %{}
+
     %{
       papers: scalar("SELECT count(*) FROM papers"),
       templates: scalar("SELECT count(*) FROM templates"),
       generation_runs: scalar("SELECT count(*) FROM generation_runs"),
       completed_runs: scalar("SELECT count(*) FROM generation_runs WHERE status = 'completed'"),
-      ncert_questions: scalar("SELECT count(*) FROM ncert_questions"),
-      pyq_questions: scalar("SELECT count(*) FROM pyq_questions"),
+      ncert_questions: dump_counts[:questions] || scalar("SELECT count(*) FROM ncert_questions"),
+      pyq_questions: dump_counts[:pyq_questions] || scalar("SELECT count(*) FROM pyq_questions"),
       question_bank_items: scalar("SELECT count(*) FROM question_bank_items"),
-      chapters: scalar("SELECT count(*) FROM chapters")
+      chapters: dump_counts[:chapters] || scalar("SELECT count(*) FROM chapters"),
+      textbooks: dump_counts[:textbooks] || 0,
+      chunks: dump_counts[:chunks] || 0,
+      skills: dump_counts[:skills] || 0,
+      formulas: dump_counts[:formulas] || 0
     }
   end
 
   defp recent_papers do
-    rows(
-      """
-      SELECT
-        p.id::text,
-        p.title,
-        p.board,
-        p.class_level,
-        p.subject,
-        p.status,
-        p.updated_at,
-        count(v.id)::int AS version_count,
-        COALESCE(max(v.marks_total), 0)::int AS marks_total
-      FROM papers p
-      LEFT JOIN paper_versions v ON v.paper_id = p.id
-      GROUP BY p.id
-      ORDER BY p.updated_at DESC
-      LIMIT 8
-      """
-    )
-    |> Enum.map(fn [id, title, board, class_level, subject, status, updated_at, version_count, marks_total] ->
+    rows("""
+    SELECT
+      p.id::text,
+      p.title,
+      p.board,
+      p.class_level,
+      p.subject,
+      p.status,
+      p.updated_at,
+      count(v.id)::int AS version_count,
+      COALESCE(max(v.marks_total), 0)::int AS marks_total
+    FROM papers p
+    LEFT JOIN paper_versions v ON v.paper_id = p.id
+    GROUP BY p.id
+    ORDER BY p.updated_at DESC
+    LIMIT 8
+    """)
+    |> Enum.map(fn [
+                     id,
+                     title,
+                     board,
+                     class_level,
+                     subject,
+                     status,
+                     updated_at,
+                     version_count,
+                     marks_total
+                   ] ->
       %{
         id: id,
         title: title,
@@ -73,14 +88,12 @@ defmodule QpgWeb.DashboardController do
   end
 
   defp recent_runs do
-    rows(
-      """
-      SELECT id::text, status, request, inserted_at
-      FROM generation_runs
-      ORDER BY inserted_at DESC
-      LIMIT 8
-      """
-    )
+    rows("""
+    SELECT id::text, status, request, inserted_at
+    FROM generation_runs
+    ORDER BY inserted_at DESC
+    LIMIT 8
+    """)
     |> Enum.map(fn [id, status, request, inserted_at] ->
       %{
         id: id,
@@ -92,14 +105,12 @@ defmodule QpgWeb.DashboardController do
   end
 
   defp templates do
-    rows(
-      """
-      SELECT id::text, name, description, payload, formatting, inferred_params, updated_at
-      FROM templates
-      ORDER BY updated_at DESC
-      LIMIT 8
-      """
-    )
+    rows("""
+    SELECT id::text, name, description, payload, formatting, inferred_params, updated_at
+    FROM templates
+    ORDER BY updated_at DESC
+    LIMIT 8
+    """)
     |> Enum.map(fn [id, name, description, payload, formatting, inferred_params, updated_at] ->
       %{
         id: id,
@@ -114,8 +125,10 @@ defmodule QpgWeb.DashboardController do
   end
 
   defp chapter_coverage do
-    rows(
-      """
+    if DumpCorpus.available?() do
+      DumpCorpus.chapter_coverage(30)
+    else
+      rows("""
       SELECT
         c.id::text,
         c.name,
@@ -135,27 +148,29 @@ defmodule QpgWeb.DashboardController do
       ) q ON q.chapter = lower(c.name)
       ORDER BY c.position NULLS LAST, c.name
       LIMIT 30
-      """
-    )
-    |> Enum.map(fn [id, name, position, ncert_count, pyq_count, bank_count] ->
-      total = ncert_count + pyq_count + bank_count
+      """)
+      |> Enum.map(fn [id, name, position, ncert_count, pyq_count, bank_count] ->
+        total = ncert_count + pyq_count + bank_count
 
-      %{
-        id: id,
-        name: name,
-        position: position,
-        ncert_count: ncert_count,
-        pyq_count: pyq_count,
-        bank_count: bank_count,
-        total_sources: total,
-        coverage_score: min(100, ncert_count * 2 + pyq_count * 8 + bank_count * 4)
-      }
-    end)
+        %{
+          id: id,
+          name: name,
+          position: position,
+          ncert_count: ncert_count,
+          pyq_count: pyq_count,
+          bank_count: bank_count,
+          total_sources: total,
+          coverage_score: min(100, ncert_count * 2 + pyq_count * 8 + bank_count * 4)
+        }
+      end)
+    end
   end
 
   defp difficulty_distribution do
-    rows(
-      """
+    if DumpCorpus.available?() do
+      DumpCorpus.difficulty_distribution()
+    else
+      rows("""
       SELECT difficulty, count(*)::int
       FROM (
         SELECT difficulty FROM ncert_questions
@@ -167,17 +182,21 @@ defmodule QpgWeb.DashboardController do
       WHERE difficulty IS NOT NULL AND difficulty <> ''
       GROUP BY difficulty
       ORDER BY difficulty
-      """
-    )
-    |> Enum.map(fn [difficulty, count] -> %{difficulty: difficulty, count: count} end)
+      """)
+      |> Enum.map(fn [difficulty, count] -> %{difficulty: difficulty, count: count} end)
+    end
   end
 
   defp source_mix do
-    [
-      %{source: "NCERT", count: scalar("SELECT count(*) FROM ncert_questions")},
-      %{source: "PYQ", count: scalar("SELECT count(*) FROM pyq_questions")},
-      %{source: "Question Bank", count: scalar("SELECT count(*) FROM question_bank_items")}
-    ]
+    if DumpCorpus.available?() do
+      DumpCorpus.source_mix()
+    else
+      [
+        %{source: "NCERT", count: scalar("SELECT count(*) FROM ncert_questions")},
+        %{source: "PYQ", count: scalar("SELECT count(*) FROM pyq_questions")},
+        %{source: "Question Bank", count: scalar("SELECT count(*) FROM question_bank_items")}
+      ]
+    end
   end
 
   defp scalar(sql) do

@@ -17,6 +17,12 @@ export type PaperRequest = {
   variantCount: number;
   freePrompt?: string;
   template?: PaperTemplate | null;
+  sourceBooks?: string[];
+  sourceCategories?: string[];
+  directSourceMix?: {
+    dumpDirect: number;
+    aiFromDump: number;
+  };
 };
 
 export type DifficultyMix = {
@@ -214,6 +220,7 @@ export type RetrievalResult = {
   title: string;
   excerpt: string;
   citation?: string;
+  citations?: string[];
   marks?: number;
   difficulty?: string;
   questionType?: string;
@@ -221,6 +228,19 @@ export type RetrievalResult = {
   topic?: string;
   sectionLabel?: string;
   sectionType?: string;
+  bookId?: string;
+  bookTitle?: string;
+  publisher?: string;
+  bookType?: string;
+  chapterId?: string;
+  sectionTitle?: string;
+  page?: number;
+  questionId?: string;
+  category?: string;
+  sourceLabel?: string;
+  orderIndex?: number;
+  skills?: string[];
+  formulas?: string[];
 };
 
 export type RetrievalSection = {

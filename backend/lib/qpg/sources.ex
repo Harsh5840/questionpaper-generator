@@ -8,6 +8,7 @@ defmodule Qpg.Sources do
   alias Qpg.QuestionBank
   alias Qpg.QuestionBank.QuestionBankItem
   alias Qpg.Repo
+  alias Qpg.Sources.DumpCorpus
   alias Qpg.Sources.Ncert.Import
 
   def ingest_ncert_path(path) do
@@ -18,118 +19,138 @@ defmodule Qpg.Sources do
   def list_chapters(filters) do
     Logging.info("sources.catalog.list_chapters.started", %{filters: filters})
 
-    case list_catalog_chapters(filters) do
-      [] ->
-        Logging.warning("sources.catalog.list_chapters.catalog_empty_using_source_documents", %{
-          filters: filters
-        })
+    cond do
+      DumpCorpus.available?() ->
+        chapters = DumpCorpus.list_chapters(filters)
 
-        list_source_document_chapters(filters)
-
-      chapters ->
-        Logging.info("sources.catalog.list_chapters.completed", %{
+        Logging.info("sources.catalog.list_chapters.dump_completed", %{
           count: length(chapters),
           chapters: chapters
         })
 
         chapters
+
+      true ->
+        case list_catalog_chapters(filters) do
+          [] ->
+            Logging.warning(
+              "sources.catalog.list_chapters.catalog_empty_using_source_documents",
+              %{
+                filters: filters
+              }
+            )
+
+            list_source_document_chapters(filters)
+
+          chapters ->
+            Logging.info("sources.catalog.list_chapters.completed", %{
+              count: length(chapters),
+              chapters: chapters
+            })
+
+            chapters
+        end
     end
   end
 
   def catalog_context(filters) do
     Logging.debug("sources.catalog_context.started", %{filters: filters})
 
-    params = [
-      blank_to_nil(filters["board"]),
-      blank_to_nil(filters["class_level"]),
-      blank_to_nil(filters["subject"]),
-      context_chapters(filters)
-    ]
+    if DumpCorpus.available?() do
+      DumpCorpus.catalog_context(filters)
+    else
+      params = [
+        blank_to_nil(filters["board"]),
+        blank_to_nil(filters["class_level"]),
+        blank_to_nil(filters["subject"]),
+        context_chapters(filters)
+      ]
 
-    %Postgrex.Result{rows: rows} =
-      SQL.query!(
-        Repo,
-        """
-        SELECT
-          b.id::text,
-          b.code,
-          b.name,
-          sc.id::text,
-          sc.level,
-          sc.name,
-          s.id::text,
-          s.name,
-          c.id::text,
-          c.name,
-          c.position,
-          COALESCE(
-            jsonb_agg(
-              jsonb_build_object(
-                'id', cs.id::text,
-                'name', cs.name,
-                'section_type', cs.section_type,
-                'position', cs.position,
-                'metadata', cs.metadata
-              )
-              ORDER BY cs.position NULLS LAST, cs.name
-            ) FILTER (WHERE cs.id IS NOT NULL),
-            '[]'::jsonb
-          ) AS sections
-        FROM boards b
-        JOIN school_classes sc ON sc.board_id = b.id
-        JOIN subjects s ON s.school_class_id = sc.id
-        JOIN chapters c ON c.subject_id = s.id
-        LEFT JOIN chapter_sections cs ON cs.chapter_id = c.id
-        WHERE ($1::text IS NULL OR lower(b.code) = lower($1) OR lower(b.name) = lower($1))
-          AND ($2::text IS NULL OR sc.level = $2)
-          AND ($3::text IS NULL OR lower(s.name) = lower($3))
-          AND (cardinality($4::text[]) = 0 OR lower(c.name) = ANY(SELECT lower(unnest($4::text[]))))
-        GROUP BY b.id, b.code, b.name, sc.id, sc.level, sc.name, s.id, s.name, c.id, c.name, c.position
-        ORDER BY c.position NULLS LAST, c.name ASC
-        """,
-        params
-      )
+      %Postgrex.Result{rows: rows} =
+        SQL.query!(
+          Repo,
+          """
+          SELECT
+            b.id::text,
+            b.code,
+            b.name,
+            sc.id::text,
+            sc.level,
+            sc.name,
+            s.id::text,
+            s.name,
+            c.id::text,
+            c.name,
+            c.position,
+            COALESCE(
+              jsonb_agg(
+                jsonb_build_object(
+                  'id', cs.id::text,
+                  'name', cs.name,
+                  'section_type', cs.section_type,
+                  'position', cs.position,
+                  'metadata', cs.metadata
+                )
+                ORDER BY cs.position NULLS LAST, cs.name
+              ) FILTER (WHERE cs.id IS NOT NULL),
+              '[]'::jsonb
+            ) AS sections
+          FROM boards b
+          JOIN school_classes sc ON sc.board_id = b.id
+          JOIN subjects s ON s.school_class_id = sc.id
+          JOIN chapters c ON c.subject_id = s.id
+          LEFT JOIN chapter_sections cs ON cs.chapter_id = c.id
+          WHERE ($1::text IS NULL OR lower(b.code) = lower($1) OR lower(b.name) = lower($1))
+            AND ($2::text IS NULL OR sc.level = $2)
+            AND ($3::text IS NULL OR lower(s.name) = lower($3))
+            AND (cardinality($4::text[]) = 0 OR lower(c.name) = ANY(SELECT lower(unnest($4::text[]))))
+          GROUP BY b.id, b.code, b.name, sc.id, sc.level, sc.name, s.id, s.name, c.id, c.name, c.position
+          ORDER BY c.position NULLS LAST, c.name ASC
+          """,
+          params
+        )
 
-    chapters =
-      Enum.map(rows, fn [
-                          board_id,
-                          board_code,
-                          board_name,
-                          class_id,
-                          class_level,
-                          class_name,
-                          subject_id,
-                          subject_name,
-                          chapter_id,
-                          chapter_name,
-                          chapter_position,
-                          sections
-                        ] ->
-        %{
-          id: chapter_id,
-          name: chapter_name,
-          position: chapter_position,
-          sections: normalize_json_value(sections),
-          subject: %{id: subject_id, name: subject_name},
-          class: %{id: class_id, level: class_level, name: class_name},
-          board: %{id: board_id, code: board_code, name: board_name}
-        }
-      end)
+      chapters =
+        Enum.map(rows, fn [
+                            board_id,
+                            board_code,
+                            board_name,
+                            class_id,
+                            class_level,
+                            class_name,
+                            subject_id,
+                            subject_name,
+                            chapter_id,
+                            chapter_name,
+                            chapter_position,
+                            sections
+                          ] ->
+          %{
+            id: chapter_id,
+            name: chapter_name,
+            position: chapter_position,
+            sections: normalize_json_value(sections),
+            subject: %{id: subject_id, name: subject_name},
+            class: %{id: class_id, level: class_level, name: class_name},
+            board: %{id: board_id, code: board_code, name: board_name}
+          }
+        end)
 
-    context = %{
-      board: first_in(chapters, [:board]),
-      class: first_in(chapters, [:class]),
-      subject: first_in(chapters, [:subject]),
-      chapters: chapters,
-      chapter_count: length(chapters)
-    }
+      context = %{
+        board: first_in(chapters, [:board]),
+        class: first_in(chapters, [:class]),
+        subject: first_in(chapters, [:subject]),
+        chapters: chapters,
+        chapter_count: length(chapters)
+      }
 
-    Logging.debug("sources.catalog_context.completed", %{
-      filters: filters,
-      chapter_count: context.chapter_count
-    })
+      Logging.debug("sources.catalog_context.completed", %{
+        filters: filters,
+        chapter_count: context.chapter_count
+      })
 
-    context
+      context
+    end
   rescue
     error ->
       Logging.error("sources.catalog_context.failed", %{
@@ -409,7 +430,9 @@ defmodule Qpg.Sources do
       limit: limit
     })
 
-    search_source_chunks("ncert", filters, query, limit)
+    if DumpCorpus.available?(),
+      do: DumpCorpus.search_chunks(:ncert, filters, query, limit),
+      else: search_source_chunks("ncert", filters, query, limit)
   end
 
   def search_pyq_chunks(filters, query, limit) do
@@ -419,54 +442,60 @@ defmodule Qpg.Sources do
       limit: limit
     })
 
-    search_source_chunks("pyq", filters, query, limit)
+    if DumpCorpus.available?(),
+      do: DumpCorpus.search_chunks(:pyq, filters, query, limit),
+      else: search_source_chunks("pyq", filters, query, limit)
   end
 
   def marking_scheme_context(filters) do
     Logging.info("sources.marking_scheme_context.started", %{filters: filters})
 
-    params = [
-      blank_to_nil(filters["board"]),
-      blank_to_nil(filters["class_level"]),
-      blank_to_nil(filters["subject"])
-    ]
+    if DumpCorpus.available?() do
+      DumpCorpus.marking_scheme_context(filters)
+    else
+      params = [
+        blank_to_nil(filters["board"]),
+        blank_to_nil(filters["class_level"]),
+        blank_to_nil(filters["subject"])
+      ]
 
-    %Postgrex.Result{rows: rows} =
-      SQL.query!(
-        Repo,
-        """
-        SELECT d.title, c.content
-        FROM source_chunks c
-        JOIN source_documents d ON d.id = c.source_document_id
-        WHERE lower(d.source_type) = 'pyq'
-          AND ($1::text IS NULL OR lower(d.board) = lower($1))
-          AND ($2::text IS NULL OR d.class_level = $2)
-          AND ($3::text IS NULL OR lower(d.subject) = lower($3))
-          AND (
-            c.content ILIKE '%General Instructions%'
-            OR c.content ILIKE '%SECTION A%'
-            OR c.content ILIKE '%Time allowed%'
-            OR c.content ILIKE '%Maximum Marks%'
-          )
-        ORDER BY d.title ASC
-        LIMIT 8
-        """,
-        params
-      )
+      %Postgrex.Result{rows: rows} =
+        SQL.query!(
+          Repo,
+          """
+          SELECT d.title, c.content
+          FROM source_chunks c
+          JOIN source_documents d ON d.id = c.source_document_id
+          WHERE lower(d.source_type) = 'pyq'
+            AND ($1::text IS NULL OR lower(d.board) = lower($1))
+            AND ($2::text IS NULL OR d.class_level = $2)
+            AND ($3::text IS NULL OR lower(d.subject) = lower($3))
+            AND (
+              c.content ILIKE '%General Instructions%'
+              OR c.content ILIKE '%SECTION A%'
+              OR c.content ILIKE '%Time allowed%'
+              OR c.content ILIKE '%Maximum Marks%'
+            )
+          ORDER BY d.title ASC
+          LIMIT 8
+          """,
+          params
+        )
 
-    result =
-      rows
-      |> Enum.map(fn [title, content] -> {title, content} end)
-      |> build_marking_scheme(filters)
+      result =
+        rows
+        |> Enum.map(fn [title, content] -> {title, content} end)
+        |> build_marking_scheme(filters)
 
-    Logging.info("sources.marking_scheme_context.completed", %{
-      filters: filters,
-      found: result[:found],
-      section_count: result |> Map.get(:sections, []) |> length(),
-      maximum_marks: result[:maximum_marks]
-    })
+      Logging.info("sources.marking_scheme_context.completed", %{
+        filters: filters,
+        found: result[:found],
+        section_count: result |> Map.get(:sections, []) |> length(),
+        maximum_marks: result[:maximum_marks]
+      })
 
-    result
+      result
+    end
   rescue
     error ->
       Logging.error("sources.marking_scheme_context.failed", %{
@@ -484,41 +513,47 @@ defmodule Qpg.Sources do
   def retrieval_preview(filters) do
     Logging.info("sources.retrieval_preview.started", %{filters: filters})
 
-    query = retrieval_query(filters)
-    ncert_questions = search_ncert_questions(filters, 20)
-    ncert = search_ncert_chunks(filters, query, max(0, 8 - length(ncert_questions)))
-    pyq_questions = search_pyq_questions(filters, 8)
-    pyq_chunks = search_pyq_chunks(filters, query, max(0, 8 - length(pyq_questions)))
-    question_bank = QuestionBank.result_blocks(filters, 8)
-    marking_scheme = marking_scheme_context(filters)
-    section_sources = section_sources(filters, ncert_questions, pyq_questions)
+    if DumpCorpus.available?() do
+      preview = DumpCorpus.retrieval_preview(filters)
+      record_retrieval_preview(filters, preview)
+      preview
+    else
+      query = retrieval_query(filters)
+      ncert_questions = search_ncert_questions(filters, 20)
+      ncert = search_ncert_chunks(filters, query, max(0, 8 - length(ncert_questions)))
+      pyq_questions = search_pyq_questions(filters, 8)
+      pyq_chunks = search_pyq_chunks(filters, query, max(0, 8 - length(pyq_questions)))
+      question_bank = QuestionBank.result_blocks(filters, 8)
+      marking_scheme = marking_scheme_context(filters)
+      section_sources = section_sources(filters, ncert_questions, pyq_questions)
 
-    preview = %{
-      catalog: catalog_context(filters),
-      ncert: Enum.map(ncert_questions ++ ncert, &preview_result/1),
-      pyq: Enum.map(pyq_questions ++ pyq_chunks, &preview_result/1),
-      question_bank: Enum.map(question_bank, &preview_result/1),
-      marking_scheme: marking_scheme,
-      section_sources: section_sources,
-      warnings:
-        retrieval_warnings(
-          ncert_questions ++ ncert,
-          pyq_questions ++ pyq_chunks,
-          question_bank,
-          marking_scheme
-        )
-    }
+      preview = %{
+        catalog: catalog_context(filters),
+        ncert: Enum.map(ncert_questions ++ ncert, &preview_result/1),
+        pyq: Enum.map(pyq_questions ++ pyq_chunks, &preview_result/1),
+        question_bank: Enum.map(question_bank, &preview_result/1),
+        marking_scheme: marking_scheme,
+        section_sources: section_sources,
+        warnings:
+          retrieval_warnings(
+            ncert_questions ++ ncert,
+            pyq_questions ++ pyq_chunks,
+            question_bank,
+            marking_scheme
+          )
+      }
 
-    record_retrieval_preview(filters, preview)
+      record_retrieval_preview(filters, preview)
 
-    Logging.info("sources.retrieval_preview.completed", %{
-      ncert_count: length(preview.ncert),
-      pyq_count: length(preview.pyq),
-      question_bank_count: length(preview.question_bank),
-      warning_count: length(preview.warnings)
-    })
+      Logging.info("sources.retrieval_preview.completed", %{
+        ncert_count: length(preview.ncert),
+        pyq_count: length(preview.pyq),
+        question_bank_count: length(preview.question_bank),
+        warning_count: length(preview.warnings)
+      })
 
-    preview
+      preview
+    end
   end
 
   def import_question_from_source(source_type, id, request \\ %{}) do
@@ -530,13 +565,47 @@ defmodule Qpg.Sources do
 
     result =
       case source_type do
-        "question_bank" -> import_question_bank_item(id)
-        "ncert_question" -> import_ncert_question(id)
-        "pyq_question" -> import_pyq_question(id)
-        "pyq" -> import_source_chunk(id, "pyq")
-        "ncert" -> import_source_chunk(id, "ncert")
-        "source_chunk" -> import_source_chunk(id, nil)
-        _ -> {:error, :unsupported_source_type}
+        "dump_question" ->
+          DumpCorpus.import_question(id)
+
+        "dump_pyq_question" ->
+          DumpCorpus.import_question(id)
+
+        "dump_chunk" ->
+          DumpCorpus.import_chunk(id)
+
+        "dump_pyq_chunk" ->
+          DumpCorpus.import_chunk(id)
+
+        "ingested_question" ->
+          DumpCorpus.import_question(id)
+
+        "question_bank" ->
+          import_question_bank_item(id)
+
+        "ncert_question" ->
+          if(DumpCorpus.available?(),
+            do: DumpCorpus.import_question(id),
+            else: import_ncert_question(id)
+          )
+
+        "pyq_question" ->
+          if(DumpCorpus.available?(),
+            do: DumpCorpus.import_question(id),
+            else: import_pyq_question(id)
+          )
+
+        "pyq" ->
+          import_source_chunk(id, "pyq")
+
+        "ncert" ->
+          import_source_chunk(id, "ncert")
+
+        "source_chunk" ->
+          import_source_chunk(id, nil)
+
+        _ ->
+          {:error, :unsupported_source_type}
       end
 
     case result do

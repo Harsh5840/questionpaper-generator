@@ -48,6 +48,37 @@ The app intentionally has no local fake-paper generator. If the backend, AI
 provider, or owned source corpus is unavailable, generation/refinement fails
 visibly instead of silently returning demo content.
 
+## Dump-First Source Corpus
+
+The preferred local corpus is the extracted textbook dump. Keep the dump outside
+git under `extracted_books_20260528/`; it is ignored by `.gitignore`.
+
+```powershell
+docker compose up -d
+cd backend
+mix deps.get
+mix ecto.migrate
+mix qpg.import_dump_csv ../extracted_books_20260528/csv --reset
+```
+
+The import task loads dump-native source tables such as `ingested_textbooks`,
+`ingested_chapters`, `ingested_subtopics`, `chapter_chunks`,
+`ingested_questions`, `skills`, and `formulas`. Embeddings from the dump are
+stored as `pgvector` values with `vector(3072)`.
+
+Source pulling now prefers the dump first. Existing APIs still work, but they
+read from the dump when available:
+
+- `GET /api/catalog/chapters`
+- `GET /api/retrieval/preview`
+- `POST /api/questions/import-from-source`
+- dashboard corpus/coverage counts
+
+The frontend source panel can filter by book/publisher/category, including
+NCERT, RD Sharma, OSWAL PYQ, Selina, Most Likely Question Bank, exercises, PYQs,
+examples, MCQs, and case studies. Gemini remains secondary for rebalancing,
+formatting, rewriting, and filling gaps with dump citations.
+
 ## AI Routing and Parallel Generation
 
 The backend includes a model-routing seam based on the decision tree:

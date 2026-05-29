@@ -32,6 +32,7 @@ defmodule Qpg.MixProject do
       {:oban, "~> 2.19"},
       {:finch, "~> 0.19"},
       {:jason, "~> 1.4"},
+      {:nimble_csv, "~> 1.2"},
       {:plug_cowboy, "~> 2.7"},
       {:cors_plug, "~> 3.0"}
     ]
