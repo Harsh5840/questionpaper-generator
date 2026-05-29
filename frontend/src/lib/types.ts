@@ -1,6 +1,6 @@
 export type PaperRequest = {
   board: "CBSE" | "ICSE";
-  classLevel: "9" | "10" | "11" | "12";
+  classLevel: "6" | "7" | "8" | "9" | "10" | "11" | "12";
   subject: "Maths" | "Science" | "Physics" | "Chemistry" | "Biology";
   chapter: string;
   chapterScope: "single" | "multiple" | "full_syllabus";
@@ -316,6 +316,10 @@ export type DashboardSummary = {
     pyqQuestions: number;
     questionBankItems: number;
     chapters: number;
+    textbooks: number;
+    chunks: number;
+    skills: number;
+    formulas: number;
   };
   recentPapers: {
     id: string;

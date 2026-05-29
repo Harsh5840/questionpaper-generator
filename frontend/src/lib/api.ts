@@ -819,6 +819,10 @@ function normalizeDashboard(raw: unknown): DashboardSummary {
       pyqQuestions: Number(counts.pyq_questions ?? counts.pyqQuestions ?? 0),
       questionBankItems: Number(counts.question_bank_items ?? counts.questionBankItems ?? 0),
       chapters: Number(counts.chapters ?? 0),
+      textbooks: Number(counts.textbooks ?? 0),
+      chunks: Number(counts.chunks ?? 0),
+      skills: Number(counts.skills ?? 0),
+      formulas: Number(counts.formulas ?? 0),
     },
     recentPapers: normalizeDashboardArray(record.recent_papers ?? record.recentPapers).map((item) => ({
       id: String(item.id ?? ""),

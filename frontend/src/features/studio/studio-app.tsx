@@ -725,6 +725,7 @@ export function StudioApp() {
       {createFlow === "params" && (
         <GuidedSetupModal
           availableChapters={availableChapters}
+          dashboard={dashboard}
           onClose={closeCreateFlow}
           onGenerate={generateFromCreateFlow}
           onStepChange={setWizardStep}
@@ -1133,6 +1134,7 @@ function CreatePathCard({
 
 function GuidedSetupModal({
   availableChapters,
+  dashboard,
   onClose,
   onGenerate,
   onStepChange,
@@ -1143,6 +1145,7 @@ function GuidedSetupModal({
   step,
 }: {
   availableChapters: string[];
+  dashboard: DashboardSummary | null;
   onClose: () => void;
   onGenerate: () => void;
   onStepChange: (step: number) => void;
@@ -1173,8 +1176,8 @@ function GuidedSetupModal({
         />
 
         <div className="min-h-0 flex-1 overflow-y-auto px-16 py-8">
-          {step === 0 && <StepBoardClass onUpdateRequest={onUpdateRequest} request={request} />}
-          {step === 1 && <StepSubject onUpdateRequest={onUpdateRequest} request={request} />}
+          {step === 0 && <StepBoardClass dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
+          {step === 1 && <StepSubject availableChapters={availableChapters} dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 2 && <StepChapters availableChapters={availableChapters} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 3 && <StepFineTune onToggleQuestionType={onToggleQuestionType} onUpdateRequest={onUpdateRequest} questionTypeOptions={questionTypeOptions} request={request} />}
         </div>
@@ -1237,10 +1240,22 @@ function CreateFlowFooter({ leftText, onBack, onNext, primaryLabel, showBack, sp
   );
 }
 
-function StepBoardClass({ onUpdateRequest, request }: { onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void; request: PaperRequest }) {
+function StepBoardClass({
+  dashboard,
+  onUpdateRequest,
+  request,
+}: {
+  dashboard: DashboardSummary | null;
+  onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
+  request: PaperRequest;
+}) {
+  const counts = dashboard?.counts;
+  const cbseDetail = counts?.textbooks
+    ? `${formatCount(counts.textbooks)} books · ${formatCount(counts.ncertQuestions)} questions · ${formatCount(counts.pyqQuestions)} PYQs`
+    : "Dump corpus loading";
   const boardOptions = [
-    { value: "CBSE", label: "CBSE", detail: "326 NCERT items · 429 PYQs indexed", disabled: false },
-    { value: "ICSE", label: "ICSE", detail: "Schema ready · corpus pending", disabled: true },
+    { value: "CBSE", label: "CBSE", detail: cbseDetail, disabled: false },
+    { value: "ICSE", label: "ICSE", detail: "Selina content available as source material · exam flow later", disabled: true },
     { value: "IB", label: "IB", detail: "Coming soon", disabled: true },
     { value: "State Board", label: "State Board", detail: "Coming soon", disabled: true },
     { value: "IGCSE", label: "IGCSE", detail: "Coming soon", disabled: true },
@@ -1276,12 +1291,10 @@ function StepBoardClass({ onUpdateRequest, request }: { onUpdateRequest: <K exte
         <FlowLabel>Class</FlowLabel>
         <div className="grid grid-cols-2 gap-2.5">
           {classOptions.map((classLevel) => {
-            const supported = ["9", "10", "11", "12"].includes(classLevel);
             return (
               <button
                 key={classLevel}
-                className={`h-11 rounded-[var(--radius-md)] border text-sm transition ${request.classLevel === classLevel ? "border-[var(--accent)] bg-[var(--accent-soft)] font-black text-[var(--ink)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink)]"} ${supported ? "hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]" : "cursor-not-allowed opacity-45"}`}
-                disabled={!supported}
+                className={`h-11 rounded-[var(--radius-md)] border text-sm transition ${request.classLevel === classLevel ? "border-[var(--accent)] bg-[var(--accent-soft)] font-black text-[var(--ink)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"}`}
                 onClick={() => onUpdateRequest("classLevel", classLevel as PaperRequest["classLevel"])}
                 type="button"
               >
@@ -1295,15 +1308,27 @@ function StepBoardClass({ onUpdateRequest, request }: { onUpdateRequest: <K exte
   );
 }
 
-function StepSubject({ onUpdateRequest, request }: { onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void; request: PaperRequest }) {
+function StepSubject({
+  availableChapters,
+  dashboard,
+  onUpdateRequest,
+  request,
+}: {
+  availableChapters: string[];
+  dashboard: DashboardSummary | null;
+  onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
+  request: PaperRequest;
+}) {
+  const currentSubjectCount = availableChapters.length;
+  const indexedDetail = currentSubjectCount > 0 ? `${currentSubjectCount} chapters indexed` : "Dump-backed corpus";
   const subjects = [
-    { value: "Maths", label: "Mathematics", count: "12 chapters indexed", icon: "M", disabled: false },
-    { value: "Science", label: "Science", count: "8 chapters indexed", icon: "S", disabled: false },
+    { value: "Maths", label: "Mathematics", count: request.subject === "Maths" ? indexedDetail : "Classes 6-12 indexed", icon: "M", disabled: false },
+    { value: "Science", label: "Science", count: request.subject === "Science" ? indexedDetail : "Classes 6-10 indexed", icon: "S", disabled: false },
     { value: "English", label: "English", count: "Coming soon", icon: "E", disabled: true },
     { value: "Social Studies", label: "Social Studies", count: "Coming soon", icon: "SS", disabled: true },
-    { value: "Physics", label: "Physics", count: "4 chapters indexed", icon: "P", disabled: false },
-    { value: "Chemistry", label: "Chemistry", count: "4 chapters indexed", icon: "C", disabled: false },
-    { value: "Biology", label: "Biology", count: "4 chapters indexed", icon: "B", disabled: false },
+    { value: "Physics", label: "Physics", count: request.subject === "Physics" ? indexedDetail : "Class 10+ indexed", icon: "P", disabled: false },
+    { value: "Chemistry", label: "Chemistry", count: request.subject === "Chemistry" ? indexedDetail : "Class 10+ indexed", icon: "C", disabled: false },
+    { value: "Biology", label: "Biology", count: request.subject === "Biology" ? indexedDetail : "Class 10+ indexed", icon: "B", disabled: false },
   ];
 
   return (
@@ -1321,6 +1346,7 @@ function StepSubject({ onUpdateRequest, request }: { onUpdateRequest: <K extends
             <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-2)] text-lg font-black text-[var(--accent-deep)]">{subject.icon}</span>
             <span className="mt-4 block font-display text-xl text-[var(--ink)]">{subject.label}</span>
             <span className="mt-1 block text-xs text-[var(--ink-3)]">{subject.count}</span>
+            {subject.value === request.subject && dashboard?.counts.textbooks ? <span className="mt-1 block text-[11px] text-[var(--ink-3)]">{formatCount(dashboard.counts.textbooks)} total source books</span> : null}
           </button>
         ))}
       </div>
@@ -3181,7 +3207,7 @@ function normalizeTemplateParams(raw: Record<string, unknown>): Partial<PaperReq
   const durationMinutes = raw.durationMinutes ?? raw.duration_minutes;
 
   if (board === "CBSE" || board === "ICSE") params.board = board;
-  if (["9", "10", "11", "12"].includes(String(classLevel))) params.classLevel = String(classLevel) as PaperRequest["classLevel"];
+  if (["6", "7", "8", "9", "10", "11", "12"].includes(String(classLevel))) params.classLevel = String(classLevel) as PaperRequest["classLevel"];
   if (["Maths", "Science", "Physics", "Chemistry", "Biology"].includes(String(subject))) params.subject = String(subject) as PaperRequest["subject"];
   if (totalMarks !== undefined) params.totalMarks = Number(totalMarks);
   if (durationMinutes !== undefined) params.durationMinutes = Number(durationMinutes);
@@ -3262,6 +3288,10 @@ function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
   return hours > 0 ? `${hours} hour${hours === 1 ? "" : "s"} ${remainder} minutes` : `${minutes} minutes`;
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat("en-IN").format(value);
 }
 
 function formatShortDate(value?: string) {
