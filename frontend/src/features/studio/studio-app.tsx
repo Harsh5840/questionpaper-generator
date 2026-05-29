@@ -2868,6 +2868,17 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
     };
   }
 
+  const similarOrChoice = parseGenerateSimilarOrChoiceCommand(normalizedInstruction);
+  if (similarOrChoice) {
+    const target = refs.find((ref) => ref.number === similarOrChoice.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${similarOrChoice.questionNumber} to add OR.` };
+
+    return {
+      handled: false,
+      providerInstruction: buildSimilarOrChoiceInstruction(target, normalizedInstruction),
+    };
+  }
+
   const moveToOr = parseMoveQuestionToOrCommand(normalizedInstruction);
   if (moveToOr) {
     const source = refs.find((ref) => ref.number === moveToOr.source);
@@ -3015,6 +3026,24 @@ function buildTargetedRefinementInstruction(paper: Paper, instruction: string) {
   ].join("\n");
 }
 
+function buildSimilarOrChoiceInstruction(target: QuestionRef, instruction: string) {
+  return [
+    instruction,
+    "",
+    `Target global question: Q${target.number}`,
+    `Target question id: ${target.question.id}`,
+    `Target section: ${target.section.title}`,
+    `Main question stem: ${target.question.text}`,
+    `Current marks/type/difficulty/topic: ${target.question.marks} marks, ${target.question.type}, ${target.question.difficulty}, ${target.question.topic || "same topic"}`,
+    "Create a genuinely different but same-topic OR internal choice for this target question.",
+    "Put the new question only in the target question's optionalChoice field.",
+    "Do not move, delete, duplicate, or replace the main question.",
+    "Do not set the main question itself as its own optionalChoice.",
+    "Keep the counted marks unchanged; the OR branch should carry the same marks as the target question.",
+    "Preserve structured fields: MCQ options belong in options[], subparts in subparts[], and answers in answer/answerRichText.",
+  ].join("\n");
+}
+
 function getQuestionRefs(paper: Paper): QuestionRef[] {
   const refs: QuestionRef[] = [];
   let number = 1;
@@ -3032,11 +3061,24 @@ function getQuestionRefs(paper: Paper): QuestionRef[] {
 function parseMoveQuestionToOrCommand(instruction: string) {
   const lower = instruction.toLowerCase();
   if (!/\b(move|put|add|shift)\b/.test(lower) || !/\bor\b/.test(lower)) return null;
+  if (/\b(similar|same topic|different|generate|new)\b/.test(lower)) return null;
+  if (!/\b(?:q|ques|question|quesion)\s*\.?\s*\d+\b/.test(lower)) return null;
 
   const numbers = questionNumbersFromText(lower);
   if (numbers.length < 2) return null;
 
   return { source: numbers[0], target: numbers[1] };
+}
+
+function parseGenerateSimilarOrChoiceCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\bor\b|internal choice/.test(lower)) return null;
+  if (!/\b(similar|same topic|different|generate|new)\b/.test(lower)) return null;
+  if (!/\b(add|create|insert|generate|make)\b/.test(lower)) return null;
+
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  return { questionNumber };
 }
 
 function parseAddPartCommand(instruction: string) {
@@ -3052,7 +3094,7 @@ function parseAddSubpartChoiceCommand(instruction: string) {
   if (!/\bor\b/.test(lower) || !/\b(part|subpart|sub-question|sub question)\b/.test(lower)) return null;
 
   const questionNumber = questionNumbersFromText(lower)[0];
-  const label = lower.match(/\bpart\s*\(?([a-z])\)?/)?.[1] ?? lower.match(/\(([a-z])\)/)?.[1];
+  const label = partLabelFromText(lower);
   if (!questionNumber || !label) return null;
   return { questionNumber, label };
 }
@@ -3060,8 +3102,14 @@ function parseAddSubpartChoiceCommand(instruction: string) {
 function parseAddWholeQuestionChoiceCommand(instruction: string) {
   const lower = instruction.toLowerCase();
   if (!/\b(add|create|insert)\b/.test(lower) || !/\bor\b|internal choice/.test(lower)) return null;
-  if (/\b(part|subpart|sub-question|sub question)\b/.test(lower)) return null;
+  if (/\b(part|subpart|sub-question|sub question)\b/.test(lower) && partLabelFromText(lower)) return null;
   return questionNumbersFromText(lower)[0] ?? null;
+}
+
+function partLabelFromText(text: string) {
+  const partMatch = text.match(/\bpart\s*(?:\(([a-z])\)|([a-z])\b)/);
+  const subpartMatch = text.match(/\bsubpart\s*(?:\(([a-z])\)|([a-z])\b)/);
+  return partMatch?.[1] ?? partMatch?.[2] ?? subpartMatch?.[1] ?? subpartMatch?.[2] ?? text.match(/\(([a-z])\)/)?.[1];
 }
 
 function parseQuestionTarget(instruction: string, verbs: string[]) {
