@@ -52,6 +52,7 @@ import {
   GenerationStatus,
   Paper,
   PaperQuestion,
+  PaperQuestionOption,
   PaperSection,
   PaperRequest,
   PaperSubpart,
@@ -411,12 +412,30 @@ export function StudioApp() {
       return;
     }
 
+    if (isImageImportCommand(instruction)) {
+      const section = findSectionForChatCommand(selectedPaper, instruction);
+      if (!section) {
+        addAssistantMessage("I could not find a section for the image import.");
+        return;
+      }
+
+      await importQuestionImage(section.id);
+      addAssistantMessage(`Choose an image to import into ${section.title}.`);
+      return;
+    }
+
     const command = applyChatPaperCommand(selectedPaper, instruction, documentStyle);
     if (command.handled) {
       const nextPaper = applyDocumentStyle(recalculatePaper(command.paper), documentStyle);
+      if (command.bankQuestion) {
+        await saveQuestionToBankViaApi(command.bankQuestion, request);
+        await refreshQuestionBank();
+      }
       updateSelectedPaper(nextPaper);
-      await saveVersionViaApi(nextPaper, command.versionLabel ?? "chat_structured_edit");
-      await refreshVersions(nextPaper.paperId);
+      if (!command.skipVersion) {
+        await saveVersionViaApi(nextPaper, command.versionLabel ?? "chat_structured_edit");
+        await refreshVersions(nextPaper.paperId);
+      }
       setStatus({ status: "completed", step: "chat_edit", message: "Structured edit applied", progress: 100 });
       addAssistantMessage(command.message);
       return;
@@ -2793,7 +2812,14 @@ function describeRequest(request: PaperRequest) {
 }
 
 type ChatPaperCommandResult =
-  | { handled: true; paper: Paper; message: string; versionLabel?: string }
+  | {
+      handled: true;
+      paper: Paper;
+      message: string;
+      versionLabel?: string;
+      bankQuestion?: PaperQuestion;
+      skipVersion?: boolean;
+    }
   | { handled: false; providerInstruction?: string };
 
 type QuestionRef = {
@@ -2868,6 +2894,54 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
     };
   }
 
+  if (parseAddBlankQuestionCommand(lower)) {
+    const target = findQuestionRefFromInstruction(refs, normalizedInstruction);
+    const targetSectionId = target?.section.id ?? paper.sections[0]?.id;
+    if (!targetSectionId) return { handled: false };
+
+    const nextQuestion = createBlankQuestion(paper);
+    const nextPaper = normalizePaperStructure({
+      ...paper,
+      sections: paper.sections.map((section) =>
+        section.id === targetSectionId
+          ? {
+              ...section,
+              questions: [...section.questions, nextQuestion],
+            }
+          : section,
+      ),
+    });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: "Added a blank editable question.",
+      versionLabel: "chat_add_blank_question",
+    };
+  }
+
+  const replaceChoice = parseReplaceChoiceCommand(normalizedInstruction);
+  if (replaceChoice) {
+    const target = refs.find((ref) => ref.number === replaceChoice.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${replaceChoice.questionNumber} to replace its OR choice.` };
+
+    return {
+      handled: false,
+      providerInstruction: buildReplaceOrChoiceInstruction(target, normalizedInstruction),
+    };
+  }
+
+  const replaceQuestion = parseReplaceQuestionCommand(normalizedInstruction);
+  if (replaceQuestion) {
+    const target = refs.find((ref) => ref.number === replaceQuestion.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${replaceQuestion.questionNumber} to replace.` };
+
+    return {
+      handled: false,
+      providerInstruction: buildReplaceQuestionInstruction(target, normalizedInstruction),
+    };
+  }
+
   const similarOrChoice = parseGenerateSimilarOrChoiceCommand(normalizedInstruction);
   if (similarOrChoice) {
     const target = refs.find((ref) => ref.number === similarOrChoice.questionNumber);
@@ -2876,6 +2950,108 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
     return {
       handled: false,
       providerInstruction: buildSimilarOrChoiceInstruction(target, normalizedInstruction),
+    };
+  }
+
+  const saveQuestion = parseSaveQuestionToBankCommand(normalizedInstruction);
+  if (saveQuestion) {
+    const target = refs.find((ref) => ref.number === saveQuestion.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${saveQuestion.questionNumber} to save.` };
+
+    return {
+      handled: true,
+      paper,
+      bankQuestion: target.question,
+      message: `Saved Q${saveQuestion.questionNumber} to the question bank.`,
+      skipVersion: true,
+    };
+  }
+
+  const answerTarget = parseShowAnswerCommand(normalizedInstruction);
+  if (answerTarget) {
+    const target = refs.find((ref) => ref.number === answerTarget.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${answerTarget.questionNumber}.` };
+
+    return {
+      handled: true,
+      paper,
+      message: target.question.answer?.trim() ? `Answer for Q${answerTarget.questionNumber}: ${target.question.answer}` : `Q${answerTarget.questionNumber} does not have an answer saved yet.`,
+      skipVersion: true,
+    };
+  }
+
+  const diagram = parseAddDiagramCommand(normalizedInstruction);
+  if (diagram) {
+    const target = refs.find((ref) => ref.number === diagram.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${diagram.questionNumber} to add a diagram.` };
+
+    if (diagram.partLabel) {
+      const subpart = target.question.subparts?.find((item) => (item.label ?? "").toLowerCase() === diagram.partLabel);
+      if (!subpart) return { handled: true, paper, message: `I could not find part (${diagram.partLabel}) in Q${diagram.questionNumber}.` };
+      const nextPaper = updateSubpartInPaper(paper, target.section.id, target.question.id, subpart.id, {
+        diagramBlocks: [...(subpart.diagramBlocks ?? []), createDiagramBlock(`Diagram for part (${subpart.label})`)],
+      });
+
+      return {
+        handled: true,
+        paper: applyDocumentStyle(nextPaper, documentStyle),
+        message: `Added a diagram placeholder to Q${diagram.questionNumber} part (${subpart.label}).`,
+        versionLabel: "chat_add_subpart_diagram",
+      };
+    }
+
+    const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, {
+      diagramBlocks: [...(target.question.diagramBlocks ?? []), createDiagramBlock("Diagram placeholder")],
+    });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Added a diagram placeholder to Q${diagram.questionNumber}.`,
+      versionLabel: "chat_add_question_diagram",
+    };
+  }
+
+  const optionCommand = parseOptionCommand(normalizedInstruction);
+  if (optionCommand) {
+    const target = refs.find((ref) => ref.number === optionCommand.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${optionCommand.questionNumber}.` };
+    const optionIndex = optionIndexFromLabel(target.question, optionCommand.optionLabel);
+    if (optionIndex < 0) return { handled: true, paper, message: `I could not find option ${optionCommand.optionLabel.toUpperCase()} in Q${optionCommand.questionNumber}.` };
+    const options = target.question.options ?? [];
+    const option = options[optionIndex];
+    const nextOptions =
+      optionCommand.action === "delete"
+        ? relabelOptions(options.filter((_item, index) => index !== optionIndex))
+        : relabelOptions([...options.slice(0, optionIndex + 1), { ...option, id: crypto.randomUUID() }, ...options.slice(optionIndex + 1)]);
+    const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, { options: nextOptions });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `${optionCommand.action === "delete" ? "Deleted" : "Duplicated"} option ${optionCommand.optionLabel.toUpperCase()} in Q${optionCommand.questionNumber}.`,
+      versionLabel: optionCommand.action === "delete" ? "chat_delete_option" : "chat_duplicate_option",
+    };
+  }
+
+  const subpartCommand = parseSubpartCommand(normalizedInstruction);
+  if (subpartCommand) {
+    const target = refs.find((ref) => ref.number === subpartCommand.questionNumber);
+    const subpart = target?.question.subparts?.find((item) => (item.label ?? "").toLowerCase() === subpartCommand.label);
+    if (!target || !subpart) return { handled: true, paper, message: `I could not find part (${subpartCommand.label}) in Q${subpartCommand.questionNumber}.` };
+    const subparts = target.question.subparts ?? [];
+    const subpartIndex = subparts.findIndex((item) => item.id === subpart.id);
+    const nextSubparts =
+      subpartCommand.action === "delete"
+        ? relabelSubparts(subparts.filter((item) => item.id !== subpart.id))
+        : relabelSubparts([...subparts.slice(0, subpartIndex + 1), cloneSubpart(subpart), ...subparts.slice(subpartIndex + 1)]);
+    const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, { subparts: nextSubparts });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `${subpartCommand.action === "delete" ? "Deleted" : "Duplicated"} Q${subpartCommand.questionNumber} part (${subpartCommand.label}).`,
+      versionLabel: subpartCommand.action === "delete" ? "chat_delete_subpart" : "chat_duplicate_subpart",
     };
   }
 
@@ -3044,6 +3220,36 @@ function buildSimilarOrChoiceInstruction(target: QuestionRef, instruction: strin
   ].join("\n");
 }
 
+function buildReplaceQuestionInstruction(target: QuestionRef, instruction: string) {
+  return [
+    instruction,
+    "",
+    `Target global question: Q${target.number}`,
+    `Target question id: ${target.question.id}`,
+    `Target section: ${target.section.title}`,
+    `Current stem: ${target.question.text}`,
+    `Current marks/type/difficulty/topic: ${target.question.marks} marks, ${target.question.type}, ${target.question.difficulty}, ${target.question.topic || "same topic"}`,
+    "Replace only this target question with a different valid question from the selected source context.",
+    "Preserve the counted marks and paper total unless the teacher explicitly asks otherwise.",
+    "Keep structured fields valid: MCQ options in options[], subparts in subparts[], answers in answer/answerRichText.",
+  ].join("\n");
+}
+
+function buildReplaceOrChoiceInstruction(target: QuestionRef, instruction: string) {
+  return [
+    instruction,
+    "",
+    `Target global question: Q${target.number}`,
+    `Target question id: ${target.question.id}`,
+    `Target section: ${target.section.title}`,
+    `Main question stem: ${target.question.text}`,
+    `Current OR choice: ${target.question.optionalChoice?.text ?? ""}`,
+    "Replace only the optionalChoice branch for this target question.",
+    "Do not change the main question stem.",
+    "Keep the optionalChoice marks aligned with the target question marks.",
+  ].join("\n");
+}
+
 function getQuestionRefs(paper: Paper): QuestionRef[] {
   const refs: QuestionRef[] = [];
   let number = 1;
@@ -3070,6 +3276,23 @@ function parseMoveQuestionToOrCommand(instruction: string) {
   return { source: numbers[0], target: numbers[1] };
 }
 
+function parseReplaceQuestionCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(replace|change|swap|regenerate)\b/.test(lower)) return null;
+  if (/\bor\b|internal choice/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  return { questionNumber };
+}
+
+function parseReplaceChoiceCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(replace|change|swap|regenerate)\b/.test(lower) || !/\bor\b|internal choice/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  return { questionNumber };
+}
+
 function parseGenerateSimilarOrChoiceCommand(instruction: string) {
   const lower = instruction.toLowerCase();
   if (!/\bor\b|internal choice/.test(lower)) return null;
@@ -3081,12 +3304,50 @@ function parseGenerateSimilarOrChoiceCommand(instruction: string) {
   return { questionNumber };
 }
 
+function parseAddBlankQuestionCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(add|create|insert)\b/.test(lower)) return null;
+  if (!/\b(blank|empty|manual)\b/.test(lower)) return null;
+  if (!/\b(question|ques|q)\b/.test(lower)) return null;
+  return {};
+}
+
 function parseAddPartCommand(instruction: string) {
   const lower = instruction.toLowerCase();
   if (!/\b(add|create|insert)\b/.test(lower) || !/\b(part|subpart|sub-question|sub question)\b/.test(lower) || /\bor\b/.test(lower)) return null;
   const questionNumber = questionNumbersFromText(lower)[0];
   if (!questionNumber) return null;
   return { questionNumber, marks: inferMarks(instruction) };
+}
+
+function parseAddDiagramCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(add|insert|create)\b/.test(lower) || !/\b(diagram|figure|drawing|image placeholder)\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  return { questionNumber, partLabel: partLabelFromText(lower) };
+}
+
+function parseOptionCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  const action = /\b(delete|remove)\b/.test(lower) ? "delete" : /\b(duplicate|copy)\b/.test(lower) ? "duplicate" : null;
+  if (!action || !/\b(option|choice)\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  const optionLabel =
+    lower.match(/\b(?:option|choice)\s*\(?([a-d])\)?/)?.[1] ??
+    lower.match(/\(([a-d])\)/)?.[1];
+  if (!questionNumber || !optionLabel) return null;
+  return { action, questionNumber, optionLabel };
+}
+
+function parseSubpartCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  const action = /\b(delete|remove)\b/.test(lower) ? "delete" : /\b(duplicate|copy)\b/.test(lower) ? "duplicate" : null;
+  if (!action || !/\b(part|subpart|sub-question|sub question)\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  const label = partLabelFromText(lower);
+  if (!questionNumber || !label) return null;
+  return { action, questionNumber, label };
 }
 
 function parseAddSubpartChoiceCommand(instruction: string) {
@@ -3104,6 +3365,22 @@ function parseAddWholeQuestionChoiceCommand(instruction: string) {
   if (!/\b(add|create|insert)\b/.test(lower) || !/\bor\b|internal choice/.test(lower)) return null;
   if (/\b(part|subpart|sub-question|sub question)\b/.test(lower) && partLabelFromText(lower)) return null;
   return questionNumbersFromText(lower)[0] ?? null;
+}
+
+function parseSaveQuestionToBankCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\bsave\b/.test(lower) || !/\b(bank|question bank|library|reuse)\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  return { questionNumber };
+}
+
+function parseShowAnswerCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(show|view|tell|display)\b/.test(lower) || !/\b(answer|solution|marking scheme)\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  return { questionNumber };
 }
 
 function partLabelFromText(text: string) {
@@ -3157,6 +3434,25 @@ function isAddSectionCommand(instruction: string) {
 
 function isCreateMcqCommand(instruction: string) {
   return /\b(create|add|insert)\b/.test(instruction) && /\b(mcq|multiple choice)\b/.test(instruction);
+}
+
+function isImageImportCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  return /\b(import|upload|extract|scan)\b/.test(lower) && /\b(image|photo|picture|screenshot)\b/.test(lower);
+}
+
+function findSectionForChatCommand(paper: Paper, instruction: string) {
+  const lower = instruction.toLowerCase();
+  const sectionLetter = lower.match(/\bsection\s*([a-z])\b/)?.[1];
+  if (sectionLetter) {
+    const expectedTitle = `section ${sectionLetter}`.toLowerCase();
+    return paper.sections.find((section) => section.title.toLowerCase().includes(expectedTitle));
+  }
+
+  const sectionNumber = Number(lower.match(/\bsection\s*(\d+)\b/)?.[1]);
+  if (Number.isFinite(sectionNumber) && sectionNumber > 0) return paper.sections[sectionNumber - 1];
+
+  return paper.sections[0];
 }
 
 function inferSectionTitle(instruction: string, existingCount: number) {
@@ -3288,6 +3584,30 @@ function createBlankMcqQuestion(paper: Paper): PaperQuestion {
   });
 }
 
+function createBlankQuestion(paper: Paper): PaperQuestion {
+  return normalizeRawQuestion({
+    id: crypto.randomUUID(),
+    text: "",
+    richText: "",
+    marks: 1,
+    type: "SA",
+    difficulty: paper.summary.difficulty || "Medium",
+    source: "Manual",
+    topic: paper.metadata.topic || paper.metadata.chapter,
+    answer: "",
+    answerRichText: "",
+  });
+}
+
+function createDiagramBlock(title: string): NonNullable<PaperQuestion["diagramBlocks"]>[number] {
+  return {
+    id: crypto.randomUUID(),
+    title,
+    caption: "Upload or generate a diagram later.",
+    status: "placeholder",
+  };
+}
+
 function cloneQuestion(question: PaperQuestion): PaperQuestion {
   return normalizeRawQuestion({
     ...question,
@@ -3299,6 +3619,31 @@ function cloneQuestion(question: PaperQuestion): PaperQuestion {
       optionalChoice: subpart.optionalChoice ? { ...subpart.optionalChoice, id: crypto.randomUUID() } : undefined,
     })),
     optionalChoice: question.optionalChoice ? { ...question.optionalChoice, id: crypto.randomUUID() } : undefined,
+  });
+}
+
+function cloneSubpart(subpart: PaperSubpart): PaperSubpart {
+  return {
+    ...subpart,
+    id: crypto.randomUUID(),
+    optionalChoice: subpart.optionalChoice ? { ...subpart.optionalChoice, id: crypto.randomUUID() } : undefined,
+    diagramBlocks: subpart.diagramBlocks?.map((diagram) => ({ ...diagram, id: crypto.randomUUID() })),
+  };
+}
+
+function relabelSubparts(subparts: PaperSubpart[]) {
+  return subparts.map((subpart, index) => ({ ...subpart, label: String.fromCharCode(97 + index) }));
+}
+
+function relabelOptions(options: PaperQuestionOption[]) {
+  return options.map((option, index) => ({ ...option, label: String.fromCharCode(65 + index) }));
+}
+
+function optionIndexFromLabel(question: PaperQuestion, label: string) {
+  const normalized = label.toLowerCase();
+  return (question.options ?? []).findIndex((option, index) => {
+    const optionLabel = (option.label || String.fromCharCode(65 + index)).toLowerCase().replace(/[().]/g, "");
+    return optionLabel === normalized;
   });
 }
 
