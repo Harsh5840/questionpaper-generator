@@ -268,8 +268,8 @@ export function StudioApp() {
       return {
         ...current,
         source,
-        sourceBooks: nextSourceBooks,
-        sourceCategories: nextSourceCategories,
+        sourceBooks: source === current.source ? nextSourceBooks : [],
+        sourceCategories: source === current.source ? nextSourceCategories : [],
         directSourceMix: source === current.source ? current.directSourceMix : sourceMixPresets[source],
       };
     });
@@ -670,7 +670,7 @@ export function StudioApp() {
     setChatMessages((messages) => [...messages, { id: crypto.randomUUID(), role: "assistant", text }]);
   }
 
-  const hasPaperWorkspace = selectedPaper || openPapers.length > 0 || variantPapers.length > 0 || isGenerating;
+  const hasPaperWorkspace = selectedPaper || openPapers.length > 0 || variantPapers.length > 0 || isGenerating || Boolean(lastError);
   const openDraftWorkspace = () => {
     setAppView("studio");
     activatePaper(createDraftPaper(requestPreview, documentStyle));
@@ -696,6 +696,7 @@ export function StudioApp() {
   const closeCreateFlow = () => setCreateFlow(null);
 
   const generateFromCreateFlow = () => {
+    setAppView("studio");
     setCreateFlow(null);
     void runGeneration();
   };
@@ -712,6 +713,8 @@ export function StudioApp() {
           setSelectedPaper(null);
           setVariantPapers([]);
           setOpenPapers([]);
+          setLastError(null);
+          setStatus(emptyStatus);
         }}
         onOpenSetup={openGuidedSetup}
         onOpenView={setAppView}
@@ -2145,6 +2148,8 @@ function StepFineTune({
   const updateSource = (source: PaperRequest["source"]) => {
     onUpdateRequest("source", source);
     onUpdateRequest("directSourceMix", sourceMixPresets[source]);
+    onUpdateRequest("sourceBooks", []);
+    onUpdateRequest("sourceCategories", []);
   };
   const mix = request.difficultyMix ?? difficultyPresets[request.difficulty];
   const sourceMix = request.directSourceMix ?? sourceMixPresets[request.source];

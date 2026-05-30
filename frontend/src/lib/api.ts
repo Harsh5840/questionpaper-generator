@@ -587,6 +587,9 @@ function progressForRun(status: string, pollCount = 0) {
 }
 
 function toBackendRequest(request: PaperRequest) {
+  const sourceBooks = sourceBooksForRequest(request);
+  const sourceCategories = sourceCategoriesForRequest(request);
+
   return {
     board: request.board,
     class_level: request.classLevel,
@@ -613,11 +616,59 @@ function toBackendRequest(request: PaperRequest) {
     total_marks: request.totalMarks,
     duration_minutes: request.durationMinutes,
     variant_count: request.variantCount,
-    source_books: request.sourceBooks,
-    source_categories: request.sourceCategories,
+    source_books: sourceBooks,
+    source_categories: sourceCategories,
     direct_source_mix: request.directSourceMix,
     template: request.template ? toBackendTemplate(request.template) : undefined,
   };
+}
+
+function sourceBooksForRequest(request: PaperRequest) {
+  const selected = request.sourceBooks?.filter(Boolean) ?? [];
+  if (selected.length === 0) return undefined;
+
+  if (request.source === "NCERT + PYQ") {
+    const hasTextbook = selected.some((book) => !isPyqSourceBook(book));
+    const hasPyq = selected.some(isPyqSourceBook);
+    return hasTextbook && hasPyq ? selected : undefined;
+  }
+
+  if (request.source === "PYQ") {
+    const pyqBooks = selected.filter(isPyqSourceBook);
+    return pyqBooks.length > 0 ? pyqBooks : undefined;
+  }
+
+  const textbookBooks = selected.filter((book) => !isPyqSourceBook(book));
+  return textbookBooks.length > 0 ? textbookBooks : undefined;
+}
+
+function sourceCategoriesForRequest(request: PaperRequest) {
+  const selected = request.sourceCategories?.filter(Boolean) ?? [];
+  if (selected.length === 0) return undefined;
+
+  if (request.source === "NCERT + PYQ") {
+    const hasTextbook = selected.some((category) => !isPyqSourceCategory(category));
+    const hasPyq = selected.some(isPyqSourceCategory);
+    return hasTextbook && hasPyq ? selected : undefined;
+  }
+
+  if (request.source === "PYQ") {
+    const pyqCategories = selected.filter(isPyqSourceCategory);
+    return pyqCategories.length > 0 ? pyqCategories : undefined;
+  }
+
+  const textbookCategories = selected.filter((category) => !isPyqSourceCategory(category));
+  return textbookCategories.length > 0 ? textbookCategories : undefined;
+}
+
+function isPyqSourceBook(value: string) {
+  const normalized = value.toLowerCase();
+  return normalized.includes("pyq") || normalized.includes("oswal") || normalized.includes("previous year");
+}
+
+function isPyqSourceCategory(value: string) {
+  const normalized = value.toLowerCase();
+  return normalized.includes("pyq") || normalized.includes("previous") || normalized.includes("board");
 }
 
 function normalizePaper(raw: Record<string, unknown>, paperId?: string): Paper {
