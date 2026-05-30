@@ -92,6 +92,10 @@ export async function refineViaApi(paper: Paper, instruction: string): Promise<R
       preview: normalizePaper(data.preview ?? paper, paper.paperId),
     };
   } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(`Backend refinement endpoint is unreachable at ${API_BASE}. Check Phoenix, CORS, and the API base URL.`);
+    }
+
     throw error instanceof Error ? error : new Error("AI refinement failed");
   }
 }

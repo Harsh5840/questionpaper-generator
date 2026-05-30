@@ -1,6 +1,8 @@
 defmodule Qpg.AI.Orchestrator do
   alias Qpg.AI.Provider
   alias Qpg.Logging
+  alias Qpg.Sources
+  alias Qpg.Sources.DumpCorpus
 
   def generate(request) do
     Logging.info("ai.orchestrator.generate.started", %{
@@ -81,7 +83,11 @@ defmodule Qpg.AI.Orchestrator do
         response
 
       {:error, reason} ->
-        Logging.error("ai.orchestrator.refine_payload.failed", %{paper_id: paper_id, reason: reason})
+        Logging.error("ai.orchestrator.refine_payload.failed", %{
+          paper_id: paper_id,
+          reason: reason
+        })
+
         raise "AI refinement failed: #{format_error(reason)}"
     end
   end
@@ -89,35 +95,55 @@ defmodule Qpg.AI.Orchestrator do
   defp maybe_replace_question(paper_payload, instruction, paper_id) do
     with true <- replace_instruction?(instruction),
          {:ok, question_number} <- question_number_from_instruction(instruction),
-         {:ok, target} <- question_at_global_number(paper_payload, question_number),
-         {:ok, replacement} <- generate_replacement_question(paper_payload, target) do
-      choice_replacement? = optional_choice_instruction?(instruction)
-      replacement_path = replacement_path(target, choice_replacement?)
-      replacement_value = replacement_value(replacement, target.question, choice_replacement?)
-      preview = put_json_pointer(paper_payload, replacement_path, replacement_value)
+         {:ok, target} <- question_at_global_number(paper_payload, question_number) do
+      case generate_replacement_question(paper_payload, target) do
+        {:ok, replacement} ->
+          choice_replacement? = optional_choice_instruction?(instruction)
+          replacement_path = replacement_path(target, choice_replacement?)
+          replacement_value = replacement_value(replacement, target.question, choice_replacement?)
+          preview = put_json_pointer(paper_payload, replacement_path, replacement_value)
 
-      Logging.info("ai.orchestrator.replace_question.completed", %{
-        paper_id: paper_id,
-        question_number: question_number,
-        optional_choice: choice_replacement?,
-        path: "/" <> Enum.join(replacement_path, "/")
-      })
+          Logging.info("ai.orchestrator.replace_question.completed", %{
+            paper_id: paper_id,
+            question_number: question_number,
+            optional_choice: choice_replacement?,
+            path: "/" <> Enum.join(replacement_path, "/")
+          })
 
-      {:ok,
-       %{
-         "message" => replacement_message(question_number, choice_replacement?),
-         "base_version_id" => "",
-         "patch_ops" => [
+          {:ok,
            %{
-             "op" => "replace",
-             "path" => "/" <> Enum.join(replacement_path, "/"),
-             "value" => replacement_value
-           }
-         ],
-         "preview" => preview
-       }}
+             "message" => replacement_message(question_number, choice_replacement?),
+             "base_version_id" => "",
+             "patch_ops" => [
+               %{
+                 "op" => "replace",
+                 "path" => "/" <> Enum.join(replacement_path, "/"),
+                 "value" => replacement_value
+               }
+             ],
+             "preview" => preview
+           }}
+
+        {:error, reason} ->
+          Logging.warning("ai.orchestrator.replace_question.failed", %{
+            paper_id: paper_id,
+            question_number: question_number,
+            reason: inspect(reason)
+          })
+
+          {:ok,
+           %{
+             "message" =>
+               "I could not replace question #{question_number}: #{format_error(reason)}. Try a chapter with matching owned source material or a more specific instruction.",
+             "base_version_id" => "",
+             "patch_ops" => [],
+             "preview" => paper_payload
+           }}
+      end
     else
-      false -> :skip
+      false ->
+        :skip
+
       {:error, reason} ->
         Logging.warning("ai.orchestrator.replace_question.skipped", %{reason: inspect(reason)})
         :skip
@@ -142,7 +168,9 @@ defmodule Qpg.AI.Orchestrator do
   defp replacement_path(target, true), do: target.path ++ ["optionalChoice"]
   defp replacement_path(target, false), do: target.path
 
-  defp replacement_message(question_number, true), do: "Replaced OR choice for question #{question_number}."
+  defp replacement_message(question_number, true),
+    do: "Replaced OR choice for question #{question_number}."
+
   defp replacement_message(question_number, false), do: "Replaced question #{question_number}."
 
   defp replacement_value(replacement, original_question, true) do
@@ -151,7 +179,8 @@ defmodule Qpg.AI.Orchestrator do
       "text" => replacement["text"] || "",
       "richText" => replacement["richText"] || replacement["rich_text"] || "",
       "marks" => replacement["marks"] || original_question["marks"] || 1,
-      "type" => replacement["type"] || replacement["question_type"] || original_question["type"] || "SA",
+      "type" =>
+        replacement["type"] || replacement["question_type"] || original_question["type"] || "SA",
       "difficulty" => replacement["difficulty"] || original_question["difficulty"] || "Medium",
       "source" => replacement["source"] || "AI replacement",
       "topic" => replacement["topic"] || original_question["topic"],
@@ -167,16 +196,28 @@ defmodule Qpg.AI.Orchestrator do
     lower = String.downcase(instruction || "")
 
     cond do
-      lower =~ ~r/\bfirst\s+ques/ -> {:ok, 1}
-      lower =~ ~r/\bsecond\s+ques/ -> {:ok, 2}
-      lower =~ ~r/\bthird\s+ques/ -> {:ok, 3}
-      match = Regex.run(~r/(?:global\s+)?q(?:uestion)?\s*\.?\s*(\d+)/, lower) -> {:ok, match |> List.last() |> String.to_integer()}
-      match = Regex.run(~r/\b(\d+)(?:st|nd|rd|th)?\s+ques/, lower) -> {:ok, match |> List.last() |> String.to_integer()}
-      true -> {:error, :missing_question_number}
+      lower =~ ~r/\bfirst\s+ques/ ->
+        {:ok, 1}
+
+      lower =~ ~r/\bsecond\s+ques/ ->
+        {:ok, 2}
+
+      lower =~ ~r/\bthird\s+ques/ ->
+        {:ok, 3}
+
+      match = Regex.run(~r/(?:global\s+)?q(?:uestion)?\s*\.?\s*(\d+)/, lower) ->
+        {:ok, match |> List.last() |> String.to_integer()}
+
+      match = Regex.run(~r/\b(\d+)(?:st|nd|rd|th)?\s+ques/, lower) ->
+        {:ok, match |> List.last() |> String.to_integer()}
+
+      true ->
+        {:error, :missing_question_number}
     end
   end
 
-  defp question_at_global_number(%{"sections" => sections}, question_number) when is_list(sections) do
+  defp question_at_global_number(%{"sections" => sections}, question_number)
+       when is_list(sections) do
     sections
     |> Enum.with_index()
     |> Enum.reduce_while(1, fn {section, section_index}, count ->
@@ -203,7 +244,12 @@ defmodule Qpg.AI.Orchestrator do
         {:halt,
          {:ok,
           %{
-            path: ["sections", Integer.to_string(section_index), "questions", Integer.to_string(question_index)],
+            path: [
+              "sections",
+              Integer.to_string(section_index),
+              "questions",
+              Integer.to_string(question_index)
+            ],
             question: question
           }}}
       else
@@ -219,24 +265,50 @@ defmodule Qpg.AI.Orchestrator do
   defp generate_replacement_question(paper_payload, %{question: question}) do
     metadata = Map.get(paper_payload, "metadata", %{})
     marks = int_value(question["marks"], 1)
-    question_type = question["type"] || question["question_type"] || "SA"
-    chapter = metadata["chapter"] || question["topic"] || metadata["topic"] || ""
+    question_type = first_present([question["type"], question["question_type"]], "SA")
+    chapter = first_present([metadata["chapter"], question["topic"], metadata["topic"]], "")
+
+    source =
+      valid_source(
+        first_present([metadata["source"], paper_payload["source"], question["source"]], nil)
+      ) || "NCERT"
+
+    difficulty = first_present([question["difficulty"], metadata["difficulty"]], "Medium")
 
     request = %{
-      "board" => metadata["board"] || "CBSE",
-      "class_level" => metadata["class_level"] || metadata["classLevel"] || "10",
-      "subject" => metadata["subject"] || "Maths",
+      "board" => first_present([metadata["board"]], "CBSE"),
+      "class_level" => first_present([metadata["class_level"], metadata["classLevel"]], "10"),
+      "subject" => first_present([metadata["subject"]], "Maths"),
       "chapter_scope" => "single",
       "chapter" => chapter,
       "chapters" => [chapter],
-      "topic" => question["topic"] || metadata["topic"] || chapter,
-      "source" => metadata["source"] || "NCERT + PYQ",
-      "difficulty" => question["difficulty"] || "Medium",
+      "topic" => first_present([question["topic"], metadata["topic"], chapter], chapter),
+      "source" => source,
+      "difficulty" => difficulty,
+      "difficulty_mix" => difficulty_mix_for(difficulty),
       "question_types" => [question_type],
+      "section_blueprint" => [
+        %{
+          "title" => "Replacement",
+          "instructions" => "Generate exactly one replacement question.",
+          "question_count" => 1,
+          "marks_each" => marks,
+          "target_marks" => marks,
+          "question_types" => [question_type],
+          "difficulty" => difficulty,
+          "difficulty_mix" => difficulty_mix_for(difficulty)
+        }
+      ],
       "marking_scheme" => "Generate one replacement question only",
       "total_marks" => marks,
       "duration_minutes" => 10,
       "variant_count" => 1,
+      "direct_source_mix" => %{
+        "ncertDirect" => 0,
+        "pyqDirect" => 0,
+        "questionBank" => 0,
+        "aiGenerated" => 100
+      },
       "template" => nil,
       "template_context" => %{}
     }
@@ -256,15 +328,160 @@ defmodule Qpg.AI.Orchestrator do
            |> Map.put("id", question["id"] || Ecto.UUID.generate())
            |> Map.put("marks", marks)
            |> Map.put("type", question_type)
-           |> Map.put("difficulty", question["difficulty"] || replacement["difficulty"] || "Medium")}
+           |> Map.put(
+             "difficulty",
+             first_present([question["difficulty"], replacement["difficulty"]], "Medium")
+           )}
         else
           {:error, :missing_replacement_question}
         end
 
       {:error, reason} ->
-        {:error, reason}
+        case direct_replacement_question(
+               request,
+               question,
+               marks,
+               question_type,
+               difficulty,
+               reason
+             ) do
+          {:ok, replacement} -> {:ok, replacement}
+          :error -> {:error, reason}
+        end
     end
   end
+
+  defp direct_replacement_question(
+         request,
+         original_question,
+         marks,
+         question_type,
+         difficulty,
+         ai_reason
+       ) do
+    source_groups =
+      case request["source"] do
+        "PYQ" -> [:pyq]
+        "NCERT + PYQ" -> [:ncert, :pyq]
+        _ -> [:ncert]
+      end
+
+    filters =
+      request
+      |> Map.take([
+        "board",
+        "class_level",
+        "subject",
+        "chapter",
+        "chapters",
+        "topic",
+        "source_books"
+      ])
+      |> Map.put("source_categories", [])
+
+    candidates =
+      source_groups
+      |> Enum.flat_map(&DumpCorpus.search_questions(&1, filters, 40))
+      |> Enum.reject(&same_question_text?(&1[:excerpt], original_question["text"]))
+      |> Enum.sort_by(&replacement_candidate_score(&1, marks, question_type, difficulty))
+
+    case candidates do
+      [candidate | _] ->
+        case Sources.import_question_from_source(candidate[:source_type], candidate[:id], request) do
+          {:ok, question} ->
+            Logging.info("ai.orchestrator.replace_question.direct_source_fallback", %{
+              source_type: candidate[:source_type],
+              source_id: candidate[:id],
+              ai_reason: inspect(ai_reason)
+            })
+
+            {:ok,
+             question
+             |> Map.put("id", original_question["id"] || Ecto.UUID.generate())
+             |> Map.put("marks", marks)
+             |> Map.put("type", question_type)
+             |> Map.put("difficulty", difficulty)}
+
+          {:error, reason} ->
+            Logging.warning("ai.orchestrator.replace_question.direct_source_import_failed", %{
+              source_type: candidate[:source_type],
+              source_id: candidate[:id],
+              reason: inspect(reason)
+            })
+
+            :error
+        end
+
+      [] ->
+        :error
+    end
+  end
+
+  defp replacement_candidate_score(candidate, marks, question_type, difficulty) do
+    marks_score = if int_value(candidate[:marks], -1) == marks, do: 0, else: 10
+
+    type_score =
+      if compatible_question_type?(candidate[:question_type], question_type), do: 0, else: 4
+
+    difficulty_score = if same_text?(candidate[:difficulty], difficulty), do: 0, else: 1
+    marks_score + type_score + difficulty_score
+  end
+
+  defp compatible_question_type?(left, right) do
+    normalize_type_text(left) == normalize_type_text(right)
+  end
+
+  defp normalize_type_text(value) do
+    value
+    |> to_string()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/, "")
+    |> case do
+      "multiplechoice" -> "mcq"
+      "mcq" -> "mcq"
+      "shortanswer" -> "sa"
+      "sa" -> "sa"
+      "longanswer" -> "la"
+      "la" -> "la"
+      other -> other
+    end
+  end
+
+  defp same_question_text?(left, right) do
+    normalized_text(left) == normalized_text(right)
+  end
+
+  defp same_text?(left, right), do: normalized_text(left) == normalized_text(right)
+
+  defp normalized_text(value) do
+    value
+    |> to_string()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/, "")
+  end
+
+  defp first_present(values, default) do
+    Enum.find_value(List.wrap(values), default, fn
+      value when is_binary(value) ->
+        trimmed = String.trim(value)
+        if trimmed == "", do: nil, else: trimmed
+
+      nil ->
+        nil
+
+      value ->
+        value
+    end)
+  end
+
+  defp valid_source(source) when source in ["NCERT", "PYQ", "NCERT + PYQ"], do: source
+  defp valid_source(_source), do: nil
+
+  defp difficulty_mix_for("Easy"), do: %{"easy" => 80, "medium" => 20, "hard" => 0}
+  defp difficulty_mix_for("Low"), do: %{"easy" => 80, "medium" => 20, "hard" => 0}
+  defp difficulty_mix_for("Hard"), do: %{"easy" => 20, "medium" => 40, "hard" => 40}
+  defp difficulty_mix_for("High"), do: %{"easy" => 20, "medium" => 40, "hard" => 40}
+  defp difficulty_mix_for(_difficulty), do: %{"easy" => 20, "medium" => 60, "hard" => 20}
 
   defp int_value(value, _default) when is_integer(value), do: value
 
@@ -277,7 +494,10 @@ defmodule Qpg.AI.Orchestrator do
 
   defp normalize_refinement_response(%{"patch_ops" => _} = response, _paper_payload), do: response
 
-  defp normalize_refinement_response(%{"paper" => %{"current_paper" => preview}} = response, _paper_payload)
+  defp normalize_refinement_response(
+         %{"paper" => %{"current_paper" => preview}} = response,
+         _paper_payload
+       )
        when is_map(preview) do
     %{
       "message" => response["message"] || "Replaced the requested question.",
