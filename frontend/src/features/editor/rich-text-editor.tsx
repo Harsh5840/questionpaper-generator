@@ -42,6 +42,7 @@ interface RichTextEditorProps {
 }
 
 let activeRichTextEditor: Editor | null = null;
+const richTextEditors = new Map<string, Editor>();
 
 export type MathToolkitInsert =
   | { type: "text"; value: string }
@@ -53,11 +54,25 @@ export function insertIntoActiveRichTextEditor(insert: MathToolkitInsert) {
   const chain = activeRichTextEditor.chain().focus();
 
   if (insert.type === "math") {
-    chain.insertInlineMath({ latex: insert.value }).run();
-    return true;
+    const htmlBefore = activeRichTextEditor.getHTML();
+    const inserted = chain.insertInlineMath({ latex: insert.value }).run();
+    const htmlAfter = activeRichTextEditor.getHTML();
+
+    if (inserted && htmlAfter !== htmlBefore) return true;
+
+    return activeRichTextEditor.chain().focus().insertContent({ type: "inlineMath", attrs: { latex: insert.value } }).run();
   }
 
   chain.insertContent(insert.value).run();
+  return true;
+}
+
+export function activateRichTextEditorFromElement(element: Element | null) {
+  const editorId = element?.closest<HTMLElement>(".rich-text-surface")?.dataset.qpgEditorId;
+  const editor = editorId ? richTextEditors.get(editorId) : null;
+  if (!editor) return false;
+
+  activeRichTextEditor = editor;
   return true;
 }
 
@@ -71,6 +86,7 @@ export function RichTextEditor({
   placeholder = "Write here...",
   onFocus,
 }: RichTextEditorProps) {
+  const editorId = useMemo(() => crypto.randomUUID(), []);
   const [activeFormulaId, setActiveFormulaId] = useState<string | null>(null);
   const [formulaValues, setFormulaValues] = useState<Record<string, string>>({});
   const activeFormula = useMemo(
@@ -102,6 +118,7 @@ export function RichTextEditor({
       attributes: {
         "aria-label": label,
         class: `rich-text-surface ${heightClass(minHeight)}`,
+        "data-qpg-editor-id": editorId,
         spellcheck: "false",
       },
     },
@@ -110,6 +127,16 @@ export function RichTextEditor({
       onHtmlChange?.(activeEditor.getHTML());
     },
   });
+
+  useEffect(() => {
+    if (!editor) return;
+
+    richTextEditors.set(editorId, editor);
+    return () => {
+      richTextEditors.delete(editorId);
+      if (activeRichTextEditor === editor) activeRichTextEditor = null;
+    };
+  }, [editor, editorId]);
 
   useEffect(() => {
     if (!editor) return;
@@ -132,6 +159,12 @@ export function RichTextEditor({
       </div>
     );
   }
+
+  const activateEditor = () => {
+    activeRichTextEditor = editor;
+    onFocus?.();
+    window.dispatchEvent(new CustomEvent("qpg:rich-text-focus", { detail: { label } }));
+  };
 
   return (
     <div className="rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white">
@@ -288,11 +321,10 @@ export function RichTextEditor({
       </div>
       <EditorContent
         editor={editor}
-        onFocus={() => {
-          activeRichTextEditor = editor;
-          onFocus?.();
-          window.dispatchEvent(new CustomEvent("qpg:rich-text-focus", { detail: { label } }));
-        }}
+        onClick={activateEditor}
+        onContextMenu={activateEditor}
+        onFocus={activateEditor}
+        onMouseDown={activateEditor}
       />
     </div>
   );

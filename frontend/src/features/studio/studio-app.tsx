@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { PaperEditor } from "@/features/editor/paper-editor";
-import { insertIntoActiveRichTextEditor, MathToolkitInsert } from "@/features/editor/rich-text-editor";
+import { activateRichTextEditorFromElement, insertIntoActiveRichTextEditor, MathToolkitInsert } from "@/features/editor/rich-text-editor";
 import {
   fetchChaptersViaApi,
   fetchDashboardViaApi,
@@ -1053,9 +1053,396 @@ function PaperLabTopBar({
   );
 }
 
+interface SmartInsertField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  defaultValue: string;
+}
+
+interface SmartInsertTemplate {
+  id: string;
+  label: string;
+  description: string;
+  insertType: MathToolkitInsert["type"];
+  fields: SmartInsertField[];
+  build: (values: Record<string, string>) => string;
+}
+
+type MathMenuTool =
+  | {
+      label: string;
+      insert: MathToolkitInsert;
+      smart?: never;
+    }
+  | {
+      label: string;
+      smart: SmartInsertTemplate;
+      insert?: never;
+    };
+
+const smartInsertTemplates: Record<string, SmartInsertTemplate> = {
+  power: {
+    id: "power",
+    label: "xⁿ",
+    description: "Power with editable base and exponent.",
+    insertType: "math",
+    fields: [
+      { key: "base", label: "Base", defaultValue: "x", placeholder: "x, 2x+1, \\theta" },
+      { key: "exponent", label: "Power", defaultValue: "2", placeholder: "2, n, \\frac{1}{2}" },
+    ],
+    build: (values) => `${wrapLatexGroup(normalizeLatexField(values.base, "x"))}^{${normalizeLatexField(values.exponent, "2")}}`,
+  },
+  subscript: {
+    id: "subscript",
+    label: "xₙ",
+    description: "Subscript with editable base and index.",
+    insertType: "math",
+    fields: [
+      { key: "base", label: "Base", defaultValue: "x", placeholder: "x, a, C" },
+      { key: "index", label: "Index", defaultValue: "n", placeholder: "n, 1, max" },
+    ],
+    build: (values) => `${wrapLatexGroup(normalizeLatexField(values.base, "x"))}_{${normalizeLatexField(values.index, "n")}}`,
+  },
+  fraction: {
+    id: "fraction",
+    label: "a/b",
+    description: "Fraction with numerator and denominator.",
+    insertType: "math",
+    fields: [
+      { key: "numerator", label: "Numerator", defaultValue: "a", placeholder: "a, x+1, \\sqrt{x}" },
+      { key: "denominator", label: "Denominator", defaultValue: "b", placeholder: "b, 2x, 1/2" },
+    ],
+    build: (values) => `\\frac{${normalizeLatexField(values.numerator, "a")}}{${normalizeLatexField(values.denominator, "b")}}`,
+  },
+  root: {
+    id: "root",
+    label: "√x",
+    description: "Square root. The radicand can itself contain LaTeX like \\sqrt{x+1}.",
+    insertType: "math",
+    fields: [{ key: "radicand", label: "Inside root", defaultValue: "x", placeholder: "x, x+1, \\sqrt{x+1}" }],
+    build: (values) => `\\sqrt{${normalizeLatexField(values.radicand, "x")}}`,
+  },
+  nthRoot: {
+    id: "nthRoot",
+    label: "ⁿ√x",
+    description: "Root with editable index and radicand.",
+    insertType: "math",
+    fields: [
+      { key: "index", label: "Index", defaultValue: "3", placeholder: "3, n, \\frac{1}{2}" },
+      { key: "radicand", label: "Inside root", defaultValue: "x", placeholder: "x, x+1, \\sqrt{x}" },
+    ],
+    build: (values) => `\\sqrt[${normalizeLatexField(values.index, "3")}]{${normalizeLatexField(values.radicand, "x")}}`,
+  },
+  nestedRoot: {
+    id: "nestedRoot",
+    label: "√√x",
+    description: "Root inside another root, useful for nested radical questions.",
+    insertType: "math",
+    fields: [
+      { key: "outerIndex", label: "Outer index", defaultValue: "2", placeholder: "2, 3, n" },
+      { key: "innerIndex", label: "Inner index", defaultValue: "2", placeholder: "2, 3, n" },
+      { key: "radicand", label: "Innermost value", defaultValue: "x", placeholder: "x, x+1, \\frac{a}{b}" },
+    ],
+    build: (values) => {
+      const inner = buildRootLatex(normalizeLatexField(values.innerIndex, "2"), normalizeLatexField(values.radicand, "x"));
+      return buildRootLatex(normalizeLatexField(values.outerIndex, "2"), inner);
+    },
+  },
+  quadratic: {
+    id: "quadratic",
+    label: "Quad",
+    description: "Quadratic equation with editable coefficients and variable.",
+    insertType: "math",
+    fields: [
+      { key: "a", label: "a", defaultValue: "a", placeholder: "1, 2, a" },
+      { key: "b", label: "b", defaultValue: "b", placeholder: "-5, b" },
+      { key: "c", label: "c", defaultValue: "c", placeholder: "6, c" },
+      { key: "variable", label: "Variable", defaultValue: "x", placeholder: "x, y" },
+    ],
+    build: (values) => {
+      const variable = normalizeLatexField(values.variable, "x");
+      return `${normalizeLatexField(values.a, "a")}${variable}^2 + ${normalizeLatexField(values.b, "b")}${variable} + ${normalizeLatexField(values.c, "c")} = 0`;
+    },
+  },
+  ap: {
+    id: "ap",
+    label: "AP",
+    description: "Arithmetic progression nth-term formula.",
+    insertType: "math",
+    fields: [
+      { key: "term", label: "Term symbol", defaultValue: "a", placeholder: "a, T" },
+      { key: "index", label: "Index", defaultValue: "n", placeholder: "n, k" },
+      { key: "first", label: "First term", defaultValue: "a", placeholder: "a, 3" },
+      { key: "difference", label: "Common difference", defaultValue: "d", placeholder: "d, 5" },
+    ],
+    build: (values) =>
+      `${normalizeLatexField(values.term, "a")}_{${normalizeLatexField(values.index, "n")}} = ${normalizeLatexField(values.first, "a")} + (${normalizeLatexField(values.index, "n")} - 1)${normalizeLatexField(values.difference, "d")}`,
+  },
+  summation: {
+    id: "summation",
+    label: "Σ",
+    description: "Summation with variable, lower limit, upper limit, and expression.",
+    insertType: "math",
+    fields: [
+      { key: "variable", label: "Variable", defaultValue: "n", placeholder: "n, k, i" },
+      { key: "lower", label: "Lower", defaultValue: "1", placeholder: "1, 0, alpha" },
+      { key: "upper", label: "Upper", defaultValue: "k", placeholder: "k, n, \\infty" },
+      { key: "expression", label: "Expression", defaultValue: "a_n", placeholder: "n^2, \\frac{1}{n}" },
+    ],
+    build: (values) =>
+      `\\sum_{${normalizeLatexField(values.variable, "n")}=${normalizeLatexField(values.lower, "1")}}^{${normalizeLatexField(values.upper, "k")}} ${normalizeLatexField(values.expression, "a_n")}`,
+  },
+  product: {
+    id: "product",
+    label: "Π",
+    description: "Product notation with variable, lower, upper, and expression.",
+    insertType: "math",
+    fields: [
+      { key: "variable", label: "Variable", defaultValue: "i", placeholder: "i, n" },
+      { key: "lower", label: "Lower", defaultValue: "1", placeholder: "1" },
+      { key: "upper", label: "Upper", defaultValue: "n", placeholder: "n" },
+      { key: "expression", label: "Expression", defaultValue: "x_i", placeholder: "x_i, i+1" },
+    ],
+    build: (values) =>
+      `\\prod_{${normalizeLatexField(values.variable, "i")}=${normalizeLatexField(values.lower, "1")}}^{${normalizeLatexField(values.upper, "n")}} ${normalizeLatexField(values.expression, "x_i")}`,
+  },
+  limit: {
+    id: "limit",
+    label: "lim",
+    description: "Limit with variable, target, and expression.",
+    insertType: "math",
+    fields: [
+      { key: "variable", label: "Variable", defaultValue: "x", placeholder: "x, n" },
+      { key: "target", label: "Approaches", defaultValue: "a", placeholder: "0, \\infty, alpha" },
+      { key: "expression", label: "Expression", defaultValue: "f(x)", placeholder: "\\frac{\\sin x}{x}" },
+    ],
+    build: (values) => `\\lim_{${normalizeLatexField(values.variable, "x")}\\to ${normalizeLatexField(values.target, "a")}} ${normalizeLatexField(values.expression, "f(x)")}`,
+  },
+  derivative: {
+    id: "derivative",
+    label: "d/dx",
+    description: "Derivative with variable, order, and expression.",
+    insertType: "math",
+    fields: [
+      { key: "expression", label: "Expression", defaultValue: "f(x)", placeholder: "x^2, \\sin x" },
+      { key: "variable", label: "Variable", defaultValue: "x", placeholder: "x, t" },
+      { key: "order", label: "Order", defaultValue: "1", placeholder: "1, 2, n" },
+    ],
+    build: (values) => {
+      const variable = normalizeLatexField(values.variable, "x");
+      const order = normalizeLatexField(values.order, "1");
+      const expression = normalizeLatexField(values.expression, "f(x)");
+      if (order === "1") return `\\frac{d}{d${variable}}\\left(${expression}\\right)`;
+      return `\\frac{d^{${order}}}{d${variable}^{${order}}}\\left(${expression}\\right)`;
+    },
+  },
+  integral: {
+    id: "integral",
+    label: "∫",
+    description: "Definite or indefinite integral. Leave limits blank for indefinite.",
+    insertType: "math",
+    fields: [
+      { key: "lower", label: "Lower limit", defaultValue: "a", placeholder: "a, alpha, 0" },
+      { key: "upper", label: "Upper limit", defaultValue: "b", placeholder: "b, beta, \\infty" },
+      { key: "integrand", label: "Integrand", defaultValue: "f(x)", placeholder: "x^2, \\frac{1}{x}" },
+      { key: "variable", label: "Variable", defaultValue: "x", placeholder: "x, t" },
+    ],
+    build: (values) => {
+      const lower = normalizeLatexField(values.lower);
+      const upper = normalizeLatexField(values.upper);
+      const limits = lower || upper ? `_{${lower || ""}}^{${upper || ""}}` : "";
+      return `\\int${limits} ${normalizeLatexField(values.integrand, "f(x)")}\\,d${normalizeLatexField(values.variable, "x")}`;
+    },
+  },
+  log: {
+    id: "log",
+    label: "logₙ",
+    description: "Logarithm with editable base. Fractional bases like 1/2 are converted.",
+    insertType: "math",
+    fields: [
+      { key: "base", label: "Base", defaultValue: "n", placeholder: "n, 2, 1/2" },
+      { key: "argument", label: "Argument", defaultValue: "x", placeholder: "x, x+1" },
+    ],
+    build: (values) => {
+      const base = normalizeLatexField(values.base);
+      const argument = normalizeLatexField(values.argument, "x");
+      return base ? `\\log_{${base}}\\left(${argument}\\right)` : `\\log\\left(${argument}\\right)`;
+    },
+  },
+  trig: {
+    id: "trig",
+    label: "trig",
+    description: "Trig expression with function, optional power, and argument.",
+    insertType: "math",
+    fields: [
+      { key: "functionName", label: "Function", defaultValue: "sin", placeholder: "sin, cos, tan" },
+      { key: "power", label: "Power", defaultValue: "", placeholder: "2, n, blank" },
+      { key: "argument", label: "Argument", defaultValue: "theta", placeholder: "theta, x, 2A" },
+    ],
+    build: (values) => {
+      const name = normalizeTrigName(values.functionName);
+      const power = normalizeLatexField(values.power);
+      const argument = normalizeLatexField(values.argument, "\\theta");
+      return `\\${name}${power ? `^{${power}}` : ""}\\left(${argument}\\right)`;
+    },
+  },
+  areaCircle: {
+    id: "areaCircle",
+    label: "Area",
+    description: "Circle area with editable radius symbol/value.",
+    insertType: "math",
+    fields: [{ key: "radius", label: "Radius", defaultValue: "r", placeholder: "r, 7, x" }],
+    build: (values) => `\\pi ${wrapLatexGroup(normalizeLatexField(values.radius, "r"))}^2`,
+  },
+  sphereVolume: {
+    id: "sphereVolume",
+    label: "Vol sphere",
+    description: "Sphere volume with editable radius symbol/value.",
+    insertType: "math",
+    fields: [{ key: "radius", label: "Radius", defaultValue: "r", placeholder: "r, 7, x" }],
+    build: (values) => `\\frac{4}{3}\\pi ${wrapLatexGroup(normalizeLatexField(values.radius, "r"))}^3`,
+  },
+  vector: {
+    id: "vector",
+    label: "vec",
+    description: "Vector notation.",
+    insertType: "math",
+    fields: [{ key: "symbol", label: "Symbol", defaultValue: "a", placeholder: "a, AB, v" }],
+    build: (values) => `\\vec{${normalizeLatexField(values.symbol, "a")}}`,
+  },
+  matrix2x2: {
+    id: "matrix2x2",
+    label: "2×2",
+    description: "2 by 2 matrix.",
+    insertType: "math",
+    fields: [
+      { key: "a", label: "Top left", defaultValue: "a", placeholder: "a" },
+      { key: "b", label: "Top right", defaultValue: "b", placeholder: "b" },
+      { key: "c", label: "Bottom left", defaultValue: "c", placeholder: "c" },
+      { key: "d", label: "Bottom right", defaultValue: "d", placeholder: "d" },
+    ],
+    build: (values) =>
+      `\\begin{bmatrix}${normalizeLatexField(values.a, "a")} & ${normalizeLatexField(values.b, "b")} \\\\ ${normalizeLatexField(values.c, "c")} & ${normalizeLatexField(values.d, "d")}\\end{bmatrix}`,
+  },
+  chemistryEquation: {
+    id: "chemistryEquation",
+    label: "Chem eq",
+    description: "Chemical equation with basic subscript conversion.",
+    insertType: "math",
+    fields: [
+      { key: "reactants", label: "Reactants", defaultValue: "H2 + O2", placeholder: "H2 + O2" },
+      { key: "products", label: "Products", defaultValue: "H2O", placeholder: "H2O" },
+    ],
+    build: (values) => `\\mathrm{${normalizeChemistryLatex(values.reactants || "H2 + O2")} \\rightarrow ${normalizeChemistryLatex(values.products || "H2O")}}`,
+  },
+};
+
+const mathMenuGroups = [
+  {
+    label: "Algebra",
+    tools: [
+      { label: "x²", smart: smartInsertTemplates.power },
+      { label: "x³", insert: { type: "math", value: "x^3" } },
+      { label: "xₙ", smart: smartInsertTemplates.subscript },
+      { label: "√x", smart: smartInsertTemplates.root },
+      { label: "ⁿ√x", smart: smartInsertTemplates.nthRoot },
+      { label: "√√x", smart: smartInsertTemplates.nestedRoot },
+      { label: "a/b", smart: smartInsertTemplates.fraction },
+      { label: "Quad", smart: smartInsertTemplates.quadratic },
+      { label: "Formula", insert: { type: "math", value: "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" } },
+      { label: "AP", smart: smartInsertTemplates.ap },
+      { label: "logₙ", smart: smartInsertTemplates.log },
+    ],
+  },
+  {
+    label: "Calculus",
+    tools: [
+      { label: "Σ", smart: smartInsertTemplates.summation },
+      { label: "Π", smart: smartInsertTemplates.product },
+      { label: "lim", smart: smartInsertTemplates.limit },
+      { label: "d/dx", smart: smartInsertTemplates.derivative },
+      { label: "∫", smart: smartInsertTemplates.integral },
+      { label: "∫αβ", insert: { type: "math", value: "\\int_{\\alpha}^{\\beta} f(x)\\,dx" } },
+      { label: "trig", smart: smartInsertTemplates.trig },
+    ],
+  },
+  {
+    label: "Symbols",
+    tools: [
+      { label: "π", insert: { type: "text", value: "π" } },
+      { label: "θ", insert: { type: "text", value: "θ" } },
+      { label: "α", insert: { type: "text", value: "α" } },
+      { label: "β", insert: { type: "text", value: "β" } },
+      { label: "γ", insert: { type: "text", value: "γ" } },
+      { label: "Δ", insert: { type: "text", value: "Δ" } },
+      { label: "∞", insert: { type: "text", value: "∞" } },
+      { label: "±", insert: { type: "text", value: "±" } },
+      { label: "×", insert: { type: "text", value: "×" } },
+      { label: "÷", insert: { type: "text", value: "÷" } },
+      { label: "≈", insert: { type: "text", value: "≈" } },
+      { label: "≠", insert: { type: "text", value: "≠" } },
+      { label: "≤", insert: { type: "text", value: "≤" } },
+      { label: "≥", insert: { type: "text", value: "≥" } },
+      { label: "∴", insert: { type: "text", value: "∴" } },
+      { label: "∵", insert: { type: "text", value: "∵" } },
+      { label: "⇒", insert: { type: "text", value: "⇒" } },
+      { label: "⇔", insert: { type: "text", value: "⇔" } },
+    ],
+  },
+  {
+    label: "Geometry",
+    tools: [
+      { label: "∠", insert: { type: "text", value: "∠" } },
+      { label: "⊥", insert: { type: "text", value: "⊥" } },
+      { label: "∥", insert: { type: "text", value: "∥" } },
+      { label: "△", insert: { type: "text", value: "△" } },
+      { label: "≅", insert: { type: "text", value: "≅" } },
+      { label: "∼", insert: { type: "text", value: "∼" } },
+      { label: "Area", smart: smartInsertTemplates.areaCircle },
+      { label: "Vol sphere", smart: smartInsertTemplates.sphereVolume },
+      { label: "Pyth", insert: { type: "math", value: "a^2 + b^2 = c^2" } },
+      { label: "Sim", insert: { type: "math", value: "\\triangle ABC \\sim \\triangle PQR" } },
+      { label: "vec", smart: smartInsertTemplates.vector },
+      { label: "2×2", smart: smartInsertTemplates.matrix2x2 },
+    ],
+  },
+  {
+    label: "Science",
+    tools: [
+      { label: "H₂O", insert: { type: "html", value: "H<sub>2</sub>O" } },
+      { label: "CO₂", insert: { type: "html", value: "CO<sub>2</sub>" } },
+      { label: "O₂", insert: { type: "html", value: "O<sub>2</sub>" } },
+      { label: "C₆H₁₂O₆", insert: { type: "html", value: "C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>" } },
+      { label: "→", insert: { type: "text", value: "→" } },
+      { label: "⇌", insert: { type: "text", value: "⇌" } },
+      { label: "V=IR", insert: { type: "math", value: "V = IR" } },
+      { label: "F=ma", insert: { type: "math", value: "F = ma" } },
+      { label: "E=mc²", insert: { type: "math", value: "E = mc^2" } },
+      { label: "Photo", insert: { type: "math", value: "\\mathrm{6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2}" } },
+      { label: "Chem eq", smart: smartInsertTemplates.chemistryEquation },
+    ],
+  },
+  {
+    label: "Structure",
+    tools: [
+      { label: "A-D", insert: { type: "html", value: "<p>A. </p><p>B. </p><p>C. </p><p>D. </p>" } },
+      { label: "(i)-(iv)", insert: { type: "html", value: "<p>(i) </p><p>(ii) </p><p>(iii) </p><p>(iv) </p>" } },
+      { label: "(a)-(d)", insert: { type: "html", value: "<p>(a) </p><p>(b) </p><p>(c) </p><p>(d) </p>" } },
+      { label: "OR", insert: { type: "text", value: "\nOR\n" } },
+      { label: "Case", insert: { type: "html", value: "<p>Read the case carefully and answer the following questions:</p><p>(a) </p><p>(b) </p>" } },
+    ],
+  },
+] satisfies { label: string; tools: MathMenuTool[] }[];
+
 function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) => boolean }) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const activeSurfaceRef = useRef<HTMLElement | null>(null);
+  const smartInsertAppliedRef = useRef(false);
+  const [activeSmartId, setActiveSmartId] = useState<string | null>(null);
+  const [smartValues, setSmartValues] = useState<Record<string, string>>({});
+  const activeSmartTemplate = activeSmartId ? smartInsertTemplates[activeSmartId] : null;
 
   useEffect(() => {
     const onContextMenu = (event: MouseEvent) => {
@@ -1066,13 +1453,32 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       }
 
       event.preventDefault();
-      (target.closest(".rich-text-surface") as HTMLElement | null)?.focus();
+      const surface = target.closest(".rich-text-surface") as HTMLElement | null;
+      const menuHeightBudget = Math.min(620, window.innerHeight - 24);
+      activeSurfaceRef.current = surface;
+      activateRichTextEditorFromElement(surface);
+      surface?.focus();
       setPosition({
         x: Math.min(event.clientX, window.innerWidth - 360),
-        y: Math.min(event.clientY, window.innerHeight - 340),
+        y: Math.max(12, Math.min(event.clientY, window.innerHeight - menuHeightBudget)),
       });
+      setActiveSmartId(null);
+      setSmartValues({});
     };
-    const close = () => setPosition(null);
+    const close = () => {
+      setPosition(null);
+      setActiveSmartId(null);
+      setSmartValues({});
+      activeSurfaceRef.current = null;
+    };
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const path = event.composedPath();
+      if (menuRef.current && path.includes(menuRef.current)) {
+        return;
+      }
+
+      close();
+    };
     const closeOnOutsideScroll = (event: Event) => {
       if (event.target instanceof Node && menuRef.current?.contains(event.target)) {
         return;
@@ -1085,13 +1491,13 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
     };
 
     document.addEventListener("contextmenu", onContextMenu);
-    document.addEventListener("click", close);
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
     document.addEventListener("scroll", closeOnOutsideScroll, true);
     document.addEventListener("keydown", onKeyDown);
 
     return () => {
       document.removeEventListener("contextmenu", onContextMenu);
-      document.removeEventListener("click", close);
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
       document.removeEventListener("scroll", closeOnOutsideScroll, true);
       document.removeEventListener("keydown", onKeyDown);
     };
@@ -1099,90 +1505,24 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
 
   if (!position) return null;
 
-  const groups = [
-    {
-      label: "Algebra",
-      tools: [
-        ["x²", { type: "html", value: "x<sup>2</sup>" }],
-        ["x³", { type: "html", value: "x<sup>3</sup>" }],
-        ["xₙ", { type: "html", value: "x<sub>n</sub>" }],
-        ["√x", { type: "math", value: "\\sqrt{x}" }],
-        ["∛x", { type: "math", value: "\\sqrt[3]{x}" }],
-        ["a/b", { type: "math", value: "\\frac{a}{b}" }],
-        ["Quad", { type: "html", value: "ax<sup>2</sup> + bx + c = 0" }],
-        ["Formula", { type: "math", value: "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" }],
-        ["AP", { type: "math", value: "a_n = a + (n - 1)d" }],
-        ["Σ", { type: "math", value: "\\sum_{n=1}^{k}" }],
-        ["lim", { type: "math", value: "\\lim_{x\\to a}" }],
-        ["d/dx", { type: "math", value: "\\frac{d}{dx}" }],
-        ["∫", { type: "math", value: "\\int_{a}^{b} f(x)\\,dx" }],
-        ["∫αβ", { type: "math", value: "\\int_{\\alpha}^{\\beta} f(x)\\,dx" }],
-      ],
-    },
-    {
-      label: "Symbols",
-      tools: [
-        ["π", { type: "text", value: "π" }],
-        ["θ", { type: "text", value: "θ" }],
-        ["α", { type: "text", value: "α" }],
-        ["β", { type: "text", value: "β" }],
-        ["γ", { type: "text", value: "γ" }],
-        ["Δ", { type: "text", value: "Δ" }],
-        ["∞", { type: "text", value: "∞" }],
-        ["±", { type: "text", value: "±" }],
-        ["×", { type: "text", value: "×" }],
-        ["÷", { type: "text", value: "÷" }],
-        ["≈", { type: "text", value: "≈" }],
-        ["≠", { type: "text", value: "≠" }],
-        ["≤", { type: "text", value: "≤" }],
-        ["≥", { type: "text", value: "≥" }],
-        ["∴", { type: "text", value: "∴" }],
-        ["∵", { type: "text", value: "∵" }],
-        ["⇒", { type: "text", value: "⇒" }],
-        ["⇔", { type: "text", value: "⇔" }],
-      ],
-    },
-    {
-      label: "Geometry",
-      tools: [
-        ["∠", { type: "text", value: "∠" }],
-        ["⊥", { type: "text", value: "⊥" }],
-        ["∥", { type: "text", value: "∥" }],
-        ["△", { type: "text", value: "△" }],
-        ["≅", { type: "text", value: "≅" }],
-        ["∼", { type: "text", value: "∼" }],
-        ["Area", { type: "math", value: "\\pi r^2" }],
-        ["Vol sphere", { type: "math", value: "\\frac{4}{3}\\pi r^3" }],
-        ["Pyth", { type: "math", value: "a^2 + b^2 = c^2" }],
-        ["Sim", { type: "math", value: "\\triangle ABC \\sim \\triangle PQR" }],
-      ],
-    },
-    {
-      label: "Science",
-      tools: [
-        ["H₂O", { type: "html", value: "H<sub>2</sub>O" }],
-        ["CO₂", { type: "html", value: "CO<sub>2</sub>" }],
-        ["O₂", { type: "html", value: "O<sub>2</sub>" }],
-        ["C₆H₁₂O₆", { type: "html", value: "C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>" }],
-        ["→", { type: "text", value: "→" }],
-        ["⇌", { type: "text", value: "⇌" }],
-        ["V=IR", { type: "math", value: "V = IR" }],
-        ["F=ma", { type: "math", value: "F = ma" }],
-        ["E=mc²", { type: "math", value: "E = mc^2" }],
-        ["Photo", { type: "math", value: "\\mathrm{6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2}" }],
-      ],
-    },
-    {
-      label: "Structure",
-      tools: [
-        ["A-D", { type: "html", value: "<p>A. </p><p>B. </p><p>C. </p><p>D. </p>" }],
-        ["(i)-(iv)", { type: "html", value: "<p>(i) </p><p>(ii) </p><p>(iii) </p><p>(iv) </p>" }],
-        ["(a)-(d)", { type: "html", value: "<p>(a) </p><p>(b) </p><p>(c) </p><p>(d) </p>" }],
-        ["OR", { type: "text", value: "\nOR\n" }],
-        ["Case", { type: "html", value: "<p>Read the case carefully and answer the following questions:</p><p>(a) </p><p>(b) </p>" }],
-      ],
-    },
-  ] satisfies { label: string; tools: [string, MathToolkitInsert][] }[];
+  const startSmartInsert = (template: SmartInsertTemplate) => {
+    smartInsertAppliedRef.current = false;
+    setActiveSmartId(template.id);
+    setSmartValues(Object.fromEntries(template.fields.map((field) => [field.key, field.defaultValue])));
+  };
+
+  const previewValue = activeSmartTemplate?.build(smartValues);
+  const applySmartInsert = () => {
+    if (!activeSmartTemplate) return;
+    if (smartInsertAppliedRef.current) return;
+
+    smartInsertAppliedRef.current = true;
+    const value = activeSmartTemplate.build(smartValues);
+    activateRichTextEditorFromElement(activeSurfaceRef.current);
+    onInsert({ type: activeSmartTemplate.insertType, value } as MathToolkitInsert);
+    setPosition(null);
+    activeSurfaceRef.current = null;
+  };
 
   return (
     <div
@@ -1190,37 +1530,178 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       className="fixed z-[70] max-h-[72vh] w-[340px] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-3 shadow-[var(--shadow-xl)]"
       style={{ left: position.x, top: position.y }}
       onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">Insert symbol</span>
+        <span className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">
+          {activeSmartTemplate ? "Smart insert" : "Insert symbol"}
+        </span>
         <button className="text-xs font-black text-[var(--ink-3)] hover:text-[var(--ink)]" onClick={() => setPosition(null)} type="button">
           Esc
         </button>
       </div>
-      <div className="space-y-3">
-        {groups.map((group) => (
-          <section key={group.label}>
-            <div className="mb-1 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">{group.label}</div>
-            <div className="flex flex-wrap gap-1">
-              {group.tools.map(([label, insert]) => (
-                <button
-                  key={`${group.label}-${label}`}
-                  className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                  onClick={() => {
-                    onInsert(insert);
-                    setPosition(null);
+      {activeSmartTemplate ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              className="text-xs font-bold text-[var(--accent)] hover:text-[var(--accent-deep)]"
+              onClick={() => {
+                setActiveSmartId(null);
+                setSmartValues({});
+              }}
+              type="button"
+            >
+              ← Back to symbols
+            </button>
+            <button
+              className="rounded-full border border-[var(--accent-soft)] bg-[var(--accent-soft)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--accent-deep)] hover:border-[var(--accent)]"
+              onClick={applySmartInsert}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                applySmartInsert();
+              }}
+              type="button"
+            >
+              Insert now
+            </button>
+          </div>
+          <div>
+            <div className="font-display text-xl italic leading-tight text-[var(--ink)]">{activeSmartTemplate.label}</div>
+            <p className="mt-1 text-xs leading-5 text-[var(--ink-2)]">{activeSmartTemplate.description}</p>
+          </div>
+          <div className="grid gap-2">
+            {activeSmartTemplate.fields.map((field) => (
+              <label key={field.key} className="grid gap-1 text-xs font-bold text-[var(--ink-2)]">
+                <span>{field.label}</span>
+                <input
+                  className="h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  placeholder={field.placeholder}
+                  value={smartValues[field.key] ?? ""}
+                  onChange={(event) => setSmartValues((current) => ({ ...current, [field.key]: event.target.value }))}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || !activeSmartTemplate) return;
+                    event.preventDefault();
+                    applySmartInsert();
                   }}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+                />
+              </label>
+            ))}
+          </div>
+          <div className="rounded-md border border-[var(--border)] bg-white px-3 py-2">
+            <div className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">LaTeX preview</div>
+            <code className="mt-1 block break-words font-mono text-[11px] text-[var(--ink-2)]">{previewValue}</code>
+          </div>
+          <button
+            className="w-full rounded-md bg-[var(--ink)] px-3 py-2 text-xs font-black text-[var(--paper-tint)] hover:bg-[var(--accent-deep)]"
+            onClick={applySmartInsert}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              applySmartInsert();
+            }}
+            type="button"
+          >
+            Insert {activeSmartTemplate.label}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {mathMenuGroups.map((group) => (
+            <section key={group.label}>
+              <div className="mb-1 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">{group.label}</div>
+              <div className="flex flex-wrap gap-1">
+                {group.tools.map((tool) => (
+                  <button
+                    key={`${group.label}-${tool.label}`}
+                    className={`min-h-8 rounded-md border px-2 text-xs font-black hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)] ${
+                      tool.smart ? "border-[var(--accent-soft)] bg-[var(--paper-tint)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink-2)]"
+                    }`}
+                    onClick={() => {
+                      if (tool.smart) {
+                        startSmartInsert(tool.smart);
+                        return;
+                      }
+
+                      activateRichTextEditorFromElement(activeSurfaceRef.current);
+                      onInsert(tool.insert);
+                      setPosition(null);
+                      activeSurfaceRef.current = null;
+                    }}
+                    onPointerDown={(event) => {
+                      if (!tool.smart) return;
+
+                      event.preventDefault();
+                      event.stopPropagation();
+                      startSmartInsert(tool.smart);
+                    }}
+                    type="button"
+                  >
+                    {tool.label}
+                    {tool.smart ? "…" : ""}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+function normalizeLatexField(value = "", fallback = "") {
+  const trimmed = value.trim() || fallback;
+  if (!trimmed) return "";
+
+  const exactGreek: Record<string, string> = {
+    alpha: "\\alpha",
+    beta: "\\beta",
+    gamma: "\\gamma",
+    delta: "\\delta",
+    Delta: "\\Delta",
+    theta: "\\theta",
+    pi: "\\pi",
+    infinity: "\\infty",
+    inf: "\\infty",
+  };
+
+  if (exactGreek[trimmed]) return exactGreek[trimmed];
+  if (/^-?\d+\s*\/\s*-?\d+$/.test(trimmed)) {
+    const [numerator, denominator] = trimmed.split("/").map((part) => part.trim());
+    return `\\frac{${numerator}}{${denominator}}`;
+  }
+
+  return trimmed
+    .replace(/α/g, "\\alpha")
+    .replace(/β/g, "\\beta")
+    .replace(/γ/g, "\\gamma")
+    .replace(/Δ/g, "\\Delta")
+    .replace(/θ/g, "\\theta")
+    .replace(/π/g, "\\pi")
+    .replace(/∞/g, "\\infty");
+}
+
+function normalizeChemistryLatex(value: string) {
+  return value
+    .trim()
+    .replace(/([A-Z][a-z]?)(\\d+)/g, "$1_$2")
+    .replace(/\\s+/g, "\\ ");
+}
+
+function normalizeTrigName(value = "") {
+  const normalized = value.trim().replace(/^\\/, "").toLowerCase();
+  const allowed = new Set(["sin", "cos", "tan", "cot", "sec", "csc"]);
+  return allowed.has(normalized) ? normalized : "sin";
+}
+
+function buildRootLatex(index: string, radicand: string) {
+  return index && index !== "2" ? `\\sqrt[${index}]{${radicand}}` : `\\sqrt{${radicand}}`;
+}
+
+function wrapLatexGroup(value: string) {
+  if (/^[A-Za-z0-9]+$/.test(value) || value.startsWith("\\")) return value;
+  return `\\left(${value}\\right)`;
 }
 
 function NewPaperChooserModal({
