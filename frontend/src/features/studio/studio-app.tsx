@@ -1440,6 +1440,7 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
   const menuRef = useRef<HTMLDivElement | null>(null);
   const activeSurfaceRef = useRef<HTMLElement | null>(null);
   const smartInsertAppliedRef = useRef(false);
+  const staticInsertAppliedRef = useRef(false);
   const [activeSmartId, setActiveSmartId] = useState<string | null>(null);
   const [smartValues, setSmartValues] = useState<Record<string, string>>({});
   const activeSmartTemplate = activeSmartId ? smartInsertTemplates[activeSmartId] : null;
@@ -1456,6 +1457,8 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       const surface = target.closest(".rich-text-surface") as HTMLElement | null;
       const menuHeightBudget = Math.min(620, window.innerHeight - 24);
       activeSurfaceRef.current = surface;
+      staticInsertAppliedRef.current = false;
+      smartInsertAppliedRef.current = false;
       activateRichTextEditorFromElement(surface);
       surface?.focus();
       setPosition({
@@ -1470,6 +1473,8 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       setActiveSmartId(null);
       setSmartValues({});
       activeSurfaceRef.current = null;
+      staticInsertAppliedRef.current = false;
+      smartInsertAppliedRef.current = false;
     };
     const closeOnOutsidePointerDown = (event: PointerEvent) => {
       const target = event.target;
@@ -1512,8 +1517,19 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
 
   const startSmartInsert = (template: SmartInsertTemplate) => {
     smartInsertAppliedRef.current = false;
+    staticInsertAppliedRef.current = false;
     setActiveSmartId(template.id);
     setSmartValues(Object.fromEntries(template.fields.map((field) => [field.key, field.defaultValue])));
+  };
+
+  const applyStaticInsert = (insert: MathToolkitInsert) => {
+    if (staticInsertAppliedRef.current) return;
+
+    staticInsertAppliedRef.current = true;
+    activateRichTextEditorFromElement(activeSurfaceRef.current);
+    onInsert(insert);
+    setPosition(null);
+    activeSurfaceRef.current = null;
   };
 
   const previewValue = activeSmartTemplate?.build(smartValues);
@@ -1630,17 +1646,18 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
                         return;
                       }
 
-                      activateRichTextEditorFromElement(activeSurfaceRef.current);
-                      onInsert(tool.insert);
-                      setPosition(null);
-                      activeSurfaceRef.current = null;
+                      applyStaticInsert(tool.insert);
                     }}
                     onPointerDown={(event) => {
-                      if (!tool.smart) return;
-
                       event.preventDefault();
                       event.stopPropagation();
-                      startSmartInsert(tool.smart);
+
+                      if (tool.smart) {
+                        startSmartInsert(tool.smart);
+                        return;
+                      }
+
+                      applyStaticInsert(tool.insert);
                     }}
                     type="button"
                   >
