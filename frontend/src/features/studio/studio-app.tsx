@@ -1472,6 +1472,11 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       activeSurfaceRef.current = null;
     };
     const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && menuRef.current?.contains(target)) {
+        return;
+      }
+
       const path = event.composedPath();
       if (menuRef.current && path.includes(menuRef.current)) {
         return;
@@ -1530,6 +1535,8 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       className="fixed z-[70] max-h-[72vh] w-[340px] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-3 shadow-[var(--shadow-xl)]"
       style={{ left: position.x, top: position.y }}
       onClick={(event) => event.stopPropagation()}
+      onMouseDownCapture={(event) => event.stopPropagation()}
+      onPointerDownCapture={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="mb-2 flex items-center justify-between">
