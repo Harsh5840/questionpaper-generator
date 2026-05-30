@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   CheckCircle2,
@@ -1055,6 +1055,7 @@ function PaperLabTopBar({
 
 function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) => boolean }) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const onContextMenu = (event: MouseEvent) => {
@@ -1072,19 +1073,26 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       });
     };
     const close = () => setPosition(null);
+    const closeOnOutsideScroll = (event: Event) => {
+      if (event.target instanceof Node && menuRef.current?.contains(event.target)) {
+        return;
+      }
+
+      close();
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
     };
 
     document.addEventListener("contextmenu", onContextMenu);
     document.addEventListener("click", close);
-    document.addEventListener("scroll", close, true);
+    document.addEventListener("scroll", closeOnOutsideScroll, true);
     document.addEventListener("keydown", onKeyDown);
 
     return () => {
       document.removeEventListener("contextmenu", onContextMenu);
       document.removeEventListener("click", close);
-      document.removeEventListener("scroll", close, true);
+      document.removeEventListener("scroll", closeOnOutsideScroll, true);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, []);
@@ -1103,11 +1111,12 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
         ["a/b", { type: "math", value: "\\frac{a}{b}" }],
         ["Quad", { type: "html", value: "ax<sup>2</sup> + bx + c = 0" }],
         ["Formula", { type: "math", value: "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" }],
-        ["AP", { type: "text", value: "aₙ = a + (n - 1)d" }],
+        ["AP", { type: "math", value: "a_n = a + (n - 1)d" }],
         ["Σ", { type: "math", value: "\\sum_{n=1}^{k}" }],
         ["lim", { type: "math", value: "\\lim_{x\\to a}" }],
         ["d/dx", { type: "math", value: "\\frac{d}{dx}" }],
-        ["∫", { type: "math", value: "\\int_a^b f(x)\\,dx" }],
+        ["∫", { type: "math", value: "\\int_{a}^{b} f(x)\\,dx" }],
+        ["∫αβ", { type: "math", value: "\\int_{\\alpha}^{\\beta} f(x)\\,dx" }],
       ],
     },
     {
@@ -1142,7 +1151,7 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
         ["△", { type: "text", value: "△" }],
         ["≅", { type: "text", value: "≅" }],
         ["∼", { type: "text", value: "∼" }],
-        ["Area", { type: "html", value: "πr<sup>2</sup>" }],
+        ["Area", { type: "math", value: "\\pi r^2" }],
         ["Vol sphere", { type: "math", value: "\\frac{4}{3}\\pi r^3" }],
         ["Pyth", { type: "math", value: "a^2 + b^2 = c^2" }],
         ["Sim", { type: "math", value: "\\triangle ABC \\sim \\triangle PQR" }],
@@ -1157,27 +1166,28 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
         ["C₆H₁₂O₆", { type: "html", value: "C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>" }],
         ["→", { type: "text", value: "→" }],
         ["⇌", { type: "text", value: "⇌" }],
-        ["V=IR", { type: "text", value: "V = IR" }],
-        ["F=ma", { type: "text", value: "F = ma" }],
-        ["E=mc²", { type: "html", value: "E = mc<sup>2</sup>" }],
+        ["V=IR", { type: "math", value: "V = IR" }],
+        ["F=ma", { type: "math", value: "F = ma" }],
+        ["E=mc²", { type: "math", value: "E = mc^2" }],
         ["Photo", { type: "math", value: "\\mathrm{6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2}" }],
       ],
     },
     {
       label: "Structure",
       tools: [
-        ["A-D", { type: "text", value: "\nA. \nB. \nC. \nD. " }],
-        ["(i)-(iv)", { type: "text", value: "\n(i) \n(ii) \n(iii) \n(iv) " }],
-        ["(a)-(d)", { type: "text", value: "\n(a) \n(b) \n(c) \n(d) " }],
+        ["A-D", { type: "html", value: "<p>A. </p><p>B. </p><p>C. </p><p>D. </p>" }],
+        ["(i)-(iv)", { type: "html", value: "<p>(i) </p><p>(ii) </p><p>(iii) </p><p>(iv) </p>" }],
+        ["(a)-(d)", { type: "html", value: "<p>(a) </p><p>(b) </p><p>(c) </p><p>(d) </p>" }],
         ["OR", { type: "text", value: "\nOR\n" }],
-        ["Case", { type: "text", value: "Read the case carefully and answer the following questions:\n(a) \n(b) " }],
+        ["Case", { type: "html", value: "<p>Read the case carefully and answer the following questions:</p><p>(a) </p><p>(b) </p>" }],
       ],
     },
   ] satisfies { label: string; tools: [string, MathToolkitInsert][] }[];
 
   return (
     <div
-      className="fixed z-[70] max-h-[320px] w-[340px] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-3 shadow-[var(--shadow-xl)]"
+      ref={menuRef}
+      className="fixed z-[70] max-h-[72vh] w-[340px] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-3 shadow-[var(--shadow-xl)]"
       style={{ left: position.x, top: position.y }}
       onClick={(event) => event.stopPropagation()}
     >
