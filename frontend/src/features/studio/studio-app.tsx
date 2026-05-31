@@ -442,7 +442,7 @@ export function StudioApp() {
         await refreshVersions(nextPaper.paperId);
       }
       setStatus({ status: "completed", step: "chat_edit", message: "Structured edit applied", progress: 100 });
-      addAssistantMessage(command.message);
+      addAssistantMessage(command.toolName ? `Tool ${command.toolName}: ${command.message}` : command.message);
       return;
     }
 
@@ -3509,6 +3509,7 @@ type ChatPaperCommandResult =
       paper: Paper;
       message: string;
       versionLabel?: string;
+      toolName?: string;
       bankQuestion?: PaperQuestion;
       skipVersion?: boolean;
     }
@@ -3533,6 +3534,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper,
       message: "Saved this as a new version.",
       versionLabel: "chat_save_version",
+      toolName: "save_version",
     };
   }
 
@@ -3557,6 +3559,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: "Added a new editable section. You can now drag questions into it or import questions there.",
       versionLabel: "chat_add_section",
+      toolName: "add_section",
     };
   }
 
@@ -3583,6 +3586,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: "Created a structured MCQ with four separate option rows and an answer field.",
       versionLabel: "chat_create_mcq",
+      toolName: "create_mcq_question",
     };
   }
 
@@ -3609,6 +3613,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: "Added a blank editable question.",
       versionLabel: "chat_add_blank_question",
+      toolName: "add_question",
     };
   }
 
@@ -3655,6 +3660,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper,
       bankQuestion: target.question,
       message: `Saved Q${saveQuestion.questionNumber} to the question bank.`,
+      toolName: "save_question_to_bank",
       skipVersion: true,
     };
   }
@@ -3689,6 +3695,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
         paper: applyDocumentStyle(nextPaper, documentStyle),
         message: `Added a diagram placeholder to Q${diagram.questionNumber} part (${subpart.label}).`,
         versionLabel: "chat_add_subpart_diagram",
+        toolName: "add_diagram_placeholder",
       };
     }
 
@@ -3701,6 +3708,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `Added a diagram placeholder to Q${diagram.questionNumber}.`,
       versionLabel: "chat_add_question_diagram",
+      toolName: "add_diagram_placeholder",
     };
   }
 
@@ -3726,6 +3734,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `Added option ${String.fromCharCode(65 + options.length)} to Q${addOption.questionNumber}.`,
       versionLabel: "chat_add_option",
+      toolName: "add_mcq_option",
     };
   }
 
@@ -3748,6 +3757,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `${optionCommand.action === "delete" ? "Deleted" : "Duplicated"} option ${optionCommand.optionLabel.toUpperCase()} in Q${optionCommand.questionNumber}.`,
       versionLabel: optionCommand.action === "delete" ? "chat_delete_option" : "chat_duplicate_option",
+      toolName: optionCommand.action === "delete" ? "delete_mcq_option" : "duplicate_mcq_option",
     };
   }
 
@@ -3769,6 +3779,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `${subpartCommand.action === "delete" ? "Deleted" : "Duplicated"} Q${subpartCommand.questionNumber} part (${subpartCommand.label}).`,
       versionLabel: subpartCommand.action === "delete" ? "chat_delete_subpart" : "chat_duplicate_subpart",
+      toolName: subpartCommand.action === "delete" ? "delete_subpart" : "duplicate_subpart",
     };
   }
 
@@ -3785,12 +3796,17 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       return { handled: true, paper, message: "A question cannot be moved into its own OR slot." };
     }
 
+    if (choiceHasContent(target.question.optionalChoice) && !/\breplace\b/i.test(normalizedInstruction)) {
+      return { handled: true, paper, message: `Q${moveToOr.target} already has an OR choice. Say "replace OR of Q${moveToOr.target} with Q${moveToOr.source}" if you want to overwrite it.` };
+    }
+
     const nextPaper = moveQuestionIntoInternalChoice(paper, source, target);
     return {
       handled: true,
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `Moved Q${moveToOr.source} into the OR choice of Q${moveToOr.target}. Marks still count only once for that question.`,
       versionLabel: "chat_move_question_to_or",
+      toolName: "move_question_to_or",
     };
   }
 
@@ -3810,6 +3826,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `Duplicated Q${duplicateNumber}. Question numbering has been recalculated.`,
       versionLabel: "chat_duplicate_question",
+      toolName: "duplicate_question",
     };
   }
 
@@ -3824,6 +3841,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `Deleted Q${deleteNumber}. The remaining questions have been renumbered automatically.`,
       versionLabel: "chat_delete_question",
+      toolName: "delete_question",
     };
   }
 
@@ -3854,6 +3872,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `Added part (${nextLabel}) to Q${addPart.questionNumber}.`,
       versionLabel: "chat_add_subpart",
+      toolName: "add_subpart",
     };
   }
 
@@ -3879,6 +3898,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `Added an OR alternative for Q${partChoice.questionNumber} part (${partChoice.label}).`,
       versionLabel: "chat_add_subpart_or",
+      toolName: "add_subpart_or",
     };
   }
 
@@ -3896,6 +3916,7 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       paper: applyDocumentStyle(nextPaper, documentStyle),
       message: `Added an OR internal choice block to Q${wholeChoiceNumber}.`,
       versionLabel: "chat_add_question_or",
+      toolName: "add_question_or",
     };
   }
 
@@ -3983,9 +4004,12 @@ function getQuestionRefs(paper: Paper): QuestionRef[] {
 
 function parseMoveQuestionToOrCommand(instruction: string) {
   const lower = instruction.toLowerCase();
-  if (!/\b(move|put|add|shift)\b/.test(lower) || !/\bor\b/.test(lower)) return null;
+  if (!/\b(move|put|add|shift|replace)\b/.test(lower) || !/\bor\b/.test(lower)) return null;
   if (/\b(similar|same topic|different|generate|new)\b/.test(lower)) return null;
   if (!/\b(?:q|ques|question|quesion)\s*\.?\s*\d+\b/.test(lower)) return null;
+
+  const replacePattern = lower.match(/\breplace\s+(?:the\s+)?or(?:\s+choice)?\s+of\s+(?:q|ques|question|quesion)\s*\.?\s*(\d+)\s+with\s+(?:q|ques|question|quesion)\s*\.?\s*(\d+)/);
+  if (replacePattern) return { target: Number(replacePattern[1]), source: Number(replacePattern[2]) };
 
   const numbers = questionNumbersFromText(lower);
   if (numbers.length < 2) return null;
@@ -4255,6 +4279,17 @@ function moveQuestionIntoInternalChoice(paper: Paper, source: QuestionRef, targe
       ),
     })),
   });
+}
+
+function choiceHasContent(choice: PaperQuestion["optionalChoice"]) {
+  if (!choice) return false;
+  return Boolean(
+    choice.text?.trim() ||
+      choice.richText?.replace(/<[^>]*>/g, "").trim() ||
+      (choice.options && choice.options.some((option) => option.text?.trim() || option.richText?.replace(/<[^>]*>/g, "").trim())) ||
+      (choice.subparts && choice.subparts.length > 0) ||
+      (choice.imageAssets && choice.imageAssets.length > 0),
+  );
 }
 
 function choiceFromQuestion(question: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
@@ -4657,7 +4692,7 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
       const questions = section.questions
         .map((question) => {
           const optionsHtml = (question.options ?? [])
-            .map((option) => optionToHtml(option.label || "", option.richText || textToHtml(option.text), option.imageAssets))
+            .map((option) => optionToHtml(option.label || "", richOrTextHtml(option.richText, option.text), option.imageAssets))
             .join("");
           const choiceOptionsHtml = optionListToHtml(question.optionalChoice?.options);
           const subpartsHtml = (question.subparts ?? [])
@@ -4701,7 +4736,8 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     h1{font-family:Arial,sans-serif;font-size:18px;text-transform:uppercase;margin:6px 0}
     h2{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;margin:14px 0 6px}
     .meta{display:flex;justify-content:center;gap:12px;font-family:Arial,sans-serif;font-size:10px;color:#475569}
-    .question{margin:8px 0}.q-main,.subpart{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:start}
+    body::after{content:"Page";position:fixed;right:0;bottom:0;font-family:Arial,sans-serif;font-size:9px;color:#64748b}
+    section{break-inside:auto}.question{margin:7px 0;break-inside:avoid-page}.q-main,.subpart{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:start}
     .option{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;margin:3px 0 3px 32px}
     .option div,.q-main div,.subpart div{min-width:0}
     .option p,.q-main p,.subpart p{margin:0 0 2px}
@@ -4851,7 +4887,7 @@ function plainTextFromRich(value: string) {
 }
 
 function optionListToHtml(options?: PaperQuestionOption[]) {
-  return (options ?? []).map((option) => optionToHtml(option.label || "", option.richText || textToHtml(option.text), option.imageAssets)).join("");
+  return (options ?? []).map((option) => optionToHtml(option.label || "", richOrTextHtml(option.richText, option.text), option.imageAssets)).join("");
 }
 
 function optionToHtml(label: string, contentHtml: string, imageAssets?: PaperImageAsset[]) {
@@ -4869,6 +4905,11 @@ function imageAssetsToHtml(assets?: PaperImageAsset[], mode: "question" | "optio
 
 function textToHtml(text: string) {
   return richTextFromText(text) || escapeHtml(text).replaceAll("\n", "<br>");
+}
+
+function richOrTextHtml(richText: string | undefined, text: string | undefined) {
+  const stripped = richText?.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  return stripped ? richText || "" : textToHtml(text ?? "");
 }
 
 function normalizeTemplateParams(raw: Record<string, unknown>): Partial<PaperRequest> {

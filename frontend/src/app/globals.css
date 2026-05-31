@@ -487,7 +487,7 @@ button:disabled {
   background: transparent;
 }
 
-.question-row:hover .rich-text-shell,
+.question-row.is-active .rich-text-shell,
 .question-row .rich-text-shell:focus-within {
   border-color: var(--outline-variant);
   background: var(--surface-container-lowest);
@@ -509,7 +509,6 @@ button:disabled {
 }
 
 .rich-text-shell:focus-within > div:first-child,
-.rich-text-shell:hover > div:first-child,
 .question-row.is-active .rich-text-shell > div:first-child {
   opacity: 1;
   max-height: 3rem;
@@ -527,6 +526,19 @@ button:disabled {
   line-height: 1.38;
   color: var(--on-surface);
   outline: none;
+}
+
+.question-row:not(.is-active) .rich-text-surface {
+  min-height: 0 !important;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.28;
+}
+
+.question-row:not(.is-active) .rich-text-shell {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .rich-text-surface p {
@@ -563,9 +575,9 @@ button:disabled {
 .rich-text-surface .inline-math-error,
 .rich-text-surface .block-math-error {
   border-radius: 0.2rem;
-  background: #fee2e2;
-  color: #991b1b;
-  font-family: var(--font-mono), Consolas, monospace;
+  background: transparent;
+  color: inherit;
+  font-family: KaTeX_Main, "Times New Roman", serif;
 }
 
 .rich-text-surface .is-editor-empty:first-child::before {
@@ -574,6 +586,57 @@ button:disabled {
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+.paper-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 2rem;
+  row-gap: 0.18rem;
+  padding-left: 1.25rem;
+}
+
+.paper-option-row {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  gap: 0.35rem;
+  align-items: baseline;
+  min-height: 1.1rem;
+  font-family: var(--font-paper), Georgia, serif;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.paper-option-label {
+  color: #475569;
+  font-weight: 700;
+}
+
+.paper-option-text p {
+  margin: 0;
+}
+
+.math-preview {
+  font-family: KaTeX_Main, "Times New Roman", serif;
+  white-space: nowrap;
+}
+
+.math-frac {
+  display: inline-grid;
+  grid-template-rows: auto auto;
+  vertical-align: -0.25em;
+  text-align: center;
+  font-size: 0.9em;
+  line-height: 1;
+}
+
+.math-frac > span:first-child {
+  border-bottom: 1px solid currentColor;
+  padding: 0 0.12em 0.05em;
+}
+
+.math-frac > span:last-child {
+  padding: 0.05em 0.12em 0;
 }
 
 .diff-delete {

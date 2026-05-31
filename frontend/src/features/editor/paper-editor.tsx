@@ -988,7 +988,7 @@ export function PaperEditor({
     updatePaper((current) => {
       let movingQuestion: PaperQuestion | null = null;
       const targetAlreadyHasChoice = current.sections.some((section) =>
-        section.questions.some((question) => question.id === targetQuestionId && Boolean(question.optionalChoice)),
+        section.questions.some((question) => question.id === targetQuestionId && choiceHasContent(question.optionalChoice)),
       );
 
       if (targetAlreadyHasChoice) return current;
@@ -1022,6 +1022,8 @@ export function PaperEditor({
         })),
       };
     });
+
+    setActiveQuestionId(targetQuestionId);
   };
 
   const moveDraggedQuestion = (targetSectionId: string, targetQuestionId?: string) => {
@@ -1105,7 +1107,7 @@ export function PaperEditor({
       section.questions.map((question) => ({
         id: question.id,
         label: `Q${stats.questionNumberById[question.id] ?? "?"}`,
-        hasChoice: Boolean(question.optionalChoice),
+        hasChoice: choiceHasContent(question.optionalChoice),
       })),
     );
 
@@ -1121,6 +1123,9 @@ export function PaperEditor({
           padding: documentStyle.margin,
         }}
       >
+        <div className="absolute right-6 top-4 rounded-full bg-slate-100 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+          Page 1 / {paper.pageCount ?? 1}
+        </div>
         <div className="absolute bottom-4 right-6 font-mono text-[10px] font-bold text-slate-400">Page 1 / {paper.pageCount ?? 1}</div>
         {documentStyle.watermark?.text && (
           <div
@@ -1259,15 +1264,6 @@ export function PaperEditor({
                       <option>High</option>
                     </select>
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                    Target
-                    <input
-                      className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                      type="number"
-                      value={section.targetMarks ?? sectionMarks}
-                      onChange={(event) => updateSection(section.id, { targetMarks: Number(event.target.value) })}
-                    />
-                  </label>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">{sectionMarks} marks</span>
                   <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500" title="Optional section choice: counted marks use required questions only">
                     Do
@@ -1321,7 +1317,7 @@ export function PaperEditor({
                     <div
                       key={question.id}
                       id={`question-${question.id}`}
-                      className={`question-row group relative rounded-lg border p-3 transition ${isActiveQuestion ? "is-active border-amber-300 bg-amber-50/35 shadow-sm" : "border-transparent bg-white/50 hover:border-slate-200 hover:bg-slate-50"} ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
+                      className={`question-row group relative rounded-lg border transition ${isActiveQuestion ? "is-active border-amber-300 bg-amber-50/35 p-3 shadow-sm" : "border-transparent bg-transparent px-0 py-1.5"} ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
                       draggable
                       onClick={() => setActiveQuestionId(question.id)}
                       onDragStart={() => setDraggedQuestion({ sectionId: section.id, questionId: question.id })}
@@ -1332,12 +1328,12 @@ export function PaperEditor({
                       }}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="flex flex-col items-center gap-2 pt-2">
-                          <GripVertical className="cursor-grab text-slate-400" size={18} />
-                          <span className="font-display text-lg font-bold text-slate-950">{questionNumber}.</span>
+                        <div className="flex flex-col items-center gap-1 pt-1">
+                          <GripVertical className={isActiveQuestion ? "cursor-grab text-slate-400" : "cursor-grab text-slate-300 opacity-0 group-hover:opacity-100"} size={14} />
+                          <span className="font-sans text-[11px] font-black text-slate-950">{questionNumber}.</span>
                         </div>
 
-                        <div className="min-w-0 flex-1 space-y-3">
+                        <div className={`min-w-0 flex-1 ${isActiveQuestion ? "space-y-3" : "space-y-1"}`}>
                           <RichTextEditor
                             label={`Question ${questionNumber}`}
                             minHeight="normal"
@@ -1349,61 +1345,78 @@ export function PaperEditor({
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
 
-                          <ImageAssetList assets={question.imageAssets} onDelete={(assetId) => removeQuestionImage(section.id, question.id, assetId)} />
+                          <ImageAssetList
+                            assets={question.imageAssets}
+                            compact={!isActiveQuestion}
+                            readOnly={!isActiveQuestion}
+                            onDelete={(assetId) => removeQuestionImage(section.id, question.id, assetId)}
+                          />
 
-                          <DiagramDropZone
-                            emptyText="Drag a diagram here to attach it to the whole question. It prints before options and subparts."
-                            onDrop={() => moveDraggedDiagramToQuestion(section.id, question.id)}
-                          >
-                            {question.diagramBlocks && question.diagramBlocks.length > 0 && (
-                              <DiagramBlockList
-                                diagrams={question.diagramBlocks}
-                                label="Question diagram"
-                                onDelete={(diagramId) => deleteQuestionDiagram(section.id, question.id, diagramId)}
-                                onDragStart={(diagramId) => setDraggedDiagram({ sectionId: section.id, questionId: question.id, diagramId })}
-                              />
-                            )}
-                          </DiagramDropZone>
+                          {(isActiveQuestion || (question.diagramBlocks && question.diagramBlocks.length > 0)) && (
+                            <DiagramDropZone
+                              emptyText="Drag a diagram here to attach it to the whole question. It prints before options and subparts."
+                              onDrop={() => moveDraggedDiagramToQuestion(section.id, question.id)}
+                            >
+                              {question.diagramBlocks && question.diagramBlocks.length > 0 && (
+                                <DiagramBlockList
+                                  diagrams={question.diagramBlocks}
+                                  label="Question diagram"
+                                  onDelete={(diagramId) => deleteQuestionDiagram(section.id, question.id, diagramId)}
+                                  onDragStart={(diagramId) => setDraggedDiagram({ sectionId: section.id, questionId: question.id, diagramId })}
+                                />
+                              )}
+                            </DiagramDropZone>
+                          )}
 
                           {question.options && question.options.length > 0 && (
-                            <div className="space-y-2 rounded-md border border-slate-200 bg-white p-2">
+                            <div className={isActiveQuestion ? "space-y-2 rounded-md border border-slate-200 bg-white p-2" : "paper-option-grid"}>
                               {question.options.map((option, optionIndex) => (
-                                <div key={option.id ?? `${question.id}-option-${optionIndex}`} className="group/option grid grid-cols-[44px_1fr_auto] gap-2">
-                                  <input
-                                    aria-label={`Question ${questionNumber} option ${optionIndex + 1} label`}
-                                    className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-center text-xs font-black text-slate-700"
-                                    value={option.label ?? String.fromCharCode(65 + optionIndex)}
-                                    onChange={(event) => updateQuestionOption(section.id, question.id, optionIndex, { label: event.target.value })}
-                                  />
-                                  <div className="min-w-0 space-y-2">
-                                    <RichTextEditor
-                                      label={`Question ${questionNumber} option ${option.label ?? optionIndex + 1}`}
-                                      minHeight="compact"
-                                      placeholder="Write option..."
-                                      value={option.text}
-                                      htmlValue={option.richText}
-                                      onFocus={() => focusQuestion(question.id)}
-                                      onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
-                                      onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
+                                isActiveQuestion ? (
+                                  <div key={option.id ?? `${question.id}-option-${optionIndex}`} className="group/option grid grid-cols-[44px_1fr_auto] gap-2">
+                                    <input
+                                      aria-label={`Question ${questionNumber} option ${optionIndex + 1} label`}
+                                      className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-center text-xs font-black text-slate-700"
+                                      value={option.label ?? String.fromCharCode(65 + optionIndex)}
+                                      onChange={(event) => updateQuestionOption(section.id, question.id, optionIndex, { label: event.target.value })}
                                     />
-                                    <ImageAssetList
-                                      assets={option.imageAssets}
-                                      compact
-                                      onDelete={(assetId) => removeOptionImage(section.id, question.id, optionIndex, assetId)}
+                                    <div className="min-w-0 space-y-2">
+                                      <RichTextEditor
+                                        label={`Question ${questionNumber} option ${option.label ?? optionIndex + 1}`}
+                                        minHeight="compact"
+                                        placeholder="Write option..."
+                                        value={option.text}
+                                        htmlValue={option.richText}
+                                        onFocus={() => focusQuestion(question.id)}
+                                        onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
+                                        onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
+                                      />
+                                      <ImageAssetList
+                                        assets={option.imageAssets}
+                                        compact
+                                        onDelete={(assetId) => removeOptionImage(section.id, question.id, optionIndex, assetId)}
+                                      />
+                                    </div>
+                                    <TextBlockActions
+                                      className="opacity-100 lg:opacity-0 lg:group-hover/option:opacity-100"
+                                      onDuplicate={() => duplicateQuestionOption(section.id, question.id, optionIndex)}
+                                      onAddImage={onUploadImage ? (file) => void attachQuestionOptionImage(section.id, question.id, optionIndex, file) : undefined}
+                                      onDelete={() => deleteQuestionOption(section.id, question.id, optionIndex)}
                                     />
                                   </div>
-                                  <TextBlockActions
-                                    className="opacity-100 lg:opacity-0 lg:group-hover/option:opacity-100"
-                                    onDuplicate={() => duplicateQuestionOption(section.id, question.id, optionIndex)}
-                                    onAddImage={onUploadImage ? (file) => void attachQuestionOptionImage(section.id, question.id, optionIndex, file) : undefined}
-                                    onDelete={() => deleteQuestionOption(section.id, question.id, optionIndex)}
-                                  />
-                                </div>
+                                ) : (
+                                  <div key={option.id ?? `${question.id}-option-${optionIndex}`} className="paper-option-row">
+                                    <span className="paper-option-label">{formatOptionLabel(option.label, optionIndex)}</span>
+                                    <span className="paper-option-text" dangerouslySetInnerHTML={{ __html: richDisplayHtml(option.richText, option.text) }} />
+                                    {option.imageAssets && option.imageAssets.length > 0 && <ImageAssetList assets={option.imageAssets} compact readOnly onDelete={() => undefined} />}
+                                  </div>
+                                )
                               ))}
-                              <button className="editor-mini-button ml-11" onClick={() => addQuestionOption(section.id, question.id)} type="button">
-                                <Plus size={14} />
-                                Add option
-                              </button>
+                              {isActiveQuestion && (
+                                <button className="editor-mini-button ml-11" onClick={() => addQuestionOption(section.id, question.id)} type="button">
+                                  <Plus size={14} />
+                                  Add option
+                                </button>
+                              )}
                             </div>
                           )}
 
@@ -2048,10 +2061,12 @@ function ImageAssetList({
   assets,
   compact = false,
   onDelete,
+  readOnly = false,
 }: {
   assets?: PaperImageAsset[];
   compact?: boolean;
   onDelete: (assetId: string) => void;
+  readOnly?: boolean;
 }) {
   if (!assets || assets.length === 0) return null;
 
@@ -2065,14 +2080,16 @@ function ImageAssetList({
             src={asset.url}
           />
           <figcaption className="mt-1 truncate text-[10px] font-bold text-slate-500">{asset.caption || asset.filename || asset.name || "Attached image"}</figcaption>
-          <button
-            className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-600 shadow-sm hover:bg-red-50"
-            onClick={() => onDelete(asset.id)}
-            title="Remove image"
-            type="button"
-          >
-            <Trash2 size={12} />
-          </button>
+          {!readOnly && (
+            <button
+              className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-600 shadow-sm hover:bg-red-50"
+              onClick={() => onDelete(asset.id)}
+              title="Remove image"
+              type="button"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
         </figure>
       ))}
     </div>
@@ -2122,6 +2139,53 @@ function SourceMixPill({ label, value }: { label: string; value: number }) {
       <div className="mt-1 font-display text-xl italic text-amber-950">{value}</div>
     </div>
   );
+}
+
+function formatOptionLabel(label: string | undefined, index: number) {
+  const normalized = (label || String.fromCharCode(65 + index)).trim();
+  if (/^\(?[A-Z]\)?\.?$/i.test(normalized)) return `(${normalized.replace(/[().]/g, "").toUpperCase()})`;
+  if (/^\(?[ivx]+\)?\.?$/i.test(normalized)) return normalized.startsWith("(") ? normalized : `(${normalized})`;
+  return normalized;
+}
+
+function richDisplayHtml(richText: string | undefined, text: string | undefined) {
+  const source = text?.trim() ? textToDisplayHtml(text) : richText?.trim() ? stripMathSpansToText(richText) : "";
+  return stripEditorOnlyMarkup(source)
+    .replaceAll('data-type="inline-math"', 'data-type="inline-math"')
+    .replace(/<p><\/p>/g, "")
+    .replace(/<p>\s*<br\s*\/?>\s*<\/p>/g, "");
+}
+
+function stripEditorOnlyMarkup(html: string) {
+  return html
+    .replace(/\sclass="[^"]*"/g, "")
+    .replace(/\sstyle="[^"]*"/g, "");
+}
+
+function stripMathSpansToText(html: string) {
+  return html.replace(/<span[^>]*data-latex="([^"]*)"[^>]*><\/span>/g, (_match, latex: string) => `<span class="math-preview">${escapeDisplayHtml(latex)}</span>`);
+}
+
+function textToDisplayHtml(value: string) {
+  return escapeDisplayHtml(value)
+    .replace(/\$([^$\n]+)\$/g, (_match, latex: string) => `<span class="math-preview">${escapeDisplayHtml(normalizeDisplayLatex(latex))}</span>`)
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "<span class=\"math-frac\"><span>$1</span><span>$2</span></span>")
+    .replace(/([A-Za-z])([23])(?=\b|[^A-Za-z0-9])/g, "$1<sup>$2</sup>")
+    .replace(/\(([A-Za-z0-9\s+\-−–*/=.,]+)\)([23])(?=\b|[^A-Za-z0-9])/g, "($1)<sup>$2</sup>")
+    .replace(/\b([A-Z][a-z]?)(\d+)(?=[A-Z]|$)/g, "$1<sub>$2</sub>")
+    .replace(/\n/g, "<br>");
+}
+
+function normalizeDisplayLatex(value: string) {
+  return value
+    .trim()
+    .replace(/[−–]/g, "-")
+    .replace(/π/g, "\\pi")
+    .replace(/([A-Za-z0-9)\]}])([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (_match, base: string, digits: string) => `${base}^{${digits.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (digit) => "⁰¹²³⁴⁵⁶⁷⁸⁹".indexOf(digit).toString())}}`);
+}
+
+function escapeDisplayHtml(value: string) {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
 function DiagramDropZone({
@@ -2365,6 +2429,17 @@ function questionToChoice(question: PaperQuestion): NonNullable<PaperQuestion["o
     answer: question.answer,
     answerRichText: question.answerRichText,
   };
+}
+
+function choiceHasContent(choice: PaperQuestion["optionalChoice"]) {
+  if (!choice) return false;
+  return Boolean(
+    choice.text?.trim() ||
+      choice.richText?.replace(/<[^>]*>/g, "").trim() ||
+      (choice.options && choice.options.length > 0 && choice.options.some((option) => option.text?.trim() || option.richText?.replace(/<[^>]*>/g, "").trim())) ||
+      (choice.subparts && choice.subparts.length > 0) ||
+      (choice.imageAssets && choice.imageAssets.length > 0),
+  );
 }
 
 function choiceToQuestion(question: PaperQuestion): PaperQuestion {
