@@ -401,8 +401,10 @@ export async function fetchUsageViaApi(runId?: string): Promise<AiUsageSummary |
         const record = asRecord(event);
         return {
           id: String(record.id ?? ""),
+          provider: record.provider ? String(record.provider) : undefined,
           model: String(record.model ?? ""),
           operation: String(record.operation ?? ""),
+          latencyMs: record.latency_ms || record.latencyMs ? Number(record.latency_ms ?? record.latencyMs) : undefined,
           inputTokens: Number(record.input_tokens ?? 0),
           outputTokens: Number(record.output_tokens ?? 0),
           totalTokens: Number(record.total_tokens ?? 0),
@@ -410,6 +412,7 @@ export async function fetchUsageViaApi(runId?: string): Promise<AiUsageSummary |
           insertedAt: record.inserted_at ? String(record.inserted_at) : undefined,
         };
       }),
+      totalLatencyMs: data.total_latency_ms || data.totalLatencyMs ? Number(data.total_latency_ms ?? data.totalLatencyMs) : undefined,
     };
   } catch {
     return null;
@@ -613,6 +616,12 @@ function toBackendRequest(request: PaperRequest) {
       marks_each: section.marksEach,
       difficulty: section.difficulty,
       instructions: section.instructions,
+      attempt_rule: section.attemptRule
+        ? {
+            required: section.attemptRule.required,
+            offered: section.attemptRule.offered,
+          }
+        : undefined,
     })),
     marking_scheme: request.markingScheme,
     difficulty: request.difficulty,
@@ -623,6 +632,9 @@ function toBackendRequest(request: PaperRequest) {
     source_books: sourceBooks,
     source_categories: sourceCategories,
     direct_source_mix: request.directSourceMix,
+    source_weights: request.sourceWeights ?? request.directSourceMix,
+    source_weights_normalized: request.sourceWeightsNormalized ?? false,
+    provider: request.provider,
     template: request.template ? toBackendTemplate(request.template) : undefined,
   };
 }
@@ -710,6 +722,7 @@ function normalizePaper(raw: Record<string, unknown>, paperId?: string): Paper {
             instructions: String(sectionRecord.instructions ?? ""),
             difficulty: sectionRecord.difficulty ? String(sectionRecord.difficulty) : undefined,
             targetMarks: sectionRecord.targetMarks || sectionRecord.target_marks ? Number(sectionRecord.targetMarks ?? sectionRecord.target_marks) : undefined,
+            attemptRule: normalizeAttemptRule(sectionRecord.attemptRule ?? sectionRecord.attempt_rule),
             questions: Array.isArray(sectionRecord.questions)
               ? sectionRecord.questions.map((question) => normalizeQuestion(asRecord(question)))
               : [],
@@ -729,6 +742,18 @@ function normalizePaper(raw: Record<string, unknown>, paperId?: string): Paper {
 
 function normalizeQuestion(questionRecord: Record<string, unknown>): PaperQuestion {
   return normalizeRawQuestion(questionRecord);
+}
+
+function normalizeAttemptRule(value: unknown) {
+  const record = asRecord(value);
+  const required = Number(record.required ?? 0);
+  const offered = Number(record.offered ?? 0);
+  if (!Number.isFinite(required) || !Number.isFinite(offered) || required <= 0 || offered <= 0) return undefined;
+
+  return {
+    required: Math.max(1, Math.floor(required)),
+    offered: Math.max(1, Math.floor(offered)),
+  };
 }
 
 function toBackendPaper(paper: Paper) {

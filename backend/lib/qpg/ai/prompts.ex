@@ -52,7 +52,8 @@ defmodule Qpg.AI.Prompts do
     - source
     - question_types
     - section_blueprint: optional array of section plans with title,
-      question_types, question_count, marks_each, difficulty, and instructions
+      question_types, question_count, marks_each, difficulty, instructions, and
+      optional attempt_rule {required, offered} for "Attempt X of Y" sections
     - marking_scheme
     - difficulty
     - difficulty_mix: optional object with easy, medium, and hard percentages
@@ -122,6 +123,8 @@ defmodule Qpg.AI.Prompts do
       question types, question count, marks_each, difficulty, and instructions,
       and make the total marks match the blueprint unless it conflicts with
       total_marks. If it conflicts, preserve total_marks and return a warning.
+      If a section has attempt_rule, print the offered number of questions but
+      count only required * marks_each toward section and paper totals.
     - Include requested question types such as Fill in the Blanks, True/False,
       MCQ, Very Short Answer, Short Answer, Long Answer, and Case Study only
       when selected in question_types or section_blueprint.

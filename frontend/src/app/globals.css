@@ -509,7 +509,8 @@ button:disabled {
 }
 
 .rich-text-shell:focus-within > div:first-child,
-.rich-text-shell:hover > div:first-child {
+.rich-text-shell:hover > div:first-child,
+.question-row.is-active .rich-text-shell > div:first-child {
   opacity: 1;
   max-height: 3rem;
   border-bottom-width: 1px;

@@ -56,6 +56,7 @@ defmodule Qpg.AI.ModelRouter do
   defp model_name_for_provider(size, gemini_default, openai_default) do
     case System.get_env("AI_PROVIDER", "gemini") |> String.downcase() do
       "openai" -> env_model("OPENAI", size, openai_default)
+      "groq" -> env_model("GROQ", size, System.get_env("GROQ_MODEL", ""))
       _ -> env_model("GEMINI", size, gemini_default)
     end
   end

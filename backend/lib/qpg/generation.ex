@@ -73,6 +73,8 @@ defmodule Qpg.Generation do
 
     Process.put(:qpg_generation_run_id, run.id)
     Process.put(:qpg_ai_operation, "generation")
+    if run.request["provider"] in ["gemini", "groq", "openai"],
+      do: Process.put(:qpg_ai_provider_override, run.request["provider"])
 
     result =
       try do
@@ -84,6 +86,7 @@ defmodule Qpg.Generation do
       after
         Process.delete(:qpg_generation_run_id)
         Process.delete(:qpg_ai_operation)
+        Process.delete(:qpg_ai_provider_override)
       end
       |> enforce_direct_source_mix(run.request, retrieval_preview)
 
@@ -287,6 +290,7 @@ defmodule Qpg.Generation do
       |> put_default("total_marks", 80)
       |> put_default("duration_minutes", 180)
       |> put_default("variant_count", 3)
+      |> normalize_source_weights()
       |> put_default(
         "direct_source_mix",
         default_direct_source_mix(request["source"] || "NCERT + PYQ")
@@ -295,6 +299,14 @@ defmodule Qpg.Generation do
     Logging.debug("generation.request.normalized", %{request: request_summary(normalized)})
     normalized
   end
+
+  defp normalize_source_weights(%{"source_weights" => weights} = request) when is_map(weights) do
+    request
+    |> Map.put("direct_source_mix", weights)
+    |> Map.put_new("source_weights_normalized", false)
+  end
+
+  defp normalize_source_weights(request), do: request
 
   defp normalize_chapters(request) do
     chapters =
@@ -376,7 +388,9 @@ defmodule Qpg.Generation do
       "total_marks",
       "duration_minutes",
       "variant_count",
-      "direct_source_mix"
+      "direct_source_mix",
+      "source_weights_normalized",
+      "provider"
     ])
   end
 

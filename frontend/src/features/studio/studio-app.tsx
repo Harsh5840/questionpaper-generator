@@ -90,6 +90,7 @@ const defaultDocumentStyle: DocumentStyle = {
   textColor: "#111827",
   accentColor: "#895100",
   pageColor: "#ffffff",
+  watermark: undefined,
 };
 
 const questionTypeOptions = ["MCQ", "Fill in the Blanks", "True/False", "Very Short Answer", "Short Answer", "Long Answer", "Case Study"];
@@ -126,6 +127,9 @@ export function StudioApp() {
     sectionBlueprint: [],
     difficultyMix: difficultyPresets.Medium,
     directSourceMix: sourceMixPresets["NCERT + PYQ"],
+    sourceWeights: sourceMixPresets["NCERT + PYQ"],
+    sourceWeightsNormalized: false,
+    provider: "gemini",
   });
   const [prompt, setPrompt] = useState("CBSE class 10 maths 50 marks from Quadratic Equations using NCERT and PYQ format");
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
@@ -316,7 +320,7 @@ export function StudioApp() {
   async function runGeneration() {
     if (isGenerating) return;
 
-    const nextRequest = mode === "prompt" ? requestFromPrompt(prompt) : request;
+    const nextRequest = finalizeGenerationRequest(mode === "prompt" ? requestFromPrompt(prompt) : request);
     setVariantPapers([]);
     setUsage(null);
     setLastError(null);
@@ -633,7 +637,7 @@ export function StudioApp() {
     updateSelectedPaper(appendQuestionToPaper(selectedPaper, question, sectionId));
   }
 
-  function exportCurrent(format: "pdf" | "docx") {
+  async function exportCurrent(format: "pdf" | "docx") {
     if (!selectedPaper) {
       addAssistantMessage("There is no paper to download yet.");
       return;
@@ -653,13 +657,19 @@ export function StudioApp() {
       return;
     }
 
-    const blob = new Blob([html], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${selectedPaper.title.replaceAll(" ", "-").toLowerCase()}.docx`;
-    link.click();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = await paperToDocxBlob(applyDocumentStyle(selectedPaper, documentStyle), documentStyle);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${selectedPaper.title.replaceAll(" ", "-").toLowerCase()}.docx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setLastError(message);
+      addAssistantMessage(`DOCX export failed: ${message}`);
+    }
   }
 
   function addUserMessage(text: string) {
@@ -793,6 +803,10 @@ export function StudioApp() {
               documentStyle={documentStyle}
               isGenerating={isGenerating}
               paper={selectedPaper}
+              onDocumentStyleChange={(style) => {
+                setDocumentStyle(style);
+                if (selectedPaper) updateSelectedPaper(applyDocumentStyle(selectedPaper, style));
+              }}
               onImportImage={(sectionId) => void importQuestionImage(sectionId)}
               onUploadImage={uploadEditorImage}
               onPaperChange={updateSelectedPaper}
@@ -2088,10 +2102,30 @@ function StepSubject({
 
 function StepChapters({ availableChapters, onUpdateRequest, request }: { availableChapters: string[]; onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void; request: PaperRequest }) {
   const chapters = availableChapters.length > 0 ? availableChapters : request.chapters;
+  const updateScope = (scope: PaperRequest["chapterScope"]) => {
+    onUpdateRequest("chapterScope", scope);
+
+    if (scope === "full_syllabus") {
+      onUpdateRequest("chapters", chapters);
+      onUpdateRequest("chapter", "");
+      onUpdateRequest("topic", "Full syllabus");
+      return;
+    }
+
+    const next = scope === "single" ? request.chapters.slice(0, 1) : request.chapters;
+    onUpdateRequest("chapters", next);
+    onUpdateRequest("chapter", next[0] ?? "");
+    onUpdateRequest("topic", next.join(", "));
+  };
   const toggleChapter = (chapter: string) => {
     const selected = request.chapters.includes(chapter);
-    const next = request.chapterScope === "single" ? [chapter] : selected ? request.chapters.filter((item) => item !== chapter) : [...request.chapters, chapter];
-    onUpdateRequest("chapterScope", next.length > 1 ? "multiple" : "single");
+    const next =
+      request.chapterScope === "single"
+        ? [chapter]
+        : selected
+          ? request.chapters.filter((item) => item !== chapter)
+          : [...request.chapters, chapter];
+    onUpdateRequest("chapterScope", request.chapterScope === "single" ? "single" : next.length > 1 ? "multiple" : "single");
     onUpdateRequest("chapters", next);
     onUpdateRequest("chapter", next[0] ?? "");
     onUpdateRequest("topic", next.join(", "));
@@ -2102,6 +2136,17 @@ function StepChapters({ availableChapters, onUpdateRequest, request }: { availab
       <div className="mb-4 flex items-center justify-between">
         <FlowLabel>Chapters to include</FlowLabel>
         <span className="text-sm text-[var(--ink-3)]">{request.chapters.length} selected</span>
+      </div>
+      <div className="mb-4 grid gap-2 rounded-[var(--radius-md)] bg-[var(--surface-2)] p-1 text-sm md:grid-cols-3">
+        {([
+          ["single", "One chapter"],
+          ["multiple", "Multiple chapters"],
+          ["full_syllabus", "Full syllabus"],
+        ] as const).map(([scope, label]) => (
+          <button key={scope} className={tabClass(request.chapterScope === scope)} onClick={() => updateScope(scope)} type="button">
+            {label}
+          </button>
+        ))}
       </div>
       <div className="grid gap-2.5 md:grid-cols-2">
         {chapters.map((chapter) => {
@@ -2148,11 +2193,13 @@ function StepFineTune({
   const updateSource = (source: PaperRequest["source"]) => {
     onUpdateRequest("source", source);
     onUpdateRequest("directSourceMix", sourceMixPresets[source]);
+    onUpdateRequest("sourceWeights", sourceMixPresets[source]);
+    onUpdateRequest("sourceWeightsNormalized", false);
     onUpdateRequest("sourceBooks", []);
     onUpdateRequest("sourceCategories", []);
   };
   const mix = request.difficultyMix ?? difficultyPresets[request.difficulty];
-  const sourceMix = request.directSourceMix ?? sourceMixPresets[request.source];
+  const sourceMix = request.sourceWeights ?? request.directSourceMix ?? sourceMixPresets[request.source];
   const availability = retrievalPreview?.availability;
   const hasNcert = !availability || availability.totals.ncert > 0;
   const hasPyq = !availability || availability.totals.pyq > 0;
@@ -2221,8 +2268,24 @@ function StepFineTune({
           questionBank: !hasQuestionBank,
         }}
         mix={sourceMix}
-        onChange={(nextMix) => onUpdateRequest("directSourceMix", nextMix)}
+        isNormalized={Boolean(request.sourceWeightsNormalized)}
+        onChange={(nextMix, normalized) => {
+          onUpdateRequest("sourceWeights", nextMix);
+          onUpdateRequest("directSourceMix", nextMix);
+          onUpdateRequest("sourceWeightsNormalized", normalized);
+        }}
       />
+
+      <div>
+        <FlowLabel>AI provider</FlowLabel>
+        <div className="inline-grid grid-cols-2 rounded-[var(--radius-md)] bg-[var(--surface-2)] p-1">
+          {(["gemini", "groq"] as const).map((provider) => (
+            <button key={provider} className={tabClass((request.provider ?? "gemini") === provider)} onClick={() => onUpdateRequest("provider", provider)} type="button">
+              {provider.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="grid gap-5 md:grid-cols-2">
         <ChipMultiSelect
@@ -2271,7 +2334,7 @@ function StepFineTune({
           </div>
           <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}{request.sourceBooks?.length ? ` · ${request.sourceBooks.join(", ")}` : ""}. {request.questionTypes.length} question types selected. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
           <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Difficulty mix: {mix.easy}% easy · {mix.medium}% medium · {mix.hard}% hard.</div>
-          <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Source mix target: {sourceMix.ncertDirect}% NCERT direct · {sourceMix.pyqDirect}% PYQ direct · {sourceMix.questionBank}% bank · {sourceMix.aiGenerated}% AI from dump.</div>
+          <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Source mix target: {sourceMix.ncertDirect}% NCERT direct · {sourceMix.pyqDirect}% PYQ direct · {sourceMix.questionBank}% bank · {sourceMix.aiGenerated}% AI from dump. Provider: {(request.provider ?? "gemini").toUpperCase()}.</div>
         </div>
       </div>
     </div>
@@ -2372,36 +2435,28 @@ function DifficultyMixSliders({ mix, onChange }: { mix: NonNullable<PaperRequest
 
 function SourceMixSliders({
   disabledSources,
+  isNormalized,
   mix,
   onChange,
 }: {
   disabledSources: Partial<Record<keyof Pick<DirectSourceMix, "ncertDirect" | "pyqDirect" | "questionBank">, boolean>>;
+  isNormalized: boolean;
   mix: DirectSourceMix;
-  onChange: (mix: DirectSourceMix) => void;
+  onChange: (mix: DirectSourceMix, normalized: boolean) => void;
 }) {
   const keys = ["ncertDirect", "pyqDirect", "questionBank", "aiGenerated"] as const;
-  const normalized = normalizeSourceMixForUi(mix, disabledSources);
+  const disabledCleaned = cleanDisabledSourceMix(mix, disabledSources);
+  const normalized = normalizeSourceMixForUi(disabledCleaned, disabledSources);
+  const total = keys.reduce((sum, key) => sum + Number(disabledCleaned[key] ?? 0), 0);
 
   const update = (key: (typeof keys)[number], value: number) => {
     const clamped = Math.max(0, Math.min(100, value));
-    const availableKeys = keys.filter((item) => item !== key && !disabledSources[item as keyof typeof disabledSources]);
-    const remaining = 100 - clamped;
-    const currentOtherTotal = availableKeys.reduce((total, item) => total + normalized[item], 0) || 1;
-    const next = { ...normalized, [key]: clamped };
+    const next = cleanDisabledSourceMix({ ...disabledCleaned, [key]: clamped }, disabledSources);
+    onChange({ ...next, dumpDirect: next.ncertDirect + next.pyqDirect + next.questionBank, aiFromDump: next.aiGenerated }, false);
+  };
 
-    availableKeys.forEach((item, index) => {
-      if (index === availableKeys.length - 1) {
-        next[item] = 100 - keys.reduce((total, sourceKey) => (sourceKey === item ? total : total + next[sourceKey]), 0);
-      } else {
-        next[item] = Math.round((normalized[item] / currentOtherTotal) * remaining);
-      }
-    });
-
-    (["ncertDirect", "pyqDirect", "questionBank"] as const).forEach((item) => {
-      if (disabledSources[item]) next[item] = 0;
-    });
-
-    onChange({ ...next, dumpDirect: next.ncertDirect + next.pyqDirect + next.questionBank, aiFromDump: next.aiGenerated });
+  const normalize = () => {
+    onChange({ ...normalized, dumpDirect: normalized.ncertDirect + normalized.pyqDirect + normalized.questionBank, aiFromDump: normalized.aiGenerated }, true);
   };
 
   return (
@@ -2411,12 +2466,14 @@ function SourceMixSliders({
         <div className="flex items-center gap-2">
           <button
             className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--accent-deep)] hover:bg-[var(--accent-soft)]"
-            onClick={() => onChange({ ...normalized, dumpDirect: normalized.ncertDirect + normalized.pyqDirect + normalized.questionBank, aiFromDump: normalized.aiGenerated })}
+            onClick={normalize}
             type="button"
           >
             Normalize to 100%
           </button>
-          <span className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--ink-3)]">Direct pull vs AI</span>
+          <span className={`font-mono text-[10px] font-black uppercase tracking-[0.12em] ${total === 100 ? "text-emerald-700" : "text-[var(--ink-3)]"}`}>
+            Total {total}% {isNormalized || total === 100 ? "normalized" : "free"}
+          </span>
         </div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
@@ -2434,7 +2491,7 @@ function SourceMixSliders({
                 max={100}
                 min={0}
                 type="range"
-                value={normalized[key]}
+                value={disabledCleaned[key]}
                 onChange={(event) => update(key, Number(event.target.value))}
               />
             </label>
@@ -2442,10 +2499,22 @@ function SourceMixSliders({
         })}
       </div>
       <div className="mt-3 text-[11px] leading-5 text-[var(--ink-3)]">
-        Direct questions are inserted untouched from the dump where compatible candidates exist. AI questions are still grounded in dump citations.
+        Sliders are free while you explore. Click Normalize, or submit generation, to scale the available sources to exactly 100%.
       </div>
     </div>
   );
+}
+
+function cleanDisabledSourceMix(
+  mix: DirectSourceMix,
+  disabledSources: Partial<Record<keyof Pick<DirectSourceMix, "ncertDirect" | "pyqDirect" | "questionBank">, boolean>>,
+) {
+  return {
+    ncertDirect: disabledSources.ncertDirect ? 0 : Math.max(0, Math.round(mix.ncertDirect ?? 0)),
+    pyqDirect: disabledSources.pyqDirect ? 0 : Math.max(0, Math.round(mix.pyqDirect ?? 0)),
+    questionBank: disabledSources.questionBank ? 0 : Math.max(0, Math.round(mix.questionBank ?? 0)),
+    aiGenerated: Math.max(0, Math.round(mix.aiGenerated ?? 0)),
+  };
 }
 
 function normalizeSourceMixForUi(
@@ -2466,6 +2535,21 @@ function normalizeSourceMixForUi(
   next.dumpDirect = next.ncertDirect + next.pyqDirect + next.questionBank;
   next.aiFromDump = next.aiGenerated;
   return next;
+}
+
+function finalizeGenerationRequest(request: PaperRequest): PaperRequest {
+  const raw = request.sourceWeights ?? request.directSourceMix ?? sourceMixPresets[request.source];
+  const mix = normalizeSourceMixForUi(raw, {
+    ncertDirect: request.source === "PYQ",
+    pyqDirect: request.source === "NCERT",
+  });
+
+  return {
+    ...request,
+    sourceWeights: mix,
+    sourceWeightsNormalized: true,
+    directSourceMix: mix,
+  };
 }
 
 function sourceMixLabel(key: keyof DirectSourceMix) {
@@ -2939,7 +3023,12 @@ function AssistantPanel({
             {usage && (
               <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--ink-2)]">
                 <div className="font-bold text-[var(--ink)]">API usage</div>
-                <div className="mt-1">{usage.totalTokens} tokens · ${usage.estimatedCostUsd.toFixed(6)}</div>
+                <div className="mt-1">{usage.totalTokens} tokens · ${usage.totalLatencyMs ? `${Math.round(usage.totalLatencyMs / 1000)}s · ` : ""}${usage.estimatedCostUsd.toFixed(6)}</div>
+                {usage.events[0] && (
+                  <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
+                    {usage.events[0].provider ?? "ai"} · {usage.events[0].model}
+                  </div>
+                )}
               </div>
             )}
             {chatMessages.map((message) => (
@@ -4372,7 +4461,7 @@ function recalculatePaper(paper: Paper): Paper {
     ...section,
     questions: section.questions.map(questionWithComputedMarks),
   }));
-  const totalMarks = sections.reduce((paperTotal, section) => paperTotal + section.questions.reduce((sectionTotal, question) => sectionTotal + countedQuestionMarks(question), 0), 0);
+  const totalMarks = sections.reduce((paperTotal, section) => paperTotal + countedSectionMarks(section), 0);
   const questionCount = sections.reduce((count, section) => count + section.questions.length, 0);
   const topicWeightage: Record<string, number> = {};
 
@@ -4393,8 +4482,24 @@ function recalculatePaper(paper: Paper): Paper {
     },
     topicWeightage,
     sourceMix: calculateSourceMix(paper),
-    pageCount: Math.max(1, paper.sections.length + 1),
+    pageCount: Math.max(1, Math.ceil((questionCount * 76 + sections.length * 120 + 260) / 980)),
   };
+}
+
+function countedSectionMarks(section: PaperSection) {
+  const marks = section.questions.map(countedQuestionMarks);
+  const rawTotal = marks.reduce((total, value) => total + value, 0);
+  const rule = section.attemptRule;
+  if (!rule || rule.required >= rule.offered || rule.required >= section.questions.length) return rawTotal;
+
+  const uniform = marks.length > 0 && marks.every((value) => value === marks[0]);
+  if (uniform) return rule.required * (marks[0] ?? 0);
+
+  return marks
+    .slice()
+    .sort((left, right) => right - left)
+    .slice(0, rule.required)
+    .reduce((total, value) => total + value, 0);
 }
 
 function calculateSourceMix(paper: Paper): NonNullable<Paper["sourceMix"]> {
@@ -4579,7 +4684,12 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
         })
         .join("");
 
-      return `<section><h2>${escapeHtml(section.title)}</h2><p class="instructions">${escapeHtml(section.instructions)}</p>${questions}</section>`;
+      const attemptText =
+        section.attemptRule && section.attemptRule.required < section.attemptRule.offered
+          ? `<p class="instructions"><strong>Attempt any ${section.attemptRule.required} of ${section.attemptRule.offered} questions.</strong></p>`
+          : "";
+
+      return `<section><h2>${escapeHtml(section.title)}</h2><p class="instructions">${escapeHtml(section.instructions)}</p>${attemptText}${questions}</section>`;
     })
     .join("");
 
@@ -4597,11 +4707,147 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     .option p,.q-main p,.subpart p{margin:0 0 2px}
     .subpart{margin:4px 0 4px 24px}
     .instructions{font-size:11px;color:#475569;margin:0 0 6px}.or{text-align:center;font-family:Arial,sans-serif;font-weight:bold;color:#1d4ed8;margin:5px 0}
-    .q-image-grid{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
+    .watermark{position:fixed;inset:42% 0 auto;z-index:-1;text-align:center;font-family:Georgia,serif;font-size:54px;font-weight:700;color:${escapeHtml(documentStyle.accentColor)};opacity:${documentStyle.watermark?.opacity ?? 0};transform:${documentStyle.watermark?.position === "diagonal" ? "rotate(-28deg)" : "none"};pointer-events:none}
+    .q-image-grid{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;justify-content:center}
+    .option .q-image-grid{justify-content:flex-start}
     .q-image{max-width:180px;border:1px solid #cbd5e1;padding:3px;border-radius:4px}
     .q-image img{display:block;max-width:100%;max-height:120px;object-fit:contain}
     .q-image figcaption{font-family:Arial,sans-serif;font-size:8px;color:#64748b;margin-top:2px}
-  </style></head><body><header><div>Series: QPG/${escapeHtml(printablePaper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(printablePaper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(printablePaper.title)}</h1><div class="meta"><span>${escapeHtml(printablePaper.metadata.board)} Class ${escapeHtml(printablePaper.metadata.classLevel)}</span><span>${escapeHtml(printablePaper.metadata.subject)}</span><span>Time: ${formatDuration(printablePaper.metadata.durationMinutes)}</span><span>Max Marks: ${printablePaper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
+  </style></head><body>${documentStyle.watermark?.text ? `<div class="watermark">${escapeHtml(documentStyle.watermark.text)}</div>` : ""}<header><div>Series: QPG/${escapeHtml(printablePaper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(printablePaper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(printablePaper.title)}</h1><div class="meta"><span>${escapeHtml(printablePaper.metadata.board)} Class ${escapeHtml(printablePaper.metadata.classLevel)}</span><span>${escapeHtml(printablePaper.metadata.subject)}</span><span>Time: ${formatDuration(printablePaper.metadata.durationMinutes)}</span><span>Max Marks: ${printablePaper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
+}
+
+async function paperToDocxBlob(paper: Paper, documentStyle: DocumentStyle) {
+  const docx = await import("docx");
+  const children: InstanceType<typeof docx.Paragraph>[] = [];
+  const printablePaper = normalizePaperStructure(paper);
+  let questionNumber = 1;
+
+  if (documentStyle.watermark?.text) {
+    children.push(
+      new docx.Paragraph({
+        alignment: docx.AlignmentType.CENTER,
+        children: [
+          new docx.TextRun({
+            text: documentStyle.watermark.text,
+            color: documentStyle.accentColor.replace("#", ""),
+            size: 42,
+            italics: true,
+          }),
+        ],
+      }),
+    );
+  }
+
+  children.push(
+    new docx.Paragraph({
+      alignment: docx.AlignmentType.CENTER,
+      children: [new docx.TextRun({ text: printablePaper.title, bold: true, size: 28 })],
+    }),
+    new docx.Paragraph({
+      alignment: docx.AlignmentType.CENTER,
+      children: [
+        new docx.TextRun({
+          text: `${printablePaper.metadata.board} Class ${printablePaper.metadata.classLevel} · ${printablePaper.metadata.subject} · Time: ${formatDuration(printablePaper.metadata.durationMinutes)} · Max Marks: ${printablePaper.summary.totalMarks}`,
+          size: 20,
+        }),
+      ],
+    }),
+  );
+
+  printablePaper.sections.forEach((section) => {
+    children.push(new docx.Paragraph({ heading: docx.HeadingLevel.HEADING_2, children: [new docx.TextRun({ text: section.title, bold: true })] }));
+    if (section.instructions) children.push(new docx.Paragraph({ children: [new docx.TextRun({ text: section.instructions, size: 20 })] }));
+    if (section.attemptRule && section.attemptRule.required < section.attemptRule.offered) {
+      children.push(new docx.Paragraph({ children: [new docx.TextRun({ text: `Attempt any ${section.attemptRule.required} of ${section.attemptRule.offered} questions.`, bold: true, size: 20 })] }));
+    }
+
+    section.questions.forEach((question) => {
+      pushQuestionDocx(children, docx, questionNumber, question);
+      questionNumber += 1;
+    });
+  });
+
+  const doc = new docx.Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: {
+              top: Math.max(360, documentStyle.margin * 12),
+              bottom: Math.max(360, documentStyle.margin * 12),
+              left: Math.max(360, documentStyle.margin * 12),
+              right: Math.max(360, documentStyle.margin * 12),
+            },
+          },
+        },
+        children,
+      },
+    ],
+  });
+
+  return docx.Packer.toBlob(doc);
+}
+
+function pushQuestionDocx(children: unknown[], docx: typeof import("docx"), questionNumber: number, question: PaperQuestion) {
+  children.push(
+    new docx.Paragraph({
+      spacing: { before: 120 },
+      children: [
+        new docx.TextRun({ text: `${questionNumber}. `, bold: true, size: 22 }),
+        new docx.TextRun({ text: plainTextFromRich(question.richText || question.text), size: 22 }),
+        new docx.TextRun({ text: ` [${question.marks} marks]`, bold: true, size: 18 }),
+      ],
+    }),
+  );
+  pushImageReferences(children, docx, question.imageAssets, docx.AlignmentType.CENTER);
+  (question.options ?? []).forEach((option) => pushOptionDocx(children, docx, option));
+  (question.subparts ?? []).forEach((subpart) => {
+    children.push(new docx.Paragraph({ indent: { left: 360 }, children: [new docx.TextRun({ text: `(${subpart.label}) ${plainTextFromRich(subpart.richText || subpart.text)} [${subpart.marks ?? ""} marks]`, size: 21 })] }));
+    pushImageReferences(children, docx, subpart.imageAssets, docx.AlignmentType.CENTER);
+    (subpart.options ?? []).forEach((option) => pushOptionDocx(children, docx, option, 540));
+    if (subpart.optionalChoice) {
+      children.push(new docx.Paragraph({ alignment: docx.AlignmentType.CENTER, children: [new docx.TextRun({ text: "OR", bold: true, size: 18 })] }));
+      children.push(new docx.Paragraph({ indent: { left: 360 }, children: [new docx.TextRun({ text: plainTextFromRich(subpart.optionalChoice.richText || subpart.optionalChoice.text), size: 21 })] }));
+      pushImageReferences(children, docx, subpart.optionalChoice.imageAssets, docx.AlignmentType.CENTER);
+      (subpart.optionalChoice.options ?? []).forEach((option) => pushOptionDocx(children, docx, option, 540));
+    }
+  });
+  if (question.optionalChoice) {
+    children.push(new docx.Paragraph({ alignment: docx.AlignmentType.CENTER, children: [new docx.TextRun({ text: "OR", bold: true, size: 18 })] }));
+    children.push(new docx.Paragraph({ children: [new docx.TextRun({ text: plainTextFromRich(question.optionalChoice.richText || question.optionalChoice.text), size: 22 })] }));
+    pushImageReferences(children, docx, question.optionalChoice.imageAssets, docx.AlignmentType.CENTER);
+    (question.optionalChoice.options ?? []).forEach((option) => pushOptionDocx(children, docx, option));
+  }
+}
+
+function pushOptionDocx(children: unknown[], docx: typeof import("docx"), option: PaperQuestionOption, indent = 360) {
+  children.push(
+    new docx.Paragraph({
+      indent: { left: indent },
+      children: [new docx.TextRun({ text: `${option.label ?? ""}. ${plainTextFromRich(option.richText || option.text)}`, size: 20 })],
+    }),
+  );
+  pushImageReferences(children, docx, option.imageAssets, docx.AlignmentType.LEFT, indent + 180);
+}
+
+function pushImageReferences(children: unknown[], docx: typeof import("docx"), assets: PaperImageAsset[] | undefined, alignment: (typeof docx.AlignmentType)[keyof typeof docx.AlignmentType], indent = 0) {
+  (assets ?? []).forEach((asset) => {
+    children.push(
+      new docx.Paragraph({
+        alignment,
+        indent: { left: indent },
+        children: [new docx.TextRun({ text: `[Image: ${asset.caption || asset.filename || asset.name || asset.url}]`, italics: true, size: 18 })],
+      }),
+    );
+  });
+}
+
+function plainTextFromRich(value: string) {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function optionListToHtml(options?: PaperQuestionOption[]) {
@@ -4609,12 +4855,12 @@ function optionListToHtml(options?: PaperQuestionOption[]) {
 }
 
 function optionToHtml(label: string, contentHtml: string, imageAssets?: PaperImageAsset[]) {
-  return `<div class="option"><strong>${escapeHtml(label)}</strong><div>${contentHtml}${imageAssetsToHtml(imageAssets)}</div></div>`;
+  return `<div class="option"><strong>${escapeHtml(label)}</strong><div>${contentHtml}${imageAssetsToHtml(imageAssets, "option")}</div></div>`;
 }
 
-function imageAssetsToHtml(assets?: PaperImageAsset[]) {
+function imageAssetsToHtml(assets?: PaperImageAsset[], mode: "question" | "option" = "question") {
   if (!assets || assets.length === 0) return "";
-  return `<div class="q-image-grid">${assets
+  return `<div class="q-image-grid ${mode === "option" ? "option-image-grid" : ""}">${assets
     .map(
       (asset) => `<figure class="q-image"><img src="${escapeAttribute(asset.url)}" alt="${escapeAttribute(asset.altText || asset.caption || asset.filename || "Question image")}">${asset.caption || asset.filename || asset.name ? `<figcaption>${escapeHtml(asset.caption || asset.filename || asset.name || "")}</figcaption>` : ""}</figure>`,
     )
@@ -4650,6 +4896,18 @@ function dashboardFormattingToDocumentStyle(raw: Record<string, unknown>): Parti
     textColor: stringOrUndefined(raw.textColor ?? raw.text_color),
     accentColor: stringOrUndefined(raw.accentColor ?? raw.accent_color),
     pageColor: stringOrUndefined(raw.pageColor ?? raw.page_color),
+  };
+}
+
+function normalizeAttemptRule(value: unknown) {
+  const record = asRecord(value);
+  const required = Number(record.required ?? 0);
+  const offered = Number(record.offered ?? 0);
+  if (!Number.isFinite(required) || !Number.isFinite(offered) || required <= 0 || offered <= 0) return undefined;
+
+  return {
+    required: Math.max(1, Math.floor(required)),
+    offered: Math.max(1, Math.floor(offered)),
   };
 }
 
@@ -4701,6 +4959,7 @@ function normalizeVersionPayload(payload: Record<string, unknown>, paperId?: str
             instructions: String(sectionRecord.instructions ?? ""),
             difficulty: stringOrUndefined(sectionRecord.difficulty),
             targetMarks: numberOrUndefined(sectionRecord.targetMarks ?? sectionRecord.target_marks),
+            attemptRule: normalizeAttemptRule(sectionRecord.attemptRule ?? sectionRecord.attempt_rule),
             questions: Array.isArray(sectionRecord.questions) ? sectionRecord.questions.map((question) => normalizeRawQuestion(asRecord(question))) : [],
           };
         })

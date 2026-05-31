@@ -4,14 +4,22 @@ defmodule Qpg.AI.Provider do
   """
 
   alias Qpg.AI.Gemini
+  alias Qpg.AI.Groq
   alias Qpg.AI.OpenAI
 
   def active do
-    case System.get_env("AI_PROVIDER", "gemini") |> String.downcase() do
+    case active_provider_name() do
       "openai" -> OpenAI
+      "groq" -> Groq
       "gemini" -> Gemini
       _ -> Gemini
     end
+  end
+
+  defp active_provider_name do
+    (Process.get(:qpg_ai_provider_override) || System.get_env("AI_PROVIDER", "gemini"))
+    |> to_string()
+    |> String.downcase()
   end
 
   def enabled?, do: active().enabled?()

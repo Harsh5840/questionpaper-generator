@@ -20,6 +20,9 @@ export type PaperRequest = {
   sourceBooks?: string[];
   sourceCategories?: string[];
   directSourceMix?: DirectSourceMix;
+  sourceWeights?: DirectSourceMix;
+  sourceWeightsNormalized?: boolean;
+  provider?: "gemini" | "groq";
 };
 
 export type CatalogSubject = {
@@ -53,6 +56,12 @@ export type SectionBlueprint = {
   marksEach: number;
   difficulty: "Easy" | "Medium" | "Hard" | "Mixed";
   instructions?: string;
+  attemptRule?: AttemptRule;
+};
+
+export type AttemptRule = {
+  required: number;
+  offered: number;
 };
 
 export type PaperTemplate = {
@@ -75,6 +84,11 @@ export type DocumentStyle = {
   textColor: string;
   accentColor: string;
   pageColor: string;
+  watermark?: {
+    text: string;
+    opacity: number;
+    position: "center" | "diagonal";
+  };
 };
 
 export type PaperQuestion = {
@@ -178,6 +192,7 @@ export type PaperSection = {
   instructions: string;
   difficulty?: string;
   targetMarks?: number;
+  attemptRule?: AttemptRule;
   questions: PaperQuestion[];
 };
 
@@ -355,10 +370,13 @@ export type AiUsageSummary = {
   outputTokens: number;
   totalTokens: number;
   estimatedCostUsd: number;
+  totalLatencyMs?: number;
   events: {
     id: string;
+    provider?: string;
     model: string;
     operation: string;
+    latencyMs?: number;
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;

@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   Copy,
   FilePlus2,
@@ -23,6 +23,7 @@ interface PaperEditorProps {
   documentStyle: DocumentStyle;
   isGenerating?: boolean;
   onPaperChange: (paper: Paper) => void;
+  onDocumentStyleChange?: (style: DocumentStyle) => void;
   onReplaceQuestion: (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => Promise<void> | void;
   onReplaceOptionalChoice: (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => Promise<void> | void;
   onSaveQuestionToBank: (question: PaperQuestion) => void;
@@ -48,6 +49,7 @@ export function PaperEditor({
   documentStyle,
   isGenerating = false,
   onPaperChange,
+  onDocumentStyleChange,
   onReplaceQuestion,
   onReplaceOptionalChoice,
   onSaveQuestionToBank,
@@ -67,6 +69,7 @@ export function PaperEditor({
     mode: "question" | "choice";
     text: string;
   } | null>(null);
+  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
   const sourceMix = useMemo(() => (paper ? calculateSourceMix(paper) : null), [paper]);
@@ -90,6 +93,10 @@ export function PaperEditor({
 
   const updatePaper = (updater: (current: Paper) => Paper) => {
     onPaperChange(recalculatePaper(normalizePaperStructure(updater(paper))));
+  };
+
+  const updateDocumentStyle = (patch: Partial<DocumentStyle>) => {
+    onDocumentStyleChange?.({ ...documentStyle, ...patch });
   };
 
   const updateSection = (sectionId: string, patch: Partial<PaperSection>) => {
@@ -297,10 +304,24 @@ export function PaperEditor({
           instructions: "Answer all questions in this section.",
           difficulty: "Mixed",
           targetMarks: 0,
+          attemptRule: undefined,
           questions: [],
         },
       ],
     }));
+  };
+
+  const updateSectionAttemptRule = (sectionId: string, field: "required" | "offered", value: number) => {
+    const section = paper.sections.find((item) => item.id === sectionId);
+    const current = section?.attemptRule ?? { required: section?.questions.length || 1, offered: section?.questions.length || 1 };
+    const next = {
+      ...current,
+      [field]: Math.max(1, Math.floor(value || 1)),
+    };
+
+    updateSection(sectionId, {
+      attemptRule: next.required >= next.offered ? undefined : { required: Math.min(next.required, next.offered), offered: next.offered },
+    });
   };
 
   const addDiagramPlaceholder = (sectionId: string, questionId: string) => {
@@ -966,6 +987,11 @@ export function PaperEditor({
 
     updatePaper((current) => {
       let movingQuestion: PaperQuestion | null = null;
+      const targetAlreadyHasChoice = current.sections.some((section) =>
+        section.questions.some((question) => question.id === targetQuestionId && Boolean(question.optionalChoice)),
+      );
+
+      if (targetAlreadyHasChoice) return current;
 
       const sectionsWithoutSource = current.sections.map((section) => ({
         ...section,
@@ -1066,6 +1092,11 @@ export function PaperEditor({
     }
   };
 
+  const focusQuestion = (questionId: string) => {
+    setActiveQuestionId(questionId);
+    onTextEditorFocus?.();
+  };
+
   const templateName = paper.metadata.format || (paper.metadata.source?.toLowerCase().includes("pyq") ? "Full Syllabus" : "Default");
   const templateTone = templateToneFor(templateName);
   const questionTargets =
@@ -1074,6 +1105,7 @@ export function PaperEditor({
       section.questions.map((question) => ({
         id: question.id,
         label: `Q${stats.questionNumberById[question.id] ?? "?"}`,
+        hasChoice: Boolean(question.optionalChoice),
       })),
     );
 
@@ -1089,7 +1121,19 @@ export function PaperEditor({
           padding: documentStyle.margin,
         }}
       >
-        <div className="absolute bottom-4 right-6 font-mono text-[10px] font-bold text-slate-400">Page 1</div>
+        <div className="absolute bottom-4 right-6 font-mono text-[10px] font-bold text-slate-400">Page 1 / {paper.pageCount ?? 1}</div>
+        {documentStyle.watermark?.text && (
+          <div
+            className="pointer-events-none absolute inset-x-0 top-1/2 z-0 text-center font-display text-6xl font-black italic"
+            style={{
+              color: documentStyle.accentColor,
+              opacity: documentStyle.watermark.opacity,
+              transform: documentStyle.watermark.position === "diagonal" ? "rotate(-28deg)" : undefined,
+            }}
+          >
+            {documentStyle.watermark.text}
+          </div>
+        )}
       <header className={`pb-5 text-center ${templateTone.headerClass}`}>
         <div className="mb-4 flex justify-between text-left text-xs font-bold text-slate-600">
           <span>Series: QPG/{paper.metadata.board || "CBSE"}</span>
@@ -1159,7 +1203,24 @@ export function PaperEditor({
         ))}
       </section>
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+        <input
+          aria-label="Watermark text"
+          className="w-44 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+          placeholder="Watermark"
+          value={documentStyle.watermark?.text ?? ""}
+          onChange={(event) =>
+            updateDocumentStyle({
+              watermark: event.target.value.trim()
+                ? {
+                    text: event.target.value,
+                    opacity: documentStyle.watermark?.opacity ?? 0.08,
+                    position: documentStyle.watermark?.position ?? "diagonal",
+                  }
+                : undefined,
+            })
+          }
+        />
         <button className="editor-mini-button" onClick={addSection} type="button">
           <FilePlus2 size={14} />
           Add section
@@ -1167,12 +1228,12 @@ export function PaperEditor({
       </div>
 
       <div className="mt-8 space-y-8">
-        {paper.sections.map((section) => {
+        {paper.sections.map((section, sectionIndex) => {
           const sectionMarks = section.questions.reduce((total, question) => total + countedQuestionMarks(question), 0);
 
           return (
+            <Fragment key={section.id}>
             <section
-              key={section.id}
               className="paper-section relative rounded-lg border border-transparent"
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => moveDraggedQuestion(section.id)}
@@ -1208,6 +1269,24 @@ export function PaperEditor({
                     />
                   </label>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">{sectionMarks} marks</span>
+                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500" title="Optional section choice: counted marks use required questions only">
+                    Do
+                    <input
+                      className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+                      min={1}
+                      type="number"
+                      value={section.attemptRule?.required ?? section.questions.length}
+                      onChange={(event) => updateSectionAttemptRule(section.id, "required", Number(event.target.value))}
+                    />
+                    of
+                    <input
+                      className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+                      min={1}
+                      type="number"
+                      value={section.attemptRule?.offered ?? section.questions.length}
+                      onChange={(event) => updateSectionAttemptRule(section.id, "offered", Number(event.target.value))}
+                    />
+                  </label>
                   <button className="editor-mini-button" onClick={() => addBlankQuestion(section.id)} type="button">
                     <Plus size={14} />
                     Add
@@ -1236,13 +1315,15 @@ export function PaperEditor({
                   const isAnswerOpen = expandedAnswers[question.id] ?? false;
                   const isReplacing = replacingQuestions[question.id] ?? false;
                   const isChoiceReplacing = replacingChoices[question.id] ?? false;
+                  const isActiveQuestion = activeQuestionId === question.id;
 
                   return (
                     <div
                       key={question.id}
                       id={`question-${question.id}`}
-                      className={`question-row group relative rounded-lg border border-transparent bg-white/70 p-3 transition hover:border-slate-200 hover:bg-slate-50 ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
+                      className={`question-row group relative rounded-lg border p-3 transition ${isActiveQuestion ? "is-active border-amber-300 bg-amber-50/35 shadow-sm" : "border-transparent bg-white/50 hover:border-slate-200 hover:bg-slate-50"} ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
                       draggable
+                      onClick={() => setActiveQuestionId(question.id)}
                       onDragStart={() => setDraggedQuestion({ sectionId: section.id, questionId: question.id })}
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={(event) => {
@@ -1263,7 +1344,7 @@ export function PaperEditor({
                             placeholder="Write the question..."
                             value={question.text}
                             htmlValue={question.richText}
-                            onFocus={onTextEditorFocus}
+                            onFocus={() => focusQuestion(question.id)}
                             onChange={(text) => updateQuestion(section.id, question.id, { text })}
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
@@ -1301,7 +1382,7 @@ export function PaperEditor({
                                       placeholder="Write option..."
                                       value={option.text}
                                       htmlValue={option.richText}
-                                      onFocus={onTextEditorFocus}
+                                      onFocus={() => focusQuestion(question.id)}
                                       onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
                                       onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
                                     />
@@ -1375,7 +1456,7 @@ export function PaperEditor({
                                         placeholder="Write this subpart..."
                                         value={subpart.text}
                                         htmlValue={subpart.richText}
-                                        onFocus={onTextEditorFocus}
+                                        onFocus={() => focusQuestion(question.id)}
                                         onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
                                         onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
                                       />
@@ -1401,7 +1482,7 @@ export function PaperEditor({
                                                   placeholder="Write part option..."
                                                   value={option.text}
                                                   htmlValue={option.richText}
-                                                  onFocus={onTextEditorFocus}
+                                                  onFocus={() => focusQuestion(question.id)}
                                                   onChange={(text) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { text })}
                                                   onHtmlChange={(richText) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { richText })}
                                                 />
@@ -1470,7 +1551,7 @@ export function PaperEditor({
                                             placeholder="Write the OR alternative for this subpart..."
                                             value={subpart.optionalChoice.text}
                                             htmlValue={subpart.optionalChoice.richText}
-                                            onFocus={onTextEditorFocus}
+                                            onFocus={() => focusQuestion(question.id)}
                                             onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
                                             onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
                                           />
@@ -1498,7 +1579,7 @@ export function PaperEditor({
                                                       placeholder="Write OR option..."
                                                       value={option.text}
                                                       htmlValue={option.richText}
-                                                      onFocus={onTextEditorFocus}
+                                                      onFocus={() => focusQuestion(question.id)}
                                                       onChange={(text) =>
                                                         updateSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex, { text })
                                                       }
@@ -1598,7 +1679,7 @@ export function PaperEditor({
                                     placeholder="Write the internal choice..."
                                     value={question.optionalChoice.text}
                                     htmlValue={question.optionalChoice.richText}
-                                    onFocus={onTextEditorFocus}
+                                    onFocus={() => focusQuestion(question.id)}
                                     onChange={(text) => updateInternalChoice(section.id, question.id, { text })}
                                     onHtmlChange={(richText) => updateInternalChoice(section.id, question.id, { richText })}
                                   />
@@ -1630,7 +1711,7 @@ export function PaperEditor({
                                               placeholder="Write OR option..."
                                               value={option.text}
                                               htmlValue={option.richText}
-                                              onFocus={onTextEditorFocus}
+                                              onFocus={() => focusQuestion(question.id)}
                                               onChange={(text) => updateInternalChoiceOption(section.id, question.id, optionIndex, { text })}
                                               onHtmlChange={(richText) => updateInternalChoiceOption(section.id, question.id, optionIndex, { richText })}
                                             />
@@ -1705,7 +1786,7 @@ export function PaperEditor({
                                       placeholder="Write OR answer / marking scheme..."
                                       value={question.optionalChoice.answer ?? ""}
                                       htmlValue={question.optionalChoice.answerRichText}
-                                      onFocus={onTextEditorFocus}
+                                      onFocus={() => focusQuestion(question.id)}
                                       onChange={(answer) => updateInternalChoice(section.id, question.id, { answer })}
                                       onHtmlChange={(answerRichText) => updateInternalChoice(section.id, question.id, { answerRichText })}
                                     />
@@ -1733,7 +1814,7 @@ export function PaperEditor({
                             </div>
                           )}
 
-                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                          <div className={`flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500 transition ${isActiveQuestion ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
                             <input
                               aria-label={`Question ${questionNumber} marks`}
                               className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
@@ -1782,8 +1863,8 @@ export function PaperEditor({
                               {(questionTargets || [])
                                 .filter((target) => target.id !== question.id)
                                 .map((target) => (
-                                  <option key={target.id} value={target.id}>
-                                    {target.label}
+                                  <option key={target.id} value={target.id} disabled={target.hasChoice}>
+                                    {target.label}{target.hasChoice ? " (OR filled)" : ""}
                                   </option>
                                 ))}
                             </select>
@@ -1796,7 +1877,7 @@ export function PaperEditor({
                               placeholder="Write answer / marking scheme..."
                               value={question.answer}
                               htmlValue={question.answerRichText}
-                              onFocus={onTextEditorFocus}
+                              onFocus={() => focusQuestion(question.id)}
                               onChange={(answer) => updateQuestion(section.id, question.id, { answer })}
                               onHtmlChange={(answerRichText) => updateQuestion(section.id, question.id, { answerRichText })}
                             />
@@ -1804,7 +1885,7 @@ export function PaperEditor({
                         </div>
 
                         <TextBlockActions
-                          className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+                          className={isActiveQuestion ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}
                           isReplacing={isReplacing}
                           onReplace={() =>
                             setReplacePrompt({
@@ -1837,6 +1918,14 @@ export function PaperEditor({
                 })}
               </div>
             </section>
+            {sectionIndex < paper.sections.length - 1 && (
+              <div className="my-6 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+                <span className="h-px flex-1 border-t border-dashed border-slate-300" />
+                Page break guide
+                <span className="h-px flex-1 border-t border-dashed border-slate-300" />
+              </div>
+            )}
+            </Fragment>
           );
         })}
       </div>
@@ -2322,10 +2411,10 @@ function calculateStats(paper: Paper) {
       questionNumber += 1;
       questionCount += 1;
       const marks = countedQuestionMarks(question);
-      totalMarks += marks;
       const topic = question.topic || paper.metadata.topic || paper.metadata.chapter || section.title || "Unassigned";
       topicMarks.set(topic, (topicMarks.get(topic) || 0) + marks);
     });
+    totalMarks += countedSectionMarks(section);
   });
 
   const topicWeights = Array.from(topicMarks.entries()).map(([topic, marks]) => ({
@@ -2365,10 +2454,7 @@ function recalculatePaper(paper: Paper): Paper {
     ...section,
     questions: section.questions.map(questionWithComputedMarks),
   }));
-  const totalMarks = sections.reduce(
-    (paperTotal, section) => paperTotal + section.questions.reduce((sectionTotal, question) => sectionTotal + countedQuestionMarks(question), 0),
-    0,
-  );
+  const totalMarks = sections.reduce((paperTotal, section) => paperTotal + countedSectionMarks(section), 0);
   const questionCount = sections.reduce((count, section) => count + section.questions.length, 0);
   const topicWeightage: Record<string, number> = {};
 
@@ -2389,6 +2475,22 @@ function recalculatePaper(paper: Paper): Paper {
     },
     topicWeightage,
   };
+}
+
+function countedSectionMarks(section: PaperSection) {
+  const questionMarks = section.questions.map(countedQuestionMarks);
+  const rawTotal = questionMarks.reduce((total, marks) => total + marks, 0);
+  const rule = section.attemptRule;
+  if (!rule || rule.required >= rule.offered || rule.required >= section.questions.length) return rawTotal;
+
+  const uniformMarks = questionMarks.length > 0 && questionMarks.every((marks) => marks === questionMarks[0]);
+  if (uniformMarks) return rule.required * (questionMarks[0] ?? 0);
+
+  return questionMarks
+    .slice()
+    .sort((left, right) => right - left)
+    .slice(0, rule.required)
+    .reduce((total, marks) => total + marks, 0);
 }
 
 function formatDuration(minutes: number) {

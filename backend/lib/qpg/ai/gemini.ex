@@ -441,11 +441,15 @@ defmodule Qpg.AI.Gemini do
         Jason.encode!(payload)
       )
 
+    started_at = System.monotonic_time(:millisecond)
+
     with {:ok, %{status: 200} = response} <-
            Finch.request(request, Qpg.Finch, receive_timeout: 180_000),
          {:ok, body} <- Jason.decode(response.body) do
       Logging.debug("ai.gemini.http.response.ok", %{model: model, status: response.status})
+      Process.put(:qpg_ai_latency_ms, System.monotonic_time(:millisecond) - started_at)
       Usage.record_gemini_event(model, body)
+      Process.delete(:qpg_ai_latency_ms)
       {:ok, body}
     else
       {:ok, response} ->
