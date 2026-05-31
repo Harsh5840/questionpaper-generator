@@ -633,6 +633,33 @@ button:disabled {
   margin: 0;
 }
 
+.paper-choice-compact {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: 0.35rem;
+  margin-top: 0.18rem;
+  font-family: var(--font-paper), Georgia, serif;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.paper-choice-label {
+  align-self: start;
+  color: #2563eb;
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.paper-choice-body p {
+  margin: 0;
+}
+
+.question-row:not(.is-active) .paper-choice-compact {
+  margin-bottom: 0.1rem;
+}
+
 .math-preview {
   font-family: KaTeX_Main, "Times New Roman", serif;
   white-space: nowrap;

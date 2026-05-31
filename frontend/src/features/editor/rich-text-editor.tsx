@@ -878,7 +878,7 @@ function unescapeHtml(value: string) {
 }
 
 function heightClass(height: RichTextEditorProps["minHeight"]) {
-  if (height === "compact") return "min-h-12";
-  if (height === "answer") return "min-h-16";
-  return "min-h-24";
+  if (height === "compact") return "min-h-8";
+  if (height === "answer") return "min-h-12";
+  return "min-h-14";
 }

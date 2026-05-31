@@ -1248,7 +1248,11 @@ export function PaperEditor({
 
       <div className="mt-8 space-y-8">
         {paper.sections.map((section, sectionIndex) => {
-          const sectionMarks = section.questions.reduce((total, question) => total + countedQuestionMarks(question), 0);
+          const offeredMarks = section.questions.reduce((total, question) => total + countedQuestionMarks(question), 0);
+          const sectionMarks = countedSectionMarks(section);
+          const hasAttemptChoice =
+            Boolean(section.attemptRule) &&
+            Number(section.attemptRule?.required || 0) < Number(section.attemptRule?.offered || section.questions.length);
 
           return (
             <Fragment key={section.id}>
@@ -1278,7 +1282,9 @@ export function PaperEditor({
                       <option>High</option>
                     </select>
                   </label>
-                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">{sectionMarks} marks</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
+                    {sectionMarks} marks{hasAttemptChoice && offeredMarks !== sectionMarks ? ` counted · ${offeredMarks} offered` : ""}
+                  </span>
                   <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500" title="Optional section choice: counted marks use required questions only">
                     Do
                     <input
@@ -1318,8 +1324,13 @@ export function PaperEditor({
                 value={section.instructions}
                 onChange={(event) => updateSection(section.id, { instructions: event.target.value })}
               />
+              {hasAttemptChoice && (
+                <p className="-mt-3 mb-3 px-2 font-sans text-[11px] font-bold text-slate-700">
+                  Attempt any {section.attemptRule?.required} of {section.attemptRule?.offered} questions. Counted marks: {sectionMarks}.
+                </p>
+              )}
 
-              <div className="space-y-4">
+              <div className="space-y-1">
                 {section.questions.map((question) => {
                   const questionNumber = stats?.questionNumberById[question.id] ?? 0;
                   const isAnswerOpen = expandedAnswers[question.id] ?? false;
@@ -1331,7 +1342,9 @@ export function PaperEditor({
                     <div
                       key={question.id}
                       id={`question-${question.id}`}
-                      className={`question-row group relative rounded-lg border transition ${isActiveQuestion ? "is-active border-amber-300 bg-amber-50/35 p-3 shadow-sm" : "border-transparent bg-transparent px-0 py-1.5"} ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
+                      className={`question-row group relative rounded-lg border transition ${
+                        isActiveQuestion ? "is-active border-amber-300 bg-amber-50/35 p-2 shadow-sm" : "border-transparent bg-transparent px-0 py-0.5"
+                      } ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
                       draggable
                       onClick={() => setActiveQuestionId(question.id)}
                       onDragStart={() => setDraggedQuestion({ sectionId: section.id, questionId: question.id })}
@@ -1347,7 +1360,7 @@ export function PaperEditor({
                           <span className="font-sans text-[11px] font-black text-slate-950">{questionNumber}.</span>
                         </div>
 
-                        <div className={`min-w-0 flex-1 ${isActiveQuestion ? "space-y-3" : "space-y-1"}`}>
+                        <div className={`min-w-0 flex-1 ${isActiveQuestion ? "space-y-2" : "space-y-0.5"}`}>
                           <RichTextEditor
                             label={`Question ${questionNumber}`}
                             minHeight="normal"
@@ -1699,7 +1712,27 @@ export function PaperEditor({
                             </div>
                           )}
 
-                          {question.optionalChoice && (
+                          {question.optionalChoice && !isActiveQuestion && (
+                            <div className="paper-choice-compact">
+                              <div className="paper-choice-label">OR</div>
+                              <div className="paper-choice-body">
+                                <span dangerouslySetInnerHTML={{ __html: richDisplayHtml(question.optionalChoice.richText, question.optionalChoice.text) }} />
+                                <ImageAssetList assets={question.optionalChoice.imageAssets} compact readOnly onDelete={() => undefined} />
+                                {question.optionalChoice.options && question.optionalChoice.options.length > 0 && (
+                                  <div className="paper-option-grid mt-1">
+                                    {question.optionalChoice.options.map((option, optionIndex) => (
+                                      <div key={option.id ?? `${question.id}-choice-compact-${optionIndex}`} className="paper-option-row">
+                                        <span className="paper-option-label">{formatOptionLabel(option.label, optionIndex)}</span>
+                                        <span className="paper-option-text" dangerouslySetInnerHTML={{ __html: richDisplayHtml(option.richText, option.text) }} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {question.optionalChoice && isActiveQuestion && (
                             <div className={`choice-row group/choice relative rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 ${isChoiceReplacing ? "ai-replacing border-blue-300 bg-blue-100/70" : ""}`}>
                               <div className="mb-2 text-center text-xs font-black text-blue-700">OR</div>
                               <div className="flex items-start gap-3">
@@ -1849,61 +1882,68 @@ export function PaperEditor({
                             </div>
                           )}
 
-                          <div className={`flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500 transition ${isActiveQuestion ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
-                            <input
-                              aria-label={`Question ${questionNumber} marks`}
-                              className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
-                              min={0}
-                              type="number"
-                              value={question.marks}
-                              onChange={(event) => updateQuestion(section.id, question.id, { marks: Number(event.target.value) })}
-                            />
-                            <span>Marks</span>
-                            <select
-                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                              value={question.type}
-                              onChange={(event) => updateQuestion(section.id, question.id, { type: event.target.value })}
-                            >
-                              {["MCQ", "VSA", "SA", "LA", "Case Study"].map((type) => (
-                                <option key={type}>{type}</option>
-                              ))}
-                            </select>
-                            <select
-                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                              value={question.difficulty}
-                              onChange={(event) => updateQuestion(section.id, question.id, { difficulty: event.target.value })}
-                            >
-                              {["Low", "Medium", "High", "Easy", "Hard"].map((difficulty) => (
-                                <option key={difficulty}>{difficulty}</option>
-                              ))}
-                            </select>
-                            <input
-                              className="min-w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                              placeholder="Topic"
-                              value={question.topic ?? ""}
-                              onChange={(event) => updateQuestion(section.id, question.id, { topic: event.target.value })}
-                            />
-                            <span className="rounded bg-blue-50 px-2 py-1 text-blue-700">{question.source || "Manual"}</span>
-                            <select
-                              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                              defaultValue=""
-                              title="Move this question into another question's OR slot"
-                              onChange={(event) => {
-                                const targetQuestionId = event.target.value;
-                                if (targetQuestionId) moveQuestionToInternalChoice(section.id, question.id, targetQuestionId);
-                                event.currentTarget.value = "";
-                              }}
-                            >
-                              <option value="">Move to OR...</option>
-                              {(questionTargets || [])
-                                .filter((target) => target.id !== question.id)
-                                .map((target) => (
-                                  <option key={target.id} value={target.id} disabled={target.hasChoice}>
-                                    {target.label}{target.hasChoice ? " (OR filled)" : ""}
-                                  </option>
-                                ))}
-                            </select>
-                          </div>
+                          {isActiveQuestion && (
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                              <input
+                                aria-label={`Question ${questionNumber} marks`}
+                                className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+                                min={0}
+                                type="number"
+                                value={question.marks}
+                                onChange={(event) => updateQuestion(section.id, question.id, { marks: Number(event.target.value) })}
+                              />
+                              <span>Marks</span>
+                              <select
+                                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                defaultValue=""
+                                title="Move this question into another question's OR slot"
+                                onChange={(event) => {
+                                  const targetQuestionId = event.target.value;
+                                  if (targetQuestionId) moveQuestionToInternalChoice(section.id, question.id, targetQuestionId);
+                                  event.currentTarget.value = "";
+                                }}
+                              >
+                                <option value="">Move to OR...</option>
+                                {(questionTargets || [])
+                                  .filter((target) => target.id !== question.id)
+                                  .map((target) => (
+                                    <option key={target.id} value={target.id} disabled={target.hasChoice}>
+                                      {target.label}{target.hasChoice ? " (OR filled)" : ""}
+                                    </option>
+                                  ))}
+                              </select>
+                              <span className="rounded bg-blue-50 px-2 py-1 text-blue-700">{question.source || "Manual"}</span>
+                              <details className="rounded-md border border-slate-200 bg-white px-2 py-1">
+                                <summary className="cursor-pointer list-none text-slate-500">Details</summary>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <select
+                                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                    value={question.type}
+                                    onChange={(event) => updateQuestion(section.id, question.id, { type: event.target.value })}
+                                  >
+                                    {["MCQ", "VSA", "SA", "LA", "Case Study"].map((type) => (
+                                      <option key={type}>{type}</option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                    value={question.difficulty}
+                                    onChange={(event) => updateQuestion(section.id, question.id, { difficulty: event.target.value })}
+                                  >
+                                    {["Low", "Medium", "High", "Easy", "Hard"].map((difficulty) => (
+                                      <option key={difficulty}>{difficulty}</option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    className="min-w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                    placeholder="Topic"
+                                    value={question.topic ?? ""}
+                                    onChange={(event) => updateQuestion(section.id, question.id, { topic: event.target.value })}
+                                  />
+                                </div>
+                              </details>
+                            </div>
+                          )}
 
                           {isAnswerOpen && (
                             <RichTextEditor
@@ -1920,27 +1960,28 @@ export function PaperEditor({
                           )}
                         </div>
 
-                        <TextBlockActions
-                          className={isActiveQuestion ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}
-                          isReplacing={isReplacing}
-                          onReplace={() =>
-                            setReplacePrompt({
-                              sectionId: section.id,
-                              questionId: question.id,
-                              questionNumber,
-                              mode: "question",
-                              text: "Replace this question with a different question from the same chapter, same marks, same difficulty.",
-                            })
-                          }
-                          onDuplicate={() => duplicateQuestion(section.id, question.id)}
-                          onAddChoice={() => addInternalChoice(section.id, question.id)}
-                          onAddSubpart={() => addSubpart(section.id, question.id)}
-                          onAddDiagram={() => addDiagramPlaceholder(section.id, question.id)}
-                          onAddImage={onUploadImage ? (file) => void attachQuestionImage(section.id, question.id, file) : undefined}
-                          onAnswer={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))}
-                          onSave={() => onSaveQuestionToBank(question)}
-                          onDelete={() => deleteQuestion(section.id, question.id)}
-                        />
+                        {isActiveQuestion && (
+                          <TextBlockActions
+                            isReplacing={isReplacing}
+                            onReplace={() =>
+                              setReplacePrompt({
+                                sectionId: section.id,
+                                questionId: question.id,
+                                questionNumber,
+                                mode: "question",
+                                text: "Replace this question with a different question from the same chapter, same marks, same difficulty.",
+                              })
+                            }
+                            onDuplicate={() => duplicateQuestion(section.id, question.id)}
+                            onAddChoice={() => addInternalChoice(section.id, question.id)}
+                            onAddSubpart={() => addSubpart(section.id, question.id)}
+                            onAddDiagram={() => addDiagramPlaceholder(section.id, question.id)}
+                            onAddImage={onUploadImage ? (file) => void attachQuestionImage(section.id, question.id, file) : undefined}
+                            onAnswer={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))}
+                            onSave={() => onSaveQuestionToBank(question)}
+                            onDelete={() => deleteQuestion(section.id, question.id)}
+                          />
+                        )}
                       </div>
                       {isReplacing && (
                         <div className="pointer-events-none absolute inset-0 rounded-lg border border-blue-300 bg-blue-50/55">
