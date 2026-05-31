@@ -14,6 +14,7 @@ import {
   Shapes,
   Trash2,
 } from "lucide-react";
+import katex from "katex";
 import { DocumentStyle, Paper, PaperImageAsset, PaperQuestion, PaperQuestionOption, PaperSection, PaperSubpart } from "@/lib/types";
 import { normalizePaperStructure } from "@/lib/normalize-paper-structure";
 import { RichTextEditor } from "./rich-text-editor";
@@ -1110,6 +1111,7 @@ export function PaperEditor({
         hasChoice: choiceHasContent(question.optionalChoice),
       })),
     );
+  const visualPageCount = Math.max(1, paper.pageCount ?? 1);
 
   return (
     <div className="mx-auto flex w-full max-w-[980px] flex-col gap-8">
@@ -1121,12 +1123,24 @@ export function PaperEditor({
           fontSize: documentStyle.fontSize,
           lineHeight: documentStyle.lineHeight,
           padding: documentStyle.margin,
+          minHeight: visualPageCount * 1120,
         }}
       >
         <div className="absolute right-6 top-4 rounded-full bg-slate-100 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-          Page 1 / {paper.pageCount ?? 1}
+          Page 1 / {visualPageCount}
         </div>
-        <div className="absolute bottom-4 right-6 font-mono text-[10px] font-bold text-slate-400">Page 1 / {paper.pageCount ?? 1}</div>
+        {Array.from({ length: visualPageCount }).map((_page, index) => (
+          <div
+            key={`page-marker-${index + 1}`}
+            className="pointer-events-none absolute inset-x-0 z-0"
+            style={{ top: index * 1120 }}
+          >
+            {index > 0 && <div className="mx-[-1px] border-t border-dashed border-amber-300/80" />}
+            <div className="absolute right-6 top-[1092px] rounded bg-white/85 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-400 shadow-sm">
+              Page {index + 1} / {visualPageCount}
+            </div>
+          </div>
+        ))}
         {documentStyle.watermark?.text && (
           <div
             className="pointer-events-none absolute inset-x-0 top-1/2 z-0 text-center font-display text-6xl font-black italic"
@@ -1386,6 +1400,7 @@ export function PaperEditor({
                                         placeholder="Write option..."
                                         value={option.text}
                                         htmlValue={option.richText}
+                                        toolbarMode="focus"
                                         onFocus={() => focusQuestion(question.id)}
                                         onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
                                         onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
@@ -1469,6 +1484,7 @@ export function PaperEditor({
                                         placeholder="Write this subpart..."
                                         value={subpart.text}
                                         htmlValue={subpart.richText}
+                                        toolbarMode="focus"
                                         onFocus={() => focusQuestion(question.id)}
                                         onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
                                         onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
@@ -1495,6 +1511,7 @@ export function PaperEditor({
                                                   placeholder="Write part option..."
                                                   value={option.text}
                                                   htmlValue={option.richText}
+                                                  toolbarMode="focus"
                                                   onFocus={() => focusQuestion(question.id)}
                                                   onChange={(text) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { text })}
                                                   onHtmlChange={(richText) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { richText })}
@@ -1564,6 +1581,7 @@ export function PaperEditor({
                                             placeholder="Write the OR alternative for this subpart..."
                                             value={subpart.optionalChoice.text}
                                             htmlValue={subpart.optionalChoice.richText}
+                                            toolbarMode="focus"
                                             onFocus={() => focusQuestion(question.id)}
                                             onChange={(text) => updateSubpartChoice(section.id, question.id, subpart.id, { text })}
                                             onHtmlChange={(richText) => updateSubpartChoice(section.id, question.id, subpart.id, { richText })}
@@ -1592,6 +1610,7 @@ export function PaperEditor({
                                                       placeholder="Write OR option..."
                                                       value={option.text}
                                                       htmlValue={option.richText}
+                                                      toolbarMode="focus"
                                                       onFocus={() => focusQuestion(question.id)}
                                                       onChange={(text) =>
                                                         updateSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex, { text })
@@ -1692,6 +1711,7 @@ export function PaperEditor({
                                     placeholder="Write the internal choice..."
                                     value={question.optionalChoice.text}
                                     htmlValue={question.optionalChoice.richText}
+                                    toolbarMode="focus"
                                     onFocus={() => focusQuestion(question.id)}
                                     onChange={(text) => updateInternalChoice(section.id, question.id, { text })}
                                     onHtmlChange={(richText) => updateInternalChoice(section.id, question.id, { richText })}
@@ -1724,6 +1744,7 @@ export function PaperEditor({
                                               placeholder="Write OR option..."
                                               value={option.text}
                                               htmlValue={option.richText}
+                                              toolbarMode="focus"
                                               onFocus={() => focusQuestion(question.id)}
                                               onChange={(text) => updateInternalChoiceOption(section.id, question.id, optionIndex, { text })}
                                               onHtmlChange={(richText) => updateInternalChoiceOption(section.id, question.id, optionIndex, { richText })}
@@ -1799,6 +1820,7 @@ export function PaperEditor({
                                       placeholder="Write OR answer / marking scheme..."
                                       value={question.optionalChoice.answer ?? ""}
                                       htmlValue={question.optionalChoice.answerRichText}
+                                      toolbarMode="focus"
                                       onFocus={() => focusQuestion(question.id)}
                                       onChange={(answer) => updateInternalChoice(section.id, question.id, { answer })}
                                       onHtmlChange={(answerRichText) => updateInternalChoice(section.id, question.id, { answerRichText })}
@@ -1890,6 +1912,7 @@ export function PaperEditor({
                               placeholder="Write answer / marking scheme..."
                               value={question.answer}
                               htmlValue={question.answerRichText}
+                              toolbarMode="focus"
                               onFocus={() => focusQuestion(question.id)}
                               onChange={(answer) => updateQuestion(section.id, question.id, { answer })}
                               onHtmlChange={(answerRichText) => updateQuestion(section.id, question.id, { answerRichText })}
@@ -2163,13 +2186,14 @@ function stripEditorOnlyMarkup(html: string) {
 }
 
 function stripMathSpansToText(html: string) {
-  return html.replace(/<span[^>]*data-latex="([^"]*)"[^>]*><\/span>/g, (_match, latex: string) => `<span class="math-preview">${escapeDisplayHtml(latex)}</span>`);
+  return html.replace(/<span[^>]*data-latex="([^"]*)"[^>]*><\/span>/g, (_match, latex: string) => renderLatexPreview(unescapeDisplayHtml(latex)));
 }
 
 function textToDisplayHtml(value: string) {
   return escapeDisplayHtml(value)
-    .replace(/\$([^$\n]+)\$/g, (_match, latex: string) => `<span class="math-preview">${escapeDisplayHtml(normalizeDisplayLatex(latex))}</span>`)
-    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "<span class=\"math-frac\"><span>$1</span><span>$2</span></span>")
+    .replace(/\$([^$\n]+)\$/g, (_match, latex: string) => renderLatexPreview(normalizeDisplayLatex(latex)))
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, (match) => renderLatexPreview(match))
+    .replace(/\\sqrt\{([^{}]+)\}/g, (match) => renderLatexPreview(match))
     .replace(/([A-Za-z])([23])(?=\b|[^A-Za-z0-9])/g, "$1<sup>$2</sup>")
     .replace(/\(([A-Za-z0-9\s+\-−–*/=.,]+)\)([23])(?=\b|[^A-Za-z0-9])/g, "($1)<sup>$2</sup>")
     .replace(/\b([A-Z][a-z]?)(\d+)(?=[A-Z]|$)/g, "$1<sub>$2</sub>")
@@ -2186,6 +2210,19 @@ function normalizeDisplayLatex(value: string) {
 
 function escapeDisplayHtml(value: string) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function unescapeDisplayHtml(value: string) {
+  return value.replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
+}
+
+function renderLatexPreview(latex: string) {
+  const normalized = normalizeDisplayLatex(latex);
+  try {
+    return katex.renderToString(normalized, { throwOnError: false, strict: false, displayMode: false });
+  } catch {
+    return `<span class="math-preview">${escapeDisplayHtml(normalized)}</span>`;
+  }
 }
 
 function DiagramDropZone({

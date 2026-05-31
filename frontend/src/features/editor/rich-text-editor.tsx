@@ -39,6 +39,7 @@ interface RichTextEditorProps {
   minHeight?: "compact" | "normal" | "answer";
   placeholder?: string;
   onFocus?: () => void;
+  toolbarMode?: "always" | "focus";
 }
 
 let activeRichTextEditor: Editor | null = null;
@@ -85,6 +86,7 @@ export function RichTextEditor({
   minHeight = "normal",
   placeholder = "Write here...",
   onFocus,
+  toolbarMode = "focus",
 }: RichTextEditorProps) {
   const editorId = useMemo(() => crypto.randomUUID(), []);
   const [activeFormulaId, setActiveFormulaId] = useState<string | null>(null);
@@ -142,15 +144,11 @@ export function RichTextEditor({
     if (!editor) return;
 
     const nextContent = editorContent(value, htmlValue);
-    const currentText = documentToPlainText(editor.getJSON()).trim();
 
-    if (editor.getHTML() !== nextContent) {
+    if (!editor.isFocused && editor.getHTML() !== nextContent) {
       editor.commands.setContent(nextContent, { emitUpdate: false });
-      const upgradedText = documentToPlainText(editor.getJSON()).trim();
-      if (upgradedText !== currentText) onChange(upgradedText);
-      onHtmlChange?.(editor.getHTML());
     }
-  }, [editor, htmlValue, onChange, onHtmlChange, value]);
+  }, [editor, htmlValue, value]);
 
   if (!editor) {
     return (
@@ -167,8 +165,12 @@ export function RichTextEditor({
   };
 
   return (
-    <div className="rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white">
-      <div className="flex flex-wrap items-center gap-1 border-b border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-1">
+    <div
+      className={`rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white ${toolbarMode === "focus" ? "toolbar-focus-only" : ""}`}
+    >
+      <div
+        className="flex flex-wrap items-center gap-1 border-b border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-1"
+      >
         {activeFormula ? (
           <FormulaBuilder
             formula={activeFormula}

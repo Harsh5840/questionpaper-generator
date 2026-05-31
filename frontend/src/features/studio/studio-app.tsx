@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import katex from "katex";
 import {
   Bot,
   CheckCircle2,
@@ -1544,7 +1545,8 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
 
     staticInsertAppliedRef.current = true;
     activateRichTextEditorFromElement(activeSurfaceRef.current);
-    onInsert(insert);
+    const inserted = onInsert(insert);
+    if (!inserted) fallbackInsertIntoSurface(activeSurfaceRef.current, insert.type === "math" ? `$${insert.value}$` : insert.value);
     setPosition(null);
     activeSurfaceRef.current = null;
   };
@@ -1557,7 +1559,8 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
     smartInsertAppliedRef.current = true;
     const value = activeSmartTemplate.build(smartValues);
     activateRichTextEditorFromElement(activeSurfaceRef.current);
-    onInsert({ type: activeSmartTemplate.insertType, value } as MathToolkitInsert);
+    const inserted = onInsert({ type: activeSmartTemplate.insertType, value } as MathToolkitInsert);
+    if (!inserted) fallbackInsertIntoSurface(activeSurfaceRef.current, activeSmartTemplate.insertType === "math" ? `$${value}$` : value);
     setPosition(null);
     activeSurfaceRef.current = null;
   };
@@ -1687,6 +1690,16 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       )}
     </div>
   );
+}
+
+function fallbackInsertIntoSurface(surface: HTMLElement | null, value: string) {
+  if (!surface || !value) return false;
+
+  surface.focus();
+  if (document.execCommand?.("insertText", false, value)) return true;
+  surface.textContent = `${surface.textContent ?? ""}${value}`;
+  surface.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+  return true;
 }
 
 function normalizeLatexField(value = "", fallback = "") {
@@ -3031,6 +3044,16 @@ function AssistantPanel({
                 )}
               </div>
             )}
+            <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--border)] bg-[var(--paper-tint)] p-2">
+              <div className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--accent)]">Local tool router</div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {CHAT_TOOL_CATALOG.map((tool) => (
+                  <span key={tool.name} className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[10px] font-bold text-[var(--ink-2)]" title={tool.description}>
+                    {tool.name}
+                  </span>
+                ))}
+              </div>
+            </div>
             {chatMessages.map((message) => (
               <div key={message.id} className={message.role === "user" ? "ml-10 rounded-xl rounded-tr-sm bg-[var(--ink)] px-3 py-2 text-xs font-medium text-[var(--paper-tint)]" : "mr-8 rounded-xl rounded-tl-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs leading-5 text-[var(--ink)]"}>
                 {message.text}
@@ -3514,6 +3537,21 @@ type ChatPaperCommandResult =
       skipVersion?: boolean;
     }
   | { handled: false; providerInstruction?: string };
+
+const CHAT_TOOL_CATALOG = [
+  { name: "replace_question", description: "Route replacement requests to the AI patch/refinement path." },
+  { name: "move_question_to_or", description: "Move a full root question into another question's OR branch." },
+  { name: "add_question_or", description: "Add a whole-question internal choice block." },
+  { name: "add_subpart_or", description: "Add an OR branch to a specific subpart." },
+  { name: "create_mcq_question", description: "Create a structured MCQ with independent options." },
+  { name: "add_mcq_option", description: "Add option E/F/etc. to an MCQ and relabel options." },
+  { name: "add_subpart", description: "Add the next continuous part label to a question." },
+  { name: "add_diagram_placeholder", description: "Insert a draggable diagram placeholder." },
+  { name: "delete_question", description: "Delete a question and renumber the paper." },
+  { name: "duplicate_question", description: "Duplicate a question and preserve its structure." },
+  { name: "save_question_to_bank", description: "Save a question for reuse." },
+  { name: "save_version", description: "Save the current paper version." },
+] as const;
 
 type QuestionRef = {
   number: number;
@@ -4075,8 +4113,8 @@ function parseOptionCommand(instruction: string) {
   if (!action || !/\b(option|choice)\b/.test(lower)) return null;
   const questionNumber = questionNumbersFromText(lower)[0];
   const optionLabel =
-    lower.match(/\b(?:option|choice)\s*\(?([a-d])\)?/)?.[1] ??
-    lower.match(/\(([a-d])\)/)?.[1];
+    lower.match(/\b(?:option|choice)\s*\(?([a-z])\)?/)?.[1] ??
+    lower.match(/\(([a-z])\)/)?.[1];
   if (!questionNumber || !optionLabel) return null;
   return { action, questionNumber, optionLabel };
 }
@@ -4692,7 +4730,7 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
       const questions = section.questions
         .map((question) => {
           const optionsHtml = (question.options ?? [])
-            .map((option) => optionToHtml(option.label || "", richOrTextHtml(option.richText, option.text), option.imageAssets))
+            .map((option, optionIndex) => optionToHtml(formatPrintOptionLabel(option.label, optionIndex), richOrTextHtml(option.richText, option.text), option.imageAssets))
             .join("");
           const choiceOptionsHtml = optionListToHtml(question.optionalChoice?.options);
           const subpartsHtml = (question.subparts ?? [])
@@ -4702,18 +4740,18 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
                 const subpartChoiceOptionsHtml = optionListToHtml(subpart.optionalChoice?.options);
 
                 return `
-                  <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${subpart.richText || textToHtml(subpart.text)}${imageAssetsToHtml(subpart.imageAssets)}${subpartOptionsHtml}</div><span>[${subpart.marks ?? ""} marks]</span></div>
-                  ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${subpart.optionalChoice.richText || textToHtml(subpart.optionalChoice.text)}${imageAssetsToHtml(subpart.optionalChoice.imageAssets)}${subpartChoiceOptionsHtml}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>` : ""}
+                  <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${richOrTextHtml(subpart.richText, subpart.text)}${imageAssetsToHtml(subpart.imageAssets)}${subpartOptionsHtml}</div><span>[${subpart.marks ?? ""} marks]</span></div>
+                  ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${richOrTextHtml(subpart.optionalChoice.richText, subpart.optionalChoice.text)}${imageAssetsToHtml(subpart.optionalChoice.imageAssets)}${subpartChoiceOptionsHtml}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>` : ""}
                 `;
               },
             )
             .join("");
           const html = `
             <div class="question">
-              <div class="q-main"><strong>${questionNumber++}.</strong><div>${question.richText || textToHtml(question.text)}${imageAssetsToHtml(question.imageAssets)}</div><span>[${question.marks} marks]</span></div>
+              <div class="q-main"><strong>${questionNumber++}.</strong><div>${richOrTextHtml(question.richText, question.text)}${imageAssetsToHtml(question.imageAssets)}</div><span>[${question.marks} marks]</span></div>
               ${optionsHtml}
               ${subpartsHtml}
-              ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${question.optionalChoice.richText || textToHtml(question.optionalChoice.text)}${imageAssetsToHtml(question.optionalChoice.imageAssets)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>${choiceOptionsHtml}` : ""}
+              ${question.optionalChoice ? `<div class="or">OR</div><div class="q-main choice"><strong></strong><div>${richOrTextHtml(question.optionalChoice.richText, question.optionalChoice.text)}${imageAssetsToHtml(question.optionalChoice.imageAssets)}</div><span>[${question.optionalChoice.marks ?? question.marks} marks]</span></div>${choiceOptionsHtml}` : ""}
             </div>`;
           return html;
         })
@@ -4731,14 +4769,14 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(printablePaper.title)}</title><style>
     @page{size:A4;margin:${Math.max(16, Math.round(documentStyle.margin / 2))}px}
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    body{font-family:Georgia,serif;line-height:${documentStyle.lineHeight};margin:0;color:${documentStyle.textColor};background:${documentStyle.pageColor};font-size:${documentStyle.fontSize}px}
+    body{font-family:Georgia,serif;line-height:${documentStyle.lineHeight};margin:0;color:${documentStyle.textColor};background:${documentStyle.pageColor};font-size:11px}
     header{text-align:center;border-bottom:1px solid #cbd5e1;padding-bottom:10px;margin-bottom:12px}
     h1{font-family:Arial,sans-serif;font-size:18px;text-transform:uppercase;margin:6px 0}
     h2{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;margin:14px 0 6px}
     .meta{display:flex;justify-content:center;gap:12px;font-family:Arial,sans-serif;font-size:10px;color:#475569}
     body::after{content:"Page";position:fixed;right:0;bottom:0;font-family:Arial,sans-serif;font-size:9px;color:#64748b}
     section{break-inside:auto}.question{margin:7px 0;break-inside:avoid-page}.q-main,.subpart{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:start}
-    .option{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;margin:3px 0 3px 32px}
+    .option{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;margin:3px 0 3px 32px;break-inside:avoid}
     .option div,.q-main div,.subpart div{min-width:0}
     .option p,.q-main p,.subpart p{margin:0 0 2px}
     .subpart{margin:4px 0 4px 24px}
@@ -4749,7 +4787,7 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     .q-image{max-width:180px;border:1px solid #cbd5e1;padding:3px;border-radius:4px}
     .q-image img{display:block;max-width:100%;max-height:120px;object-fit:contain}
     .q-image figcaption{font-family:Arial,sans-serif;font-size:8px;color:#64748b;margin-top:2px}
-  </style></head><body>${documentStyle.watermark?.text ? `<div class="watermark">${escapeHtml(documentStyle.watermark.text)}</div>` : ""}<header><div>Series: QPG/${escapeHtml(printablePaper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(printablePaper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(printablePaper.title)}</h1><div class="meta"><span>${escapeHtml(printablePaper.metadata.board)} Class ${escapeHtml(printablePaper.metadata.classLevel)}</span><span>${escapeHtml(printablePaper.metadata.subject)}</span><span>Time: ${formatDuration(printablePaper.metadata.durationMinutes)}</span><span>Max Marks: ${printablePaper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
+  </style><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css"></head><body>${documentStyle.watermark?.text ? `<div class="watermark">${escapeHtml(documentStyle.watermark.text)}</div>` : ""}<header><div>Series: QPG/${escapeHtml(printablePaper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(printablePaper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(printablePaper.title)}</h1><div class="meta"><span>${escapeHtml(printablePaper.metadata.board)} Class ${escapeHtml(printablePaper.metadata.classLevel)}</span><span>${escapeHtml(printablePaper.metadata.subject)}</span><span>Time: ${formatDuration(printablePaper.metadata.durationMinutes)}</span><span>Max Marks: ${printablePaper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
 }
 
 async function paperToDocxBlob(paper: Paper, documentStyle: DocumentStyle) {
@@ -4887,11 +4925,18 @@ function plainTextFromRich(value: string) {
 }
 
 function optionListToHtml(options?: PaperQuestionOption[]) {
-  return (options ?? []).map((option) => optionToHtml(option.label || "", richOrTextHtml(option.richText, option.text), option.imageAssets)).join("");
+  return (options ?? []).map((option, index) => optionToHtml(formatPrintOptionLabel(option.label, index), richOrTextHtml(option.richText, option.text), option.imageAssets)).join("");
 }
 
 function optionToHtml(label: string, contentHtml: string, imageAssets?: PaperImageAsset[]) {
   return `<div class="option"><strong>${escapeHtml(label)}</strong><div>${contentHtml}${imageAssetsToHtml(imageAssets, "option")}</div></div>`;
+}
+
+function formatPrintOptionLabel(label: string | undefined, index: number) {
+  const normalized = (label || String.fromCharCode(65 + index)).trim();
+  if (/^\(?[a-z]\)?\.?$/i.test(normalized)) return `(${normalized.replace(/[().]/g, "").toUpperCase()})`;
+  if (/^\(?[ivx]+\)?\.?$/i.test(normalized)) return normalized.startsWith("(") ? normalized : `(${normalized})`;
+  return normalized;
 }
 
 function imageAssetsToHtml(assets?: PaperImageAsset[], mode: "question" | "option" = "question") {
@@ -4904,12 +4949,91 @@ function imageAssetsToHtml(assets?: PaperImageAsset[], mode: "question" | "optio
 }
 
 function textToHtml(text: string) {
-  return richTextFromText(text) || escapeHtml(text).replaceAll("\n", "<br>");
+  return printableTextToHtml(text);
 }
 
 function richOrTextHtml(richText: string | undefined, text: string | undefined) {
-  const stripped = richText?.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
-  return stripped ? richText || "" : textToHtml(text ?? "");
+  const html = richText?.trim() ? renderPrintableRichHtml(richText) : "";
+  const stripped = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  return stripped || /class="katex/.test(html) ? html : textToHtml(text ?? "");
+}
+
+function printableTextToHtml(text: string) {
+  if (!text.trim()) return "";
+
+  return text
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${renderPrintableInline(paragraph).replace(/\n/g, "<br>") || "<br>"}</p>`)
+    .join("");
+}
+
+function renderPrintableRichHtml(html: string) {
+  const placeholders: string[] = [];
+  const stash = (value: string) => {
+    const key = `%%QPG_PRINT_MATH_${placeholders.length}%%`;
+    placeholders.push(value);
+    return key;
+  };
+
+  const withMath = html.replace(/<span[^>]*data-latex=(["'])(.*?)\1[^>]*>(?:.*?)<\/span>/gi, (_match, _quote: string, latex: string) =>
+    stash(renderPrintableLatex(unescapeHtml(latex))),
+  );
+
+  const rendered = withMath
+    .split(/(<[^>]+>)/g)
+    .map((part) => {
+      if (!part || part.startsWith("<")) return part;
+      return renderPrintableInline(unescapeHtml(part));
+    })
+    .join("")
+    .replace(/<p><\/p>/g, "")
+    .replace(/<p>\s*<br\s*\/?>\s*<\/p>/g, "");
+
+  return placeholders.reduce((current, value, index) => current.replaceAll(`%%QPG_PRINT_MATH_${index}%%`, value), rendered);
+}
+
+function renderPrintableInline(value: string) {
+  const placeholders: string[] = [];
+  const stash = (html: string) => {
+    const key = `%%QPG_INLINE_MATH_${placeholders.length}%%`;
+    placeholders.push(html);
+    return key;
+  };
+
+  let rendered = escapeHtml(value)
+    .replace(/\$\$([^$]+)\$\$|\$([^$\n]+)\$/g, (_match, blockLatex: string, inlineLatex: string) => stash(renderPrintableLatex(blockLatex ?? inlineLatex ?? "")))
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, (match) => stash(renderPrintableLatex(unescapeHtml(match))))
+    .replace(/\\sqrt\{([^{}]+)\}/g, (match) => stash(renderPrintableLatex(unescapeHtml(match))))
+    .replace(/([A-Za-z])([23])(?=\b|[^A-Za-z0-9])/g, "$1<sup>$2</sup>")
+    .replace(/\(([A-Za-z0-9\s+\-−–*/=.,]+)\)([23])(?=\b|[^A-Za-z0-9])/g, "($1)<sup>$2</sup>")
+    .replace(/\b([A-Z][a-z]?)(\d+)(?=[A-Z]|$)/g, "$1<sub>$2</sub>");
+
+  placeholders.forEach((html, index) => {
+    rendered = rendered.replaceAll(`%%QPG_INLINE_MATH_${index}%%`, html);
+  });
+
+  return rendered;
+}
+
+function renderPrintableLatex(latex: string) {
+  const normalized = normalizePrintableLatex(latex);
+  if (!normalized) return "";
+
+  try {
+    return katex.renderToString(normalized, { throwOnError: false, strict: false, displayMode: false });
+  } catch {
+    return `<span class="math-preview">${escapeHtml(normalized)}</span>`;
+  }
+}
+
+function normalizePrintableLatex(latex: string) {
+  return latex
+    .trim()
+    .replace(/^\${1,2}/, "")
+    .replace(/\${1,2}$/, "")
+    .replace(/[−–]/g, "-")
+    .replace(/π/g, "\\pi")
+    .replace(/([A-Za-z0-9)\]}])([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (_match, base: string, digits: string) => `${base}^{${digits.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (digit) => "⁰¹²³⁴⁵⁶⁷⁸⁹".indexOf(digit).toString())}}`);
 }
 
 function normalizeTemplateParams(raw: Record<string, unknown>): Partial<PaperRequest> {
@@ -5076,6 +5200,10 @@ function escapeHtml(value: string) {
 
 function escapeAttribute(value: string) {
   return escapeHtml(value).replaceAll("'", "&#39;");
+}
+
+function unescapeHtml(value: string) {
+  return value.replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

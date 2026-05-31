@@ -113,7 +113,7 @@ export function normalizeMathText(text: string) {
 }
 
 export function toRichTextHtml(text: string, existingHtml?: string) {
-  if (existingHtml && !looksLikeStaleBlob(existingHtml, text)) return existingHtml;
+  if (existingHtml && hasMeaningfulHtml(existingHtml) && !looksLikeStaleBlob(existingHtml, text)) return upgradeRichTextHtml(existingHtml);
   return richTextFromText(text);
 }
 
@@ -122,7 +122,8 @@ function normalizeQuestionLike<T extends PaperQuestion | PaperSubpart | NonNulla
 ): T {
   const text = stringValue(question.text, "");
   const existingOptions = "options" in question ? normalizeRawOptions(question.options) : undefined;
-  const split = existingOptions && existingOptions.length > 0 ? null : splitInlineBlocks(text);
+  const questionType = "type" in question ? optionalString(question.type) : undefined;
+  const split = existingOptions && existingOptions.length > 0 ? null : splitInlineBlocks(text, questionType);
   const cleanText = split ? split.stem : text;
   const richText = toRichTextHtml(cleanText, question.richText);
   const answer = "answer" in question ? stringValue(question.answer, "") : undefined;
@@ -237,8 +238,8 @@ function normalizeRawChoice(value: unknown): PaperQuestion["optionalChoice"] | u
   };
 }
 
-function splitInlineBlocks(text: string) {
-  const matches = Array.from(text.matchAll(/(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[a-eA-E])\)|[A-D][.)])\s*/giu));
+function splitInlineBlocks(text: string, questionType?: string) {
+  const matches = Array.from(text.matchAll(/(?:^|\s)(\((?:i{1,3}|iv|v|vi{0,3}|ix|x|[a-zA-Z])\)|[A-Z][.)])\s*/giu));
   if (matches.length < 2) return null;
 
   const firstIndex = matches[0].index ?? 0;
@@ -255,7 +256,11 @@ function splitInlineBlocks(text: string) {
     };
   });
 
-  if (blocks.every((block) => /^\([a-e]\)$/i.test(block.label))) {
+  const isMcq = String(questionType || "").toLowerCase().includes("mcq");
+  const allLowerAlpha = blocks.every((block) => /^\([a-z]\)$/.test(block.label));
+  const allRoman = blocks.every((block) => /^\((?:i{1,3}|iv|v|vi{0,3}|ix|x)\)$/i.test(block.label));
+
+  if (!isMcq && (allLowerAlpha || allRoman)) {
     return {
       stem,
       subparts: blocks.map((block, index) => ({ ...block, label: String.fromCharCode(97 + index), marks: 1, answer: "" })),
@@ -276,8 +281,19 @@ function splitInlineBlocks(text: string) {
 
 function inlineMathHtml(text: string) {
   return escapeHtml(text)
+    .replace(/\$\$([^$]+)\$\$|\$([^$\n]+)\$/g, (_match, blockLatex: string, inlineLatex: string) => mathSpan(blockLatex ?? inlineLatex ?? ""))
+    .replace(/\\frac\{[^{}]+\}\{[^{}]+\}/g, (match) => mathSpan(match))
+    .replace(/\\sqrt\{[^{}]+\}/g, (match) => mathSpan(match))
     .replace(/([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, "<sup>$1</sup>")
     .replace(/([₀₁₂₃₄₅₆₇₈₉]+)/g, "<sub>$1</sub>");
+}
+
+function mathSpan(latex: string) {
+  return `<span data-type="inline-math" data-latex="${escapeAttribute(normalizeLatex(latex))}"></span>`;
+}
+
+function normalizeLatex(latex: string) {
+  return latex.trim().replace(/^\${1,2}/, "").replace(/\${1,2}$/, "").replace(/[−–]/g, "-").replace(/π/g, "\\pi");
 }
 
 function protectLatexSegments(text: string) {
@@ -302,6 +318,20 @@ function looksLikeStaleBlob(html: string, text: string) {
   return plain.length > text.length + 20 && /\((?:i{1,3}|iv|v|[A-D])\)|[A-D][.)]/i.test(plain);
 }
 
+function hasMeaningfulHtml(html: string) {
+  return (
+    html
+      .replace(/<br\s*\/?>/gi, "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim().length > 0 || /data-latex=/.test(html)
+  );
+}
+
+function upgradeRichTextHtml(html: string) {
+  return html.replace(/>([^<]*\\(?:frac|sqrt)\{[^<]+)<\/p>/g, (_match, content: string) => `>${inlineMathHtml(content)}</p>`);
+}
+
 function toSuperscript(value: string) {
   const map: Record<string, string> = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹" };
   return value.replace(/\d/g, (digit) => map[digit] || digit);
@@ -313,7 +343,11 @@ function toSubscript(value: string) {
 }
 
 function escapeHtml(value: string) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function escapeAttribute(value: string) {
+  return escapeHtml(value).replaceAll("'", "&#39;");
 }
 
 function stringValue(value: unknown, fallback: string) {
