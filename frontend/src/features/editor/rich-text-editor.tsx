@@ -29,6 +29,7 @@ import {
   Superscript as SuperscriptIcon,
   Underline as UnderlineIcon,
 } from "lucide-react";
+import { MathLiveBox } from "./math-live-box";
 
 interface RichTextEditorProps {
   value: string;
@@ -77,6 +78,13 @@ export function activateRichTextEditorFromElement(element: Element | null) {
   return true;
 }
 
+export function openMathLiveEditorForActiveRichTextEditor(initialLatex = "") {
+  if (!activeRichTextEditor) return false;
+
+  window.dispatchEvent(new CustomEvent("qpg:open-mathlive", { detail: { latex: initialLatex } }));
+  return true;
+}
+
 export function RichTextEditor({
   value,
   htmlValue,
@@ -91,6 +99,8 @@ export function RichTextEditor({
   const editorId = useMemo(() => crypto.randomUUID(), []);
   const [activeFormulaId, setActiveFormulaId] = useState<string | null>(null);
   const [formulaValues, setFormulaValues] = useState<Record<string, string>>({});
+  const [mathLiveValue, setMathLiveValue] = useState("");
+  const [isMathLiveOpen, setIsMathLiveOpen] = useState(false);
   const activeFormula = useMemo(
     () => formulaSnippets.flatMap((group) => group.items).find((item) => item.id === activeFormulaId),
     [activeFormulaId],
@@ -143,6 +153,21 @@ export function RichTextEditor({
   useEffect(() => {
     if (!editor) return;
 
+    const openMathLive = (event: Event) => {
+      if (activeRichTextEditor !== editor) return;
+
+      const latex = event instanceof CustomEvent && typeof event.detail?.latex === "string" ? event.detail.latex : selectedLatex(editor);
+      setMathLiveValue(latex || selectedLatex(editor) || "x^2");
+      setIsMathLiveOpen(true);
+    };
+
+    window.addEventListener("qpg:open-mathlive", openMathLive);
+    return () => window.removeEventListener("qpg:open-mathlive", openMathLive);
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+
     const nextContent = editorContent(value, htmlValue);
 
     if (!editor.isFocused && editor.getHTML() !== nextContent) {
@@ -162,6 +187,27 @@ export function RichTextEditor({
     activeRichTextEditor = editor;
     onFocus?.();
     window.dispatchEvent(new CustomEvent("qpg:rich-text-focus", { detail: { label } }));
+  };
+
+  const openLocalMathLive = () => {
+    activateEditor();
+    setMathLiveValue(selectedLatex(editor) || "x^2");
+    setIsMathLiveOpen(true);
+  };
+
+  const insertMathLiveValue = () => {
+    const latex = mathLiveValue.trim();
+    if (!latex) return;
+
+    const htmlBefore = editor.getHTML();
+    const inserted = editor.chain().focus().insertInlineMath({ latex }).run();
+    const htmlAfter = editor.getHTML();
+
+    if (!inserted || htmlAfter === htmlBefore) {
+      editor.chain().focus().insertContent({ type: "inlineMath", attrs: { latex } }).run();
+    }
+
+    setIsMathLiveOpen(false);
   };
 
   return (
@@ -222,6 +268,14 @@ export function RichTextEditor({
               onClick={() => editor.chain().focus().toggleSubscript().run()}
             >
               <SubscriptIcon size={15} />
+            </ToolbarButton>
+            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
+            <ToolbarButton
+              active={isMathLiveOpen}
+              label="Open MathLive formula editor"
+              onClick={openLocalMathLive}
+            >
+              <Sigma size={15} />
             </ToolbarButton>
             <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
             <ToolbarButton
@@ -320,6 +374,14 @@ export function RichTextEditor({
             </ToolbarButton>
           </>
         )}
+        {isMathLiveOpen && (
+          <MathLiveFormulaPanel
+            latex={mathLiveValue}
+            onCancel={() => setIsMathLiveOpen(false)}
+            onChange={setMathLiveValue}
+            onInsert={insertMathLiveValue}
+          />
+        )}
       </div>
       <EditorContent
         editor={editor}
@@ -353,6 +415,50 @@ function ToolbarButton({ active = false, children, label, onClick }: ToolbarButt
     >
       {children}
     </button>
+  );
+}
+
+interface MathLiveFormulaPanelProps {
+  latex: string;
+  onCancel: () => void;
+  onChange: (latex: string) => void;
+  onInsert: () => void;
+}
+
+function MathLiveFormulaPanel({ latex, onCancel, onChange, onInsert }: MathLiveFormulaPanelProps) {
+  return (
+    <div className="math-live-panel mt-1 grid w-full gap-2 rounded-md border border-[var(--accent-soft)] bg-[var(--paper)] p-2 shadow-[var(--shadow-md)]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">MathLive formula editor</div>
+          <p className="text-[11px] font-semibold text-[var(--ink-2)]">Type LaTeX commands like \frac, \sqrt, x^2, x_1, \int, \sum, or nested expressions.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="editor-mini-button" onClick={onCancel} type="button">
+            Cancel
+          </button>
+          <button className="editor-mini-button bg-slate-950 text-white hover:bg-slate-800" onClick={onInsert} type="button">
+            Insert
+          </button>
+        </div>
+      </div>
+      <MathLiveBox autoFocus value={latex} onChange={onChange} />
+      <label className="grid gap-1 text-[11px] font-bold text-[var(--ink-2)]">
+        Raw LaTeX
+        <textarea
+          className="min-h-16 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+          value={latex}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+              event.preventDefault();
+              onInsert();
+            }
+            if (event.key === "Escape") onCancel();
+          }}
+        />
+      </label>
+    </div>
   );
 }
 
@@ -414,6 +520,13 @@ function FormulaBuilder({ formula, values, onChange, onCancel, onInsert }: Formu
       </button>
     </div>
   );
+}
+
+function selectedLatex(editor: Editor) {
+  const { from, to } = editor.state.selection;
+  if (from === to) return "";
+
+  return editor.state.doc.textBetween(from, to, " ").replace(/^\$+|\$+$/g, "").trim();
 }
 
 const getValue = (values: Record<string, string>, key: string, fallback: string) => values[key]?.trim() || fallback;

@@ -25,7 +25,12 @@ import {
   X,
 } from "lucide-react";
 import { PaperEditor } from "@/features/editor/paper-editor";
-import { activateRichTextEditorFromElement, insertIntoActiveRichTextEditor, MathToolkitInsert } from "@/features/editor/rich-text-editor";
+import {
+  activateRichTextEditorFromElement,
+  insertIntoActiveRichTextEditor,
+  MathToolkitInsert,
+  openMathLiveEditorForActiveRichTextEditor,
+} from "@/features/editor/rich-text-editor";
 import {
   fetchChaptersViaApi,
   fetchDashboardViaApi,
@@ -1092,11 +1097,19 @@ type MathMenuTool =
       label: string;
       insert: MathToolkitInsert;
       smart?: never;
+      live?: never;
     }
   | {
       label: string;
       smart: SmartInsertTemplate;
       insert?: never;
+      live?: never;
+    }
+  | {
+      label: string;
+      live: true;
+      insert?: never;
+      smart?: never;
     };
 
 const smartInsertTemplates: Record<string, SmartInsertTemplate> = {
@@ -1367,6 +1380,7 @@ const mathMenuGroups = [
       { label: "ⁿ√x", smart: smartInsertTemplates.nthRoot },
       { label: "√√x", smart: smartInsertTemplates.nestedRoot },
       { label: "a/b", smart: smartInsertTemplates.fraction },
+      { label: "Live editor", live: true },
       { label: "Quad", smart: smartInsertTemplates.quadratic },
       { label: "Formula", insert: { type: "math", value: "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" } },
       { label: "AP", smart: smartInsertTemplates.ap },
@@ -1664,6 +1678,13 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
                         return;
                       }
 
+                      if ("live" in tool && tool.live) {
+                        activateRichTextEditorFromElement(activeSurfaceRef.current);
+                        openMathLiveEditorForActiveRichTextEditor();
+                        setPosition(null);
+                        return;
+                      }
+
                       applyStaticInsert(tool.insert);
                     }}
                     onPointerDown={(event) => {
@@ -1672,6 +1693,13 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
 
                       if (tool.smart) {
                         startSmartInsert(tool.smart);
+                        return;
+                      }
+
+                      if ("live" in tool && tool.live) {
+                        activateRichTextEditorFromElement(activeSurfaceRef.current);
+                        openMathLiveEditorForActiveRichTextEditor();
+                        setPosition(null);
                         return;
                       }
 

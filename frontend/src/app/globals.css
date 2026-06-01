@@ -605,6 +605,31 @@ button:disabled {
   pointer-events: none;
 }
 
+.math-live-panel {
+  flex-basis: 100%;
+}
+
+.math-live-host math-field {
+  width: 100%;
+  min-height: 3.25rem;
+  border: 2px solid var(--accent-soft);
+  border-radius: var(--radius-sm);
+  background: #fffaf1;
+  padding: 0.55rem 0.65rem;
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+.math-live-host math-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139, 90, 43, 0.14);
+}
+
+math-field::part(virtual-keyboard-toggle),
+math-field::part(menu-toggle) {
+  color: var(--accent);
+}
+
 .paper-option-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
