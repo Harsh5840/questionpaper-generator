@@ -83,10 +83,12 @@ export function openMathLiveEditorForActiveRichTextEditor(initialLatex = "") {
 
 type MathLiveFieldElement = HTMLElement & {
   value: string;
+  selection?: { ranges: [number, number][]; direction?: "forward" | "backward" | "none" };
   smartFence?: boolean;
   smartMode?: boolean;
   inlineShortcutTimeout?: number;
   mathModeSpace?: string;
+  executeCommand?: (command: string | [string, ...unknown[]]) => boolean;
 };
 
 const LiveInlineMath = InlineMath.extend({
@@ -96,6 +98,7 @@ const LiveInlineMath = InlineMath.extend({
       let mathField: MathLiveFieldElement | null = null;
       let currentLatex = String(node.attrs.latex || "x^2");
       let isDestroyed = false;
+      let hasPlacedInitialCaret = false;
 
       wrapper.className = "qpg-inline-math-live";
       wrapper.dataset.type = "inline-math";
@@ -121,6 +124,18 @@ const LiveInlineMath = InlineMath.extend({
         window.dispatchEvent(new CustomEvent("qpg:rich-text-focus", { detail: { label: "Math formula" } }));
       };
 
+      const focusMathField = () => {
+        focusEditorContext();
+        if (!mathField || hasPlacedInitialCaret) return;
+
+        hasPlacedInitialCaret = true;
+        requestAnimationFrame(() => {
+          if (!mathField || !document.contains(mathField)) return;
+          mathField.focus();
+          placeCaretAtFormulaEnd(mathField);
+        });
+      };
+
       const mountMathLive = async () => {
         await import("mathlive");
         if (isDestroyed) return;
@@ -138,16 +153,16 @@ const LiveInlineMath = InlineMath.extend({
         mathField.mathModeSpace = "\\ ";
 
         mathField.addEventListener("input", handleInput);
-        mathField.addEventListener("focus", focusEditorContext);
-        mathField.addEventListener("pointerdown", focusEditorContext);
-        mathField.addEventListener("mousedown", focusEditorContext);
-        mathField.addEventListener("click", focusEditorContext);
+        mathField.addEventListener("focus", focusMathField);
+        mathField.addEventListener("pointerdown", focusMathField);
+        mathField.addEventListener("mousedown", focusMathField);
+        mathField.addEventListener("click", focusMathField);
         mathFieldEventsToOwn.forEach((eventName) => mathField?.addEventListener(eventName, stopProseMirrorEvent));
         wrapper.appendChild(mathField);
       };
 
-      wrapper.addEventListener("pointerdown", focusEditorContext);
-      wrapper.addEventListener("mousedown", focusEditorContext);
+      wrapper.addEventListener("pointerdown", focusMathField);
+      wrapper.addEventListener("mousedown", focusMathField);
       void mountMathLive();
 
       return {
@@ -172,10 +187,10 @@ const LiveInlineMath = InlineMath.extend({
         destroy() {
           isDestroyed = true;
           mathField?.removeEventListener("input", handleInput);
-          mathField?.removeEventListener("focus", focusEditorContext);
-          mathField?.removeEventListener("pointerdown", focusEditorContext);
-          mathField?.removeEventListener("mousedown", focusEditorContext);
-          mathField?.removeEventListener("click", focusEditorContext);
+          mathField?.removeEventListener("focus", focusMathField);
+          mathField?.removeEventListener("pointerdown", focusMathField);
+          mathField?.removeEventListener("mousedown", focusMathField);
+          mathField?.removeEventListener("click", focusMathField);
           mathFieldEventsToOwn.forEach((eventName) => mathField?.removeEventListener(eventName, stopProseMirrorEvent));
           mathField?.remove();
         },
@@ -203,6 +218,19 @@ const mathFieldEventsToOwn = [
   "compositionend",
   "selection-change",
 ] as const;
+
+function placeCaretAtFormulaEnd(mathField: MathLiveFieldElement) {
+  try {
+    mathField.selection = { ranges: [[-1, -1]], direction: "none" };
+    return;
+  } catch {
+    // Fall through to command selectors below. MathLive versions differ slightly
+    // in the public selection surface, but command selectors are stable.
+  }
+
+  if (mathField.executeCommand?.("moveToMathfieldEnd")) return;
+  mathField.executeCommand?.("move-to-mathfield-end");
+}
 
 export function RichTextEditor({
   value,
