@@ -100,6 +100,8 @@ const LiveInlineMath = InlineMath.extend({
       wrapper.className = "qpg-inline-math-live";
       wrapper.dataset.type = "inline-math";
       wrapper.setAttribute("data-latex", currentLatex);
+      wrapper.contentEditable = "false";
+      wrapper.setAttribute("tabindex", "-1");
 
       const commitLatex = (latex: string) => {
         currentLatex = latex;
@@ -135,13 +137,17 @@ const LiveInlineMath = InlineMath.extend({
         mathField.inlineShortcutTimeout = 0;
         mathField.mathModeSpace = "\\ ";
 
-        mathField.addEventListener("input", () => commitLatex(mathField?.value ?? ""));
+        mathField.addEventListener("input", handleInput);
         mathField.addEventListener("focus", focusEditorContext);
         mathField.addEventListener("pointerdown", focusEditorContext);
+        mathField.addEventListener("mousedown", focusEditorContext);
+        mathField.addEventListener("click", focusEditorContext);
+        mathFieldEventsToOwn.forEach((eventName) => mathField?.addEventListener(eventName, stopProseMirrorEvent));
         wrapper.appendChild(mathField);
       };
 
       wrapper.addEventListener("pointerdown", focusEditorContext);
+      wrapper.addEventListener("mousedown", focusEditorContext);
       void mountMathLive();
 
       return {
@@ -151,18 +157,52 @@ const LiveInlineMath = InlineMath.extend({
 
           currentLatex = String(nextNode.attrs.latex || "");
           wrapper.setAttribute("data-latex", currentLatex);
-          if (mathField && mathField.value !== currentLatex) mathField.value = currentLatex;
+          if (mathField && document.activeElement !== mathField && mathField.value !== currentLatex) {
+            mathField.value = currentLatex;
+          }
 
+          return true;
+        },
+        stopEvent(event) {
+          return event.target instanceof globalThis.Node && wrapper.contains(event.target);
+        },
+        ignoreMutation() {
           return true;
         },
         destroy() {
           isDestroyed = true;
+          mathField?.removeEventListener("input", handleInput);
+          mathField?.removeEventListener("focus", focusEditorContext);
+          mathField?.removeEventListener("pointerdown", focusEditorContext);
+          mathField?.removeEventListener("mousedown", focusEditorContext);
+          mathField?.removeEventListener("click", focusEditorContext);
+          mathFieldEventsToOwn.forEach((eventName) => mathField?.removeEventListener(eventName, stopProseMirrorEvent));
           mathField?.remove();
         },
       };
+
+      function handleInput(event: Event) {
+        event.stopPropagation();
+        commitLatex(mathField?.value ?? "");
+      }
+
+      function stopProseMirrorEvent(event: Event) {
+        event.stopPropagation();
+      }
     };
   },
 });
+
+const mathFieldEventsToOwn = [
+  "beforeinput",
+  "keydown",
+  "keyup",
+  "keypress",
+  "compositionstart",
+  "compositionupdate",
+  "compositionend",
+  "selection-change",
+] as const;
 
 export function RichTextEditor({
   value,
