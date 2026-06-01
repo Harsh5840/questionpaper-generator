@@ -534,12 +534,6 @@ button:disabled {
   padding-bottom: 0.25rem !important;
 }
 
-.rich-text-shell.math-live-open > div:first-child,
-.rich-text-shell.math-live-open.toolbar-focus-only:focus-within > div:first-child {
-  max-height: 34rem !important;
-  overflow: visible !important;
-}
-
 .rich-text-surface {
   width: 100%;
   padding: 0.2rem 0.45rem;
@@ -595,6 +589,41 @@ button:disabled {
   cursor: text;
 }
 
+.rich-text-surface .qpg-inline-math-live {
+  display: inline-flex;
+  min-height: 1.75em;
+  min-width: 2.4rem;
+  align-items: center;
+  margin: 0 0.12rem;
+  vertical-align: -0.42em;
+}
+
+.rich-text-surface .qpg-inline-math-live math-field {
+  min-width: 2.4rem;
+  max-width: min(24rem, 100%);
+  border: 1.5px solid #4f67d7;
+  border-radius: 0.3rem;
+  background: #fbfdff;
+  padding: 0.1rem 0.35rem;
+  color: #111827;
+  font-size: 1em;
+  line-height: 1.1;
+  box-shadow: 0 1px 0 rgba(31, 41, 55, 0.04);
+}
+
+.rich-text-surface .qpg-inline-math-live math-field:focus,
+.rich-text-surface .qpg-inline-math-live math-field:focus-within {
+  border-color: #1d4ed8;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+  outline: none;
+}
+
+.rich-text-surface .qpg-inline-math-live math-field::part(virtual-keyboard-toggle),
+.rich-text-surface .qpg-inline-math-live math-field::part(menu-toggle) {
+  display: none;
+}
+
 .rich-text-surface .inline-math-error,
 .rich-text-surface .block-math-error {
   border-radius: 0.2rem;
@@ -609,31 +638,6 @@ button:disabled {
   float: left;
   height: 0;
   pointer-events: none;
-}
-
-.math-live-panel {
-  flex-basis: 100%;
-}
-
-.math-live-host math-field {
-  width: 100%;
-  min-height: 3.25rem;
-  border: 2px solid var(--accent-soft);
-  border-radius: var(--radius-sm);
-  background: #fffaf1;
-  padding: 0.55rem 0.65rem;
-  color: var(--ink);
-  font-size: 1.1rem;
-}
-
-.math-live-host math-field:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(139, 90, 43, 0.14);
-}
-
-math-field::part(virtual-keyboard-toggle),
-math-field::part(menu-toggle) {
-  color: var(--accent);
 }
 
 .paper-option-grid {

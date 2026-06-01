@@ -12,7 +12,7 @@ import { Color } from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
-import { Mathematics } from "@tiptap/extension-mathematics";
+import { BlockMath, InlineMath } from "@tiptap/extension-mathematics";
 import "katex/dist/katex.min.css";
 import {
   AlignCenter,
@@ -29,7 +29,6 @@ import {
   Superscript as SuperscriptIcon,
   Underline as UnderlineIcon,
 } from "lucide-react";
-import { MathLiveBox } from "./math-live-box";
 
 interface RichTextEditorProps {
   value: string;
@@ -79,11 +78,91 @@ export function activateRichTextEditorFromElement(element: Element | null) {
 }
 
 export function openMathLiveEditorForActiveRichTextEditor(initialLatex = "") {
-  if (!activeRichTextEditor) return false;
-
-  window.dispatchEvent(new CustomEvent("qpg:open-mathlive", { detail: { latex: initialLatex } }));
-  return true;
+  return insertIntoActiveRichTextEditor({ type: "math", value: initialLatex || "x^2" });
 }
+
+type MathLiveFieldElement = HTMLElement & {
+  value: string;
+  smartFence?: boolean;
+  smartMode?: boolean;
+  inlineShortcutTimeout?: number;
+  mathModeSpace?: string;
+};
+
+const LiveInlineMath = InlineMath.extend({
+  addNodeView() {
+    return ({ node, getPos, editor }) => {
+      const wrapper = document.createElement("span");
+      let mathField: MathLiveFieldElement | null = null;
+      let currentLatex = String(node.attrs.latex || "x^2");
+      let isDestroyed = false;
+
+      wrapper.className = "qpg-inline-math-live";
+      wrapper.dataset.type = "inline-math";
+      wrapper.setAttribute("data-latex", currentLatex);
+
+      const commitLatex = (latex: string) => {
+        currentLatex = latex;
+        wrapper.setAttribute("data-latex", latex);
+
+        const pos = getPos();
+        if (typeof pos !== "number") return;
+
+        const currentNode = editor.state.doc.nodeAt(pos);
+        if (!currentNode || currentNode.type.name !== "inlineMath" || currentNode.attrs.latex === latex) return;
+
+        editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...currentNode.attrs, latex }));
+      };
+
+      const focusEditorContext = () => {
+        activeRichTextEditor = editor;
+        window.dispatchEvent(new CustomEvent("qpg:rich-text-focus", { detail: { label: "Math formula" } }));
+      };
+
+      const mountMathLive = async () => {
+        await import("mathlive");
+        if (isDestroyed) return;
+
+        mathField = document.createElement("math-field") as MathLiveFieldElement;
+        mathField.value = currentLatex;
+        mathField.setAttribute("default-mode", "inline-math");
+        mathField.setAttribute("math-virtual-keyboard-policy", "manual");
+        mathField.setAttribute("math-mode-space", "\\ ");
+        mathField.setAttribute("smart-fence", "true");
+        mathField.setAttribute("smart-mode", "true");
+        mathField.smartFence = true;
+        mathField.smartMode = true;
+        mathField.inlineShortcutTimeout = 0;
+        mathField.mathModeSpace = "\\ ";
+
+        mathField.addEventListener("input", () => commitLatex(mathField?.value ?? ""));
+        mathField.addEventListener("focus", focusEditorContext);
+        mathField.addEventListener("pointerdown", focusEditorContext);
+        wrapper.appendChild(mathField);
+      };
+
+      wrapper.addEventListener("pointerdown", focusEditorContext);
+      void mountMathLive();
+
+      return {
+        dom: wrapper,
+        update(nextNode) {
+          if (nextNode.type.name !== "inlineMath") return false;
+
+          currentLatex = String(nextNode.attrs.latex || "");
+          wrapper.setAttribute("data-latex", currentLatex);
+          if (mathField && mathField.value !== currentLatex) mathField.value = currentLatex;
+
+          return true;
+        },
+        destroy() {
+          isDestroyed = true;
+          mathField?.remove();
+        },
+      };
+    };
+  },
+});
 
 export function RichTextEditor({
   value,
@@ -99,9 +178,6 @@ export function RichTextEditor({
   const editorId = useMemo(() => crypto.randomUUID(), []);
   const [activeFormulaId, setActiveFormulaId] = useState<string | null>(null);
   const [formulaValues, setFormulaValues] = useState<Record<string, string>>({});
-  const [mathLiveValue, setMathLiveValue] = useState("");
-  const [mathLiveTarget, setMathLiveTarget] = useState<{ nodePos: number | null } | null>(null);
-  const [isMathLiveOpen, setIsMathLiveOpen] = useState(false);
   const activeFormula = useMemo(
     () => formulaSnippets.flatMap((group) => group.items).find((item) => item.id === activeFormulaId),
     [activeFormulaId],
@@ -118,7 +194,8 @@ export function RichTextEditor({
       Highlight.configure({ multicolor: true }),
       Subscript,
       Superscript,
-      Mathematics,
+      BlockMath,
+      LiveInlineMath,
       TextAlign.configure({
         types: ["paragraph"],
       }),
@@ -154,22 +231,6 @@ export function RichTextEditor({
   useEffect(() => {
     if (!editor) return;
 
-    const openMathLive = (event: Event) => {
-      if (activeRichTextEditor !== editor) return;
-
-      const latex = event instanceof CustomEvent && typeof event.detail?.latex === "string" ? event.detail.latex : selectedLatex(editor);
-      setMathLiveTarget(null);
-      setMathLiveValue(latex || selectedLatex(editor) || "x^2");
-      setIsMathLiveOpen(true);
-    };
-
-    window.addEventListener("qpg:open-mathlive", openMathLive);
-    return () => window.removeEventListener("qpg:open-mathlive", openMathLive);
-  }, [editor]);
-
-  useEffect(() => {
-    if (!editor) return;
-
     const nextContent = editorContent(value, htmlValue);
 
     if (!editor.isFocused && editor.getHTML() !== nextContent) {
@@ -193,56 +254,16 @@ export function RichTextEditor({
 
   const openLocalMathLive = () => {
     activateEditor();
-    setMathLiveTarget(null);
-    setMathLiveValue(selectedLatex(editor) || "x^2");
-    setIsMathLiveOpen(true);
+    insertIntoActiveRichTextEditor({ type: "math", value: selectedLatex(editor) || "x^2" });
   };
 
-  const activateEditorFromClick = (event: React.MouseEvent) => {
+  const activateEditorFromClick = () => {
     activateEditor();
-
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-
-    const mathElement = target.closest<HTMLElement>("[data-latex], .tiptap-mathematics-render");
-    if (!mathElement || !event.currentTarget.contains(mathElement)) return;
-
-    const latex = mathElement.getAttribute("data-latex") || mathElement.textContent || selectedLatex(editor) || "x^2";
-    setMathLiveTarget({ nodePos: findMathNodePos(editor, mathElement) });
-    setMathLiveValue(normalizeMathLiveInitialValue(latex));
-    setIsMathLiveOpen(true);
-  };
-
-  const insertMathLiveValue = () => {
-    const latex = mathLiveValue.trim();
-    if (!latex) return;
-
-    let inserted = false;
-
-    if (mathLiveTarget?.nodePos !== null && mathLiveTarget?.nodePos !== undefined) {
-      const targetNode = editor.state.doc.nodeAt(mathLiveTarget.nodePos);
-      if (targetNode?.type.name === "inlineMath" || targetNode?.type.name === "blockMath") {
-        inserted = editor.chain().focus().setNodeSelection(mathLiveTarget.nodePos).deleteSelection().insertInlineMath({ latex }).run();
-      }
-    }
-
-    if (!inserted) {
-      const htmlBefore = editor.getHTML();
-      inserted = editor.chain().focus().insertInlineMath({ latex }).run();
-      const htmlAfter = editor.getHTML();
-
-      if (!inserted || htmlAfter === htmlBefore) {
-        editor.chain().focus().insertContent({ type: "inlineMath", attrs: { latex } }).run();
-      }
-    }
-
-    setMathLiveTarget(null);
-    setIsMathLiveOpen(false);
   };
 
   return (
     <div
-      className={`rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white ${toolbarMode === "focus" ? "toolbar-focus-only" : ""} ${isMathLiveOpen ? "math-live-open" : ""}`}
+      className={`rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white ${toolbarMode === "focus" ? "toolbar-focus-only" : ""}`}
     >
       <div
         className="flex flex-wrap items-center gap-1 border-b border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-1"
@@ -300,7 +321,7 @@ export function RichTextEditor({
               <SubscriptIcon size={15} />
             </ToolbarButton>
             <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
-            <ToolbarButton active={isMathLiveOpen} label="Open MathLive formula editor" onClick={openLocalMathLive}>
+            <ToolbarButton label="Insert live MathLive formula" onClick={openLocalMathLive}>
               <Sigma size={15} />
               <span className="ml-1 text-[10px] font-black">Live</span>
             </ToolbarButton>
@@ -401,14 +422,6 @@ export function RichTextEditor({
             </ToolbarButton>
           </>
         )}
-        {isMathLiveOpen && (
-          <MathLiveFormulaPanel
-            latex={mathLiveValue}
-            onCancel={() => setIsMathLiveOpen(false)}
-            onChange={setMathLiveValue}
-            onInsert={insertMathLiveValue}
-          />
-        )}
       </div>
       <EditorContent
         editor={editor}
@@ -442,50 +455,6 @@ function ToolbarButton({ active = false, children, label, onClick }: ToolbarButt
     >
       {children}
     </button>
-  );
-}
-
-interface MathLiveFormulaPanelProps {
-  latex: string;
-  onCancel: () => void;
-  onChange: (latex: string) => void;
-  onInsert: () => void;
-}
-
-function MathLiveFormulaPanel({ latex, onCancel, onChange, onInsert }: MathLiveFormulaPanelProps) {
-  return (
-    <div className="math-live-panel mt-1 grid w-full gap-2 rounded-md border border-[var(--accent-soft)] bg-[var(--paper)] p-2 shadow-[var(--shadow-md)]">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">MathLive formula editor</div>
-          <p className="text-[11px] font-semibold text-[var(--ink-2)]">Type LaTeX commands like \frac, \sqrt, x^2, x_1, \int, \sum, or nested expressions.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="editor-mini-button" onClick={onCancel} type="button">
-            Cancel
-          </button>
-          <button className="editor-mini-button bg-slate-950 text-white hover:bg-slate-800" onClick={onInsert} type="button">
-            Insert
-          </button>
-        </div>
-      </div>
-      <MathLiveBox autoFocus value={latex} onChange={onChange} />
-      <label className="grid gap-1 text-[11px] font-bold text-[var(--ink-2)]">
-        Raw LaTeX
-        <textarea
-          className="min-h-16 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-          value={latex}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-              event.preventDefault();
-              onInsert();
-            }
-            if (event.key === "Escape") onCancel();
-          }}
-        />
-      </label>
-    </div>
   );
 }
 
@@ -554,32 +523,6 @@ function selectedLatex(editor: Editor) {
   if (from === to) return "";
 
   return editor.state.doc.textBetween(from, to, " ").replace(/^\$+|\$+$/g, "").trim();
-}
-
-function normalizeMathLiveInitialValue(value: string) {
-  return value
-    .replace(/^\${1,2}/, "")
-    .replace(/\${1,2}$/, "")
-    .replace(/\u200b/g, "")
-    .trim();
-}
-
-function findMathNodePos(editor: Editor, element: HTMLElement) {
-  const pos = editor.view.posAtDOM(element, 0);
-  const min = Math.max(0, pos - 3);
-  const max = Math.min(editor.state.doc.content.size, pos + 3);
-  let match: number | null = null;
-
-  editor.state.doc.nodesBetween(min, max, (node, nodePos) => {
-    if (node.type.name === "inlineMath" || node.type.name === "blockMath") {
-      match = nodePos;
-      return false;
-    }
-
-    return true;
-  });
-
-  return match;
 }
 
 const getValue = (values: Record<string, string>, key: string, fallback: string) => values[key]?.trim() || fallback;
