@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Copy,
   FilePlus2,
@@ -74,6 +74,20 @@ export function PaperEditor({
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
   const sourceMix = useMemo(() => (paper ? calculateSourceMix(paper) : null), [paper]);
+
+  useEffect(() => {
+    const clearActiveQuestion = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest(".question-row")) return;
+      if (target.closest(".math-live-panel")) return;
+
+      setActiveQuestionId(null);
+    };
+
+    document.addEventListener("pointerdown", clearActiveQuestion);
+    return () => document.removeEventListener("pointerdown", clearActiveQuestion);
+  }, []);
 
   if (!paper) {
     return (

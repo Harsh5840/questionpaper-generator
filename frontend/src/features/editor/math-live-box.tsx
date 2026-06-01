@@ -35,6 +35,10 @@ export function MathLiveBox({ autoFocus = false, value, onChange }: MathLiveBoxP
       mathField.setAttribute("math-mode-space", "\\ ");
       mathField.setAttribute("smart-fence", "true");
       mathField.setAttribute("smart-mode", "true");
+      mathField.smartFence = true;
+      mathField.smartMode = true;
+      mathField.inlineShortcutTimeout = 0;
+      mathField.mathModeSpace = "\\ ";
 
       const handleInput = () => onChangeRef.current(mathField.value);
 

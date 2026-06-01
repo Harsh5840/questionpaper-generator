@@ -100,6 +100,7 @@ export function RichTextEditor({
   const [activeFormulaId, setActiveFormulaId] = useState<string | null>(null);
   const [formulaValues, setFormulaValues] = useState<Record<string, string>>({});
   const [mathLiveValue, setMathLiveValue] = useState("");
+  const [mathLiveTarget, setMathLiveTarget] = useState<{ nodePos: number | null } | null>(null);
   const [isMathLiveOpen, setIsMathLiveOpen] = useState(false);
   const activeFormula = useMemo(
     () => formulaSnippets.flatMap((group) => group.items).find((item) => item.id === activeFormulaId),
@@ -157,6 +158,7 @@ export function RichTextEditor({
       if (activeRichTextEditor !== editor) return;
 
       const latex = event instanceof CustomEvent && typeof event.detail?.latex === "string" ? event.detail.latex : selectedLatex(editor);
+      setMathLiveTarget(null);
       setMathLiveValue(latex || selectedLatex(editor) || "x^2");
       setIsMathLiveOpen(true);
     };
@@ -191,7 +193,23 @@ export function RichTextEditor({
 
   const openLocalMathLive = () => {
     activateEditor();
+    setMathLiveTarget(null);
     setMathLiveValue(selectedLatex(editor) || "x^2");
+    setIsMathLiveOpen(true);
+  };
+
+  const activateEditorFromClick = (event: React.MouseEvent) => {
+    activateEditor();
+
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const mathElement = target.closest<HTMLElement>("[data-latex], .tiptap-mathematics-render");
+    if (!mathElement || !event.currentTarget.contains(mathElement)) return;
+
+    const latex = mathElement.getAttribute("data-latex") || mathElement.textContent || selectedLatex(editor) || "x^2";
+    setMathLiveTarget({ nodePos: findMathNodePos(editor, mathElement) });
+    setMathLiveValue(normalizeMathLiveInitialValue(latex));
     setIsMathLiveOpen(true);
   };
 
@@ -199,20 +217,32 @@ export function RichTextEditor({
     const latex = mathLiveValue.trim();
     if (!latex) return;
 
-    const htmlBefore = editor.getHTML();
-    const inserted = editor.chain().focus().insertInlineMath({ latex }).run();
-    const htmlAfter = editor.getHTML();
+    let inserted = false;
 
-    if (!inserted || htmlAfter === htmlBefore) {
-      editor.chain().focus().insertContent({ type: "inlineMath", attrs: { latex } }).run();
+    if (mathLiveTarget?.nodePos !== null && mathLiveTarget?.nodePos !== undefined) {
+      const targetNode = editor.state.doc.nodeAt(mathLiveTarget.nodePos);
+      if (targetNode?.type.name === "inlineMath" || targetNode?.type.name === "blockMath") {
+        inserted = editor.chain().focus().setNodeSelection(mathLiveTarget.nodePos).deleteSelection().insertInlineMath({ latex }).run();
+      }
     }
 
+    if (!inserted) {
+      const htmlBefore = editor.getHTML();
+      inserted = editor.chain().focus().insertInlineMath({ latex }).run();
+      const htmlAfter = editor.getHTML();
+
+      if (!inserted || htmlAfter === htmlBefore) {
+        editor.chain().focus().insertContent({ type: "inlineMath", attrs: { latex } }).run();
+      }
+    }
+
+    setMathLiveTarget(null);
     setIsMathLiveOpen(false);
   };
 
   return (
     <div
-      className={`rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white ${toolbarMode === "focus" ? "toolbar-focus-only" : ""}`}
+      className={`rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white ${toolbarMode === "focus" ? "toolbar-focus-only" : ""} ${isMathLiveOpen ? "math-live-open" : ""}`}
     >
       <div
         className="flex flex-wrap items-center gap-1 border-b border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-1"
@@ -270,12 +300,9 @@ export function RichTextEditor({
               <SubscriptIcon size={15} />
             </ToolbarButton>
             <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
-            <ToolbarButton
-              active={isMathLiveOpen}
-              label="Open MathLive formula editor"
-              onClick={openLocalMathLive}
-            >
+            <ToolbarButton active={isMathLiveOpen} label="Open MathLive formula editor" onClick={openLocalMathLive}>
               <Sigma size={15} />
+              <span className="ml-1 text-[10px] font-black">Live</span>
             </ToolbarButton>
             <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
             <ToolbarButton
@@ -385,7 +412,7 @@ export function RichTextEditor({
       </div>
       <EditorContent
         editor={editor}
-        onClick={activateEditor}
+        onClick={activateEditorFromClick}
         onContextMenu={activateEditor}
         onFocus={activateEditor}
         onMouseDown={activateEditor}
@@ -527,6 +554,32 @@ function selectedLatex(editor: Editor) {
   if (from === to) return "";
 
   return editor.state.doc.textBetween(from, to, " ").replace(/^\$+|\$+$/g, "").trim();
+}
+
+function normalizeMathLiveInitialValue(value: string) {
+  return value
+    .replace(/^\${1,2}/, "")
+    .replace(/\${1,2}$/, "")
+    .replace(/\u200b/g, "")
+    .trim();
+}
+
+function findMathNodePos(editor: Editor, element: HTMLElement) {
+  const pos = editor.view.posAtDOM(element, 0);
+  const min = Math.max(0, pos - 3);
+  const max = Math.min(editor.state.doc.content.size, pos + 3);
+  let match: number | null = null;
+
+  editor.state.doc.nodesBetween(min, max, (node, nodePos) => {
+    if (node.type.name === "inlineMath" || node.type.name === "blockMath") {
+      match = nodePos;
+      return false;
+    }
+
+    return true;
+  });
+
+  return match;
 }
 
 const getValue = (values: Record<string, string>, key: string, fallback: string) => values[key]?.trim() || fallback;

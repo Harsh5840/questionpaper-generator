@@ -534,6 +534,12 @@ button:disabled {
   padding-bottom: 0.25rem !important;
 }
 
+.rich-text-shell.math-live-open > div:first-child,
+.rich-text-shell.math-live-open.toolbar-focus-only:focus-within > div:first-child {
+  max-height: 34rem !important;
+  overflow: visible !important;
+}
+
 .rich-text-surface {
   width: 100%;
   padding: 0.2rem 0.45rem;
