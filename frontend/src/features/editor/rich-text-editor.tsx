@@ -856,16 +856,17 @@ const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
 ];
 
 function textToHtml(value: string) {
-  if (value.trim().startsWith("<")) return value;
+  const cleanedValue = cleanCorruptMathArtifacts(value);
+  if (cleanedValue.trim().startsWith("<") && !hasCorruptMathMarkup(cleanedValue)) return cleanedValue;
 
-  return value
+  return cleanedValue
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${renderParagraph(paragraph) || "<br>"}</p>`)
     .join("");
 }
 
 function editorContent(value: string, htmlValue?: string) {
-  const content = htmlValue?.trim() ? sanitizeMathHtml(htmlValue) : textToHtml(value);
+  const content = htmlValue?.trim() && !hasCorruptMathMarkup(htmlValue) ? sanitizeMathHtml(htmlValue) : textToHtml(value);
   return enhanceMathMarkup(content);
 }
 
@@ -874,6 +875,31 @@ function sanitizeMathHtml(html: string) {
     const normalized = normalizeLatexForKatex(unescapeHtml(latex));
     return `data-latex=${quote}${escapeAttribute(normalized)}${quote}`;
   });
+}
+
+function hasCorruptMathMarkup(value: string) {
+  const decoded = unescapeHtml(value);
+  return (
+    /data-latex=["'][\s\S]*?<\s*span/i.test(decoded) ||
+    /data-latex=["'][\s\S]*?data-type\s*=\s*["']?inline-math/i.test(decoded) ||
+    /&lt;\s*span[^&]*(data-type|data-latex)/i.test(value) ||
+    /\bspandata\s*[–-]?\s*type\s*=/i.test(value)
+  );
+}
+
+function cleanCorruptMathArtifacts(value: string) {
+  if (!hasCorruptMathMarkup(value) && !/(?:<|&lt;)\s*span\b/i.test(value)) return value;
+
+  return value
+    .replace(/<span\b[^>]*data-latex=(["'])(.*?)\1[^>]*>\s*<\/span>/gi, (_match, _quote: string, latex: string) => `$${unescapeHtml(latex)}$`)
+    .replace(/&lt;span\b[\s\S]*?data-latex=(?:&quot;|["'])(.*?)(?:&quot;|["'])[\s\S]*?&lt;\/span&gt;/gi, (_match, latex: string) => `$${unescapeHtml(latex)}$`)
+    .replace(/&lt;\/?span[^&]*(?:&gt;)?/gi, "")
+    .replace(/<\/?span[^>]*>/gi, "")
+    .replace(/\bspandata\s*[–-]?\s*type\s*=\s*/gi, "")
+    .replace(/["']?\s*&gt;/g, "")
+    .replace(/["']?\s*>/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function enhanceMathMarkup(html: string) {
