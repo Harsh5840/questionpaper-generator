@@ -5,6 +5,23 @@ import type { MathfieldElement } from "mathlive";
 
 type MathFieldRef = MathfieldElement & HTMLElement & { value: string };
 
+// Module-level reference to the last focused math-field popup box
+let activeMathBoxField: MathFieldRef | null = null;
+
+export function getActiveMathBoxField() {
+  return activeMathBoxField;
+}
+
+export function insertIntoActiveMathBoxField(latex: string) {
+  if (!activeMathBoxField) return false;
+  try {
+    (activeMathBoxField as unknown as { executeCommand: (cmd: unknown) => void }).executeCommand(["insert", latex]);
+  } catch {
+    activeMathBoxField.value = activeMathBoxField.value + latex;
+  }
+  return true;
+}
+
 interface MathLiveBoxProps {
   autoFocus?: boolean;
   value: string;
@@ -41,9 +58,31 @@ export function MathLiveBox({ autoFocus = false, value, onChange }: MathLiveBoxP
       mathField.mathModeSpace = "\\ ";
 
       const handleInput = () => onChangeRef.current(mathField.value);
+      const handleFocus = () => { activeMathBoxField = mathField; };
+      const handleBlur = () => { if (activeMathBoxField === mathField) activeMathBoxField = null; };
+      const handleContextMenu = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        activeMathBoxField = mathField;
+        document.dispatchEvent(new CustomEvent("qpg:math-box-contextmenu", {
+          detail: { x: e.clientX, y: e.clientY },
+          bubbles: true,
+        }));
+      };
 
       mathField.addEventListener("input", handleInput);
-      cleanupRef.current = () => mathField.removeEventListener("input", handleInput);
+      mathField.addEventListener("focus", handleFocus);
+      mathField.addEventListener("blur", handleBlur);
+      mathField.addEventListener("contextmenu", handleContextMenu);
+
+      cleanupRef.current = () => {
+        mathField.removeEventListener("input", handleInput);
+        mathField.removeEventListener("focus", handleFocus);
+        mathField.removeEventListener("blur", handleBlur);
+        mathField.removeEventListener("contextmenu", handleContextMenu);
+        if (activeMathBoxField === mathField) activeMathBoxField = null;
+      };
+
       hostRef.current.appendChild(mathField);
       mathFieldRef.current = mathField;
 

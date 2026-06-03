@@ -1,18 +1,28 @@
 "use client";
 
 import type React from "react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
+  ArrowUpFromLine,
+  Bold,
   Copy,
   FilePlus2,
   GripVertical,
   Image as ImageIcon,
   ImagePlus,
+  Italic,
+  LogIn,
+  LogOut,
   Plus,
   RefreshCcw,
+  RotateCcw,
   Save,
   Shapes,
+  Sigma,
   Trash2,
+  Underline as UnderlineIcon,
+  X,
 } from "lucide-react";
 import katex from "katex";
 import { DocumentStyle, Paper, PaperImageAsset, PaperQuestion, PaperQuestionOption, PaperSection, PaperSubpart } from "@/lib/types";
@@ -71,6 +81,14 @@ export function PaperEditor({
     text: string;
   } | null>(null);
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
+  const [previousPaper, setPreviousPaper] = useState<Paper | null>(null);
+  const [marksWarning, setMarksWarning] = useState<string | null>(null);
+  const marksWarningTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number;
+    questionId?: string; sectionId?: string;
+    inMathField?: boolean; latex?: string;
+  } | null>(null);
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
   const sourceMix = useMemo(() => (paper ? calculateSourceMix(paper) : null), [paper]);
@@ -87,6 +105,22 @@ export function PaperEditor({
 
     document.addEventListener("pointerdown", clearActiveQuestion);
     return () => document.removeEventListener("pointerdown", clearActiveQuestion);
+  }, []);
+
+  useEffect(() => {
+    const handleMathContextMenu = (event: Event) => {
+      const custom = event as CustomEvent<{ x: number; y: number; latex: string }>;
+      const questionRow = (event.target as Element | null)?.closest<HTMLElement>(".question-row");
+      setContextMenu({
+        x: custom.detail.x,
+        y: custom.detail.y,
+        questionId: questionRow?.id?.replace("question-", ""),
+        inMathField: true,
+        latex: custom.detail.latex,
+      });
+    };
+    document.addEventListener("qpg:math-contextmenu", handleMathContextMenu);
+    return () => document.removeEventListener("qpg:math-contextmenu", handleMathContextMenu);
   }, []);
 
   if (!paper) {
@@ -110,6 +144,12 @@ export function PaperEditor({
     onPaperChange(recalculatePaper(normalizePaperStructure(updater(paper))));
   };
 
+  const triggerMarksWarning = useCallback((message: string) => {
+    setMarksWarning(message);
+    if (marksWarningTimer.current) clearTimeout(marksWarningTimer.current);
+    marksWarningTimer.current = setTimeout(() => setMarksWarning(null), 3500);
+  }, []);
+
   const updateDocumentStyle = (patch: Partial<DocumentStyle>) => {
     onDocumentStyleChange?.({ ...documentStyle, ...patch });
   };
@@ -122,6 +162,18 @@ export function PaperEditor({
   };
 
   const updateQuestion = (sectionId: string, questionId: string, patch: Partial<PaperQuestion>) => {
+    if ("marks" in patch) {
+      const section = paper.sections.find((s) => s.id === sectionId);
+      if (section?.targetMarks) {
+        const newTotal = section.questions.reduce(
+          (t, q) => t + (q.id === questionId ? Number(patch.marks ?? 0) : countedQuestionMarks(q)),
+          0,
+        );
+        if (newTotal !== section.targetMarks) {
+          triggerMarksWarning(`Section total: ${newTotal}m — target: ${section.targetMarks}m`);
+        }
+      }
+    }
     updatePaper((current) => ({
       ...current,
       sections: current.sections.map((section) =>
@@ -897,6 +949,66 @@ export function PaperEditor({
     });
   };
 
+  const moveSubpartToOtherQuestionChoice = (
+    sectionId: string,
+    sourceQuestionId: string,
+    sourceSubpartId: string,
+    targetQuestionId: string,
+    targetSubpartId: string,
+  ) => {
+    if (sourceQuestionId === targetQuestionId) {
+      moveSubpartToChoice(sectionId, sourceQuestionId, sourceSubpartId, targetSubpartId);
+      return;
+    }
+    const sourceQuestion = paper.sections.find((s) => s.id === sectionId)?.questions.find((q) => q.id === sourceQuestionId);
+    const source = sourceQuestion?.subparts?.find((sp) => sp.id === sourceSubpartId);
+    if (!source) return;
+
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) => {
+        if (section.id !== sectionId) return section;
+        return {
+          ...section,
+          questions: section.questions.map((question) => {
+            if (question.id === sourceQuestionId) {
+              return {
+                ...question,
+                subparts: (question.subparts ?? [])
+                  .filter((sp) => sp.id !== sourceSubpartId)
+                  .map((sp, i) => ({ ...sp, label: String.fromCharCode(97 + i) })),
+              };
+            }
+            if (question.id === targetQuestionId) {
+              return {
+                ...question,
+                subparts: (question.subparts ?? []).map((sp) =>
+                  sp.id === targetSubpartId
+                    ? {
+                        ...sp,
+                        optionalChoice: {
+                          id: crypto.randomUUID(),
+                          text: source.text,
+                          richText: source.richText,
+                          options: source.options?.map((o) => ({ ...o, id: crypto.randomUUID() })),
+                          imageAssets: source.imageAssets?.map((a) => ({ ...a })),
+                          marks: source.marks,
+                          type: source.options && source.options.length > 0 ? "MCQ" : undefined,
+                          answer: source.answer,
+                          answerRichText: source.answerRichText,
+                        },
+                      }
+                    : sp,
+                ),
+              };
+            }
+            return question;
+          }),
+        };
+      }),
+    }));
+  };
+
   const addSubpartChoice = (sectionId: string, questionId: string, subpartId: string) => {
     const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
     const subpart = question?.subparts?.find((item) => item.id === subpartId);
@@ -912,6 +1024,30 @@ export function PaperEditor({
         answerRichText: "",
       },
     });
+  };
+
+  const moveSubpartOrChoice = (sectionId: string, questionId: string, fromSubpartId: string, toSubpartId: string) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id !== sectionId ? section : {
+          ...section,
+          questions: section.questions.map((question) => {
+            if (question.id !== questionId) return question;
+            const fromSp = question.subparts?.find((s) => s.id === fromSubpartId);
+            if (!fromSp?.optionalChoice) return question;
+            return {
+              ...question,
+              subparts: (question.subparts ?? []).map((sp) => {
+                if (sp.id === fromSubpartId) return { ...sp, optionalChoice: undefined };
+                if (sp.id === toSubpartId) return { ...sp, optionalChoice: fromSp.optionalChoice };
+                return sp;
+              }),
+            };
+          }),
+        }
+      ),
+    }));
   };
 
   const updateSubpartChoice = (sectionId: string, questionId: string, subpartId: string, patch: Partial<NonNullable<PaperSubpart["optionalChoice"]>>) => {
@@ -1089,7 +1225,27 @@ export function PaperEditor({
     setDraggedQuestion(null);
   };
 
+  const promoteChoiceToQuestion = (sectionId: string, questionId: string) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) => {
+        if (section.id !== sectionId) return section;
+        const nextQuestions: PaperQuestion[] = [];
+        section.questions.forEach((question) => {
+          if (question.id === questionId && question.optionalChoice) {
+            nextQuestions.push({ ...question, optionalChoice: undefined });
+            nextQuestions.push({ ...choiceToQuestion(question), id: crypto.randomUUID() });
+          } else {
+            nextQuestions.push(question);
+          }
+        });
+        return { ...section, questions: nextQuestions };
+      }),
+    }));
+  };
+
   const replaceQuestion = async (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => {
+    setPreviousPaper(paper);
     setReplacingQuestions((current) => ({ ...current, [questionId]: true }));
 
     try {
@@ -1100,6 +1256,7 @@ export function PaperEditor({
   };
 
   const replaceInternalChoice = async (sectionId: string, questionId: string, questionNumber: number, instruction?: string) => {
+    setPreviousPaper(paper);
     setReplacingChoices((current) => ({ ...current, [questionId]: true }));
 
     try {
@@ -1128,7 +1285,17 @@ export function PaperEditor({
   const visualPageCount = Math.max(1, paper.pageCount ?? 1);
 
   return (
-    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-8">
+    <div
+      className="mx-auto flex w-full max-w-[980px] flex-col gap-8"
+      onContextMenu={(e) => {
+        // Rich-text surfaces have their own Insert Symbol panel — don't also open the question menu
+        if ((e.target as Element).closest(".rich-text-surface, .math-live-host")) return;
+        e.preventDefault();
+        const questionRow = (e.target as Element).closest<HTMLElement>(".question-row");
+        setContextMenu({ x: e.clientX, y: e.clientY, questionId: questionRow?.id?.replace("question-", "") });
+      }}
+      onClick={() => contextMenu && setContextMenu(null)}
+    >
       <div
         className={`paper-page relative mx-auto min-h-[1120px] w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
         style={{
@@ -1140,18 +1307,43 @@ export function PaperEditor({
           minHeight: visualPageCount * 1120,
         }}
       >
-        <div className="absolute right-6 top-4 rounded-full bg-slate-100 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-          Page 1 / {visualPageCount}
+        <div className="absolute right-6 top-4 flex items-center gap-2">
+          {previousPaper && (
+            <button
+              className="flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-blue-700 shadow-sm hover:bg-blue-100"
+              title="Undo last AI edit"
+              onClick={() => { onPaperChange(previousPaper); setPreviousPaper(null); }}
+              type="button"
+            >
+              <RotateCcw size={11} />
+              Undo AI
+            </button>
+          )}
+          <span className="rounded-full bg-slate-100 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            Page 1 / {visualPageCount}
+          </span>
         </div>
+        {marksWarning && (
+          <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 font-sans text-[11px] font-bold text-amber-800 shadow-md">
+            <AlertTriangle size={12} />
+            {marksWarning}
+          </div>
+        )}
         {Array.from({ length: visualPageCount }).map((_page, index) => (
           <div
             key={`page-marker-${index + 1}`}
             className="pointer-events-none absolute inset-x-0 z-0"
             style={{ top: index * 1120 }}
           >
-            {index > 0 && <div className="mx-[-1px] border-t border-dashed border-amber-300/80" />}
+            {index > 0 && (
+              <div className="mx-[-1px] flex items-center gap-2 border-t border-slate-300/70">
+                <span className="rounded-b bg-slate-100 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 shadow-sm">
+                  Page {index + 1}
+                </span>
+              </div>
+            )}
             <div className="absolute right-6 top-[1092px] rounded bg-white/85 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-400 shadow-sm">
-              Page {index + 1} / {visualPageCount}
+              {index + 1} / {visualPageCount}
             </div>
           </div>
         ))}
@@ -1236,7 +1428,7 @@ export function PaperEditor({
         ))}
       </section>
 
-      <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+      <div className="mt-6 flex flex-wrap items-center justify-end gap-2" onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }); }}>
         <input
           aria-label="Watermark text"
           className="w-44 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
@@ -1266,7 +1458,7 @@ export function PaperEditor({
           const sectionMarks = countedSectionMarks(section);
           const hasAttemptChoice =
             Boolean(section.attemptRule) &&
-            Number(section.attemptRule?.required || 0) < Number(section.attemptRule?.offered || section.questions.length);
+            Number(section.attemptRule?.required || 0) < section.questions.length;
 
           return (
             <Fragment key={section.id}>
@@ -1299,30 +1491,58 @@ export function PaperEditor({
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
                     {sectionMarks} marks{hasAttemptChoice && offeredMarks !== sectionMarks ? ` counted · ${offeredMarks} offered` : ""}
                   </span>
-                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500" title="Optional section choice: counted marks use required questions only">
+                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500" title="Require students to attempt fewer questions than offered">
+                    <input
+                      className="h-3.5 w-3.5 cursor-pointer accent-blue-600"
+                      type="checkbox"
+                      checked={!!section.attemptRule && section.attemptRule.required < section.questions.length}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          const offered = section.questions.length;
+                          const required = Math.max(1, offered - 1);
+                          updateSection(section.id, { attemptRule: { required, offered } });
+                        } else {
+                          updateSection(section.id, { attemptRule: undefined });
+                        }
+                      }}
+                    />
                     Do
-                    <input
-                      className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
-                      min={1}
-                      type="number"
-                      value={section.attemptRule?.required ?? section.questions.length}
-                      onChange={(event) => updateSectionAttemptRule(section.id, "required", Number(event.target.value))}
-                    />
-                    of
-                    <input
-                      className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
-                      min={1}
-                      type="number"
-                      value={section.attemptRule?.offered ?? section.questions.length}
-                      onChange={(event) => updateSectionAttemptRule(section.id, "offered", Number(event.target.value))}
-                    />
                   </label>
-                  <button className="editor-mini-button" onClick={() => addBlankQuestion(section.id)} type="button">
-                    <Plus size={14} />
-                    Add
-                  </button>
+                  {section.attemptRule && section.attemptRule.required < section.questions.length && (
+                    <>
+                      <input
+                        className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+                        min={1}
+                        max={section.questions.length - 1}
+                        type="number"
+                        value={section.attemptRule.required}
+                        onChange={(event) => updateSectionAttemptRule(section.id, "required", Number(event.target.value))}
+                      />
+                      <span className="text-[11px] font-bold text-slate-500">
+                        of {section.questions.length}
+                      </span>
+                      {new Set(section.questions.map((q) => q.marks)).size > 1 && (
+                        <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                          <AlertTriangle size={10} />
+                          marks vary
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {section.questions.length === 0 || !section.questions.every((q) => q.type === "MCQ") ? (
+                    <button className="editor-mini-button" onClick={() => addBlankQuestion(section.id)} type="button">
+                      <Plus size={14} />
+                      {section.questions.length === 0 ? "Add Question" : (() => {
+                        const counts: Record<string, number> = {};
+                        section.questions.forEach((q) => { if (q.type && q.type !== "MCQ") counts[q.type] = (counts[q.type] ?? 0) + 1; });
+                        const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+                        return `Add ${top ?? "SA"}`;
+                      })()}
+                    </button>
+                  ) : null}
                   <button className="editor-mini-button" onClick={() => addMcqQuestion(section.id)} type="button">
-                    MCQ
+                    <Plus size={14} />
+                    Add MCQ
                   </button>
                   <button className="editor-mini-button" onClick={() => onImportImage(section.id)} type="button">
                     <ImagePlus size={14} />
@@ -1369,9 +1589,14 @@ export function PaperEditor({
                       }}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="flex flex-col items-center gap-1 pt-1">
-                          <GripVertical className={isActiveQuestion ? "cursor-grab text-slate-400" : "cursor-grab text-slate-300 opacity-0 group-hover:opacity-100"} size={14} />
-                          <span className="font-sans text-[11px] font-black text-slate-950">{questionNumber}.</span>
+                        <div className="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
+                          <div className="flex items-center gap-0.5">
+                            <GripVertical className={isActiveQuestion ? "cursor-grab text-slate-400" : "cursor-grab text-slate-200 opacity-0 group-hover:opacity-100"} size={11} />
+                            <span className="font-sans text-[11px] font-black text-slate-950 leading-none">{questionNumber}.</span>
+                          </div>
+                          {!isActiveQuestion && (
+                            <span className="font-mono text-[9px] font-bold text-slate-400 leading-none">{question.marks}m</span>
+                          )}
                         </div>
 
                         <div className={`min-w-0 flex-1 ${isActiveQuestion ? "space-y-2" : "space-y-0.5"}`}>
@@ -1410,7 +1635,7 @@ export function PaperEditor({
                           )}
 
                           {question.options && question.options.length > 0 && (
-                            <div className={isActiveQuestion ? "space-y-2 rounded-md border border-slate-200 bg-white p-2" : "paper-option-grid"}>
+                            <div className={isActiveQuestion ? "space-y-2 rounded-md border border-slate-200 bg-white p-2" : optionsGridClass(question.options)}>
                               {question.options.map((option, optionIndex) => (
                                 isActiveQuestion ? (
                                   <div key={option.id ?? `${question.id}-option-${optionIndex}`} className="group/option grid grid-cols-[44px_1fr_auto] gap-2">
@@ -1468,36 +1693,40 @@ export function PaperEditor({
                                 <div key={subpart.id} className="group/subpart rounded-md border border-slate-200 bg-white p-2">
                                   <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
                                     <span className="rounded bg-slate-100 px-2 py-1 font-black text-slate-800">({subpart.label})</span>
-                                    <input
+                                    <MarksInput
                                       aria-label={`Question ${questionNumber} subpart ${subpart.label} marks`}
-                                      className="w-14 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
-                                      min={0}
-                                      type="number"
                                       value={subpart.marks ?? 0}
-                                      onChange={(event) => updateSubpart(section.id, question.id, subpart.id, { marks: Number(event.target.value) })}
+                                      onCommit={(marks) => updateSubpart(section.id, question.id, subpart.id, { marks })}
                                     />
                                     <span>Marks</span>
-                                    <button className="editor-mini-button" onClick={() => addSubpartChoice(section.id, question.id, subpart.id)} type="button">
-                                      OR in part
-                                    </button>
                                     <select
                                       className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
                                       defaultValue=""
-                                      title="Move this part into another part's OR slot"
+                                      title="Move this part into another part's OR slot (within or across questions)"
                                       onChange={(event) => {
-                                        const targetSubpartId = event.target.value;
-                                        if (targetSubpartId) moveSubpartToChoice(section.id, question.id, subpart.id, targetSubpartId);
+                                        const val = event.target.value;
+                                        if (val) {
+                                          const [tQId, tSpId] = val.split("::");
+                                          moveSubpartToOtherQuestionChoice(section.id, question.id, subpart.id, tQId, tSpId);
+                                        }
                                         event.currentTarget.value = "";
                                       }}
                                     >
                                       <option value="">Move to part OR...</option>
-                                      {(question.subparts ?? [])
-                                        .filter((target) => target.id !== subpart.id)
-                                        .map((target) => (
-                                          <option key={target.id} value={target.id}>
-                                            ({target.label})
-                                          </option>
-                                        ))}
+                                      {section.questions.flatMap((tQ) => {
+                                        const tQNum = stats?.questionNumberById[tQ.id] ?? "?";
+                                        return (tQ.subparts ?? [])
+                                          .filter((tSp) => !(tQ.id === question.id && tSp.id === subpart.id))
+                                          .map((tSp) => (
+                                            <option
+                                              key={`${tQ.id}::${tSp.id}`}
+                                              value={`${tQ.id}::${tSp.id}`}
+                                              disabled={!!tSp.optionalChoice}
+                                            >
+                                              Q{tQNum}({tSp.label}){tSp.optionalChoice ? " (OR filled)" : ""}
+                                            </option>
+                                          ));
+                                      })}
                                     </select>
                                     <button className="editor-mini-button text-red-600" onClick={() => deleteSubpart(section.id, question.id, subpart.id)} type="button">
                                       Delete part
@@ -1572,8 +1801,10 @@ export function PaperEditor({
                                     </div>
                                     <TextBlockActions
                                       className="opacity-100 lg:opacity-0 lg:group-hover/subpart:opacity-100"
+                                      hasChoice={!!subpart.optionalChoice}
                                       onDuplicate={() => duplicateSubpart(section.id, question.id, subpart.id)}
-                                      onAddChoice={() => addSubpartChoice(section.id, question.id, subpart.id)}
+                                      onAddChoice={!subpart.optionalChoice ? () => addSubpartChoice(section.id, question.id, subpart.id) : undefined}
+                                      onRemoveChoice={subpart.optionalChoice ? () => removeSubpartChoice(section.id, question.id, subpart.id) : undefined}
                                       onAddDiagram={() => addSubpartDiagramPlaceholder(section.id, question.id, subpart.id)}
                                       onAddImage={onUploadImage ? (file) => void attachSubpartImage(section.id, question.id, subpart.id, file) : undefined}
                                       onDelete={() => deleteSubpart(section.id, question.id, subpart.id)}
@@ -1679,6 +1910,23 @@ export function PaperEditor({
                                             </button>
                                           )}
                                           <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-blue-700">
+                                            <select
+                                              className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                              defaultValue=""
+                                              title="Move this OR choice to another subpart's OR slot"
+                                              onChange={(event) => {
+                                                const toId = event.target.value;
+                                                if (toId) moveSubpartOrChoice(section.id, question.id, subpart.id, toId);
+                                                event.currentTarget.value = "";
+                                              }}
+                                            >
+                                              <option value="">Move OR to…</option>
+                                              {(question.subparts ?? [])
+                                                .filter((sp) => sp.id !== subpart.id && !sp.optionalChoice)
+                                                .map((sp) => (
+                                                  <option key={sp.id} value={sp.id}>Part ({sp.label ?? "?"})</option>
+                                                ))}
+                                            </select>
                                             <input
                                               aria-label={`Question ${questionNumber} subpart ${subpart.label} OR marks`}
                                               className="w-14 rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-800"
@@ -1733,7 +1981,7 @@ export function PaperEditor({
                                 <span dangerouslySetInnerHTML={{ __html: richDisplayHtml(question.optionalChoice.richText, question.optionalChoice.text) }} />
                                 <ImageAssetList assets={question.optionalChoice.imageAssets} compact readOnly onDelete={() => undefined} />
                                 {question.optionalChoice.options && question.optionalChoice.options.length > 0 && (
-                                  <div className="paper-option-grid mt-1">
+                                  <div className={`${optionsGridClass(question.optionalChoice.options)} mt-1`}>
                                     {question.optionalChoice.options.map((option, optionIndex) => (
                                       <div key={option.id ?? `${question.id}-choice-compact-${optionIndex}`} className="paper-option-row">
                                         <span className="paper-option-label">{formatOptionLabel(option.label, optionIndex)}</span>
@@ -1748,7 +1996,28 @@ export function PaperEditor({
 
                           {question.optionalChoice && isActiveQuestion && (
                             <div className={`choice-row group/choice relative rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 ${isChoiceReplacing ? "ai-replacing border-blue-300 bg-blue-100/70" : ""}`}>
-                              <div className="mb-2 text-center text-xs font-black text-blue-700">OR</div>
+                              <div className="mb-2 flex items-center justify-between">
+                                <span className="text-xs font-black text-blue-700">OR</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    className="editor-mini-button text-blue-700"
+                                    title="Promote OR choice to standalone question"
+                                    onClick={() => promoteChoiceToQuestion(section.id, question.id)}
+                                    type="button"
+                                  >
+                                    <ArrowUpFromLine size={11} />
+                                    Move out of OR
+                                  </button>
+                                  <button
+                                    className="editor-mini-button text-red-600"
+                                    onClick={() => removeInternalChoice(section.id, question.id)}
+                                    type="button"
+                                  >
+                                    <X size={11} />
+                                    Remove OR
+                                  </button>
+                                </div>
+                              </div>
                               <div className="flex items-start gap-3">
                                 <div className="pt-2 font-display text-sm font-black text-blue-700">Alt</div>
                                 <div className="min-w-0 flex-1 space-y-3">
@@ -1898,15 +2167,18 @@ export function PaperEditor({
 
                           {isActiveQuestion && (
                             <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
-                              <input
+                              <MarksInput
                                 aria-label={`Question ${questionNumber} marks`}
-                                className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
-                                min={0}
-                                type="number"
                                 value={question.marks}
-                                onChange={(event) => updateQuestion(section.id, question.id, { marks: Number(event.target.value) })}
+                                onCommit={(marks) => updateQuestion(section.id, question.id, { marks })}
                               />
                               <span>Marks</span>
+                              {section.targetMarks && section.questions.length > 0 && question.marks !== Math.round(section.targetMarks / section.questions.length) && (
+                                <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700" title="Marks differ from section average">
+                                  <AlertTriangle size={10} />
+                                  {question.marks}m vs avg {Math.round(section.targetMarks / section.questions.length)}m
+                                </span>
+                              )}
                               <select
                                 className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
                                 defaultValue=""
@@ -1977,6 +2249,7 @@ export function PaperEditor({
                         {isActiveQuestion && (
                           <TextBlockActions
                             isReplacing={isReplacing}
+                            hasChoice={!!question.optionalChoice}
                             onReplace={() =>
                               setReplacePrompt({
                                 sectionId: section.id,
@@ -1987,7 +2260,8 @@ export function PaperEditor({
                               })
                             }
                             onDuplicate={() => duplicateQuestion(section.id, question.id)}
-                            onAddChoice={() => addInternalChoice(section.id, question.id)}
+                            onAddChoice={!question.optionalChoice ? () => addInternalChoice(section.id, question.id) : undefined}
+                            onRemoveChoice={question.optionalChoice ? () => removeInternalChoice(section.id, question.id) : undefined}
                             onAddSubpart={() => addSubpart(section.id, question.id)}
                             onAddDiagram={() => addDiagramPlaceholder(section.id, question.id)}
                             onAddImage={onUploadImage ? (file) => void attachQuestionImage(section.id, question.id, file) : undefined}
@@ -2010,17 +2284,45 @@ export function PaperEditor({
               </div>
             </section>
             {sectionIndex < paper.sections.length - 1 && (
-              <div className="my-6 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
-                <span className="h-px flex-1 border-t border-dashed border-slate-300" />
-                Page break guide
-                <span className="h-px flex-1 border-t border-dashed border-slate-300" />
-              </div>
+              <div className="pointer-events-none my-4 h-px border-t border-dashed border-slate-200" />
             )}
             </Fragment>
           );
         })}
       </div>
       </div>
+
+      {contextMenu && (
+        <ContextMenuPanel
+          {...contextMenu}
+          onClose={() => setContextMenu(null)}
+          onBold={() => (window as unknown as { activeRichTextEditor?: { chain: () => { focus: () => { toggleBold: () => { run: () => void } } } } }).activeRichTextEditor?.chain().focus().toggleBold().run()}
+          onItalic={() => (window as unknown as { activeRichTextEditor?: { chain: () => { focus: () => { toggleItalic: () => { run: () => void } } } } }).activeRichTextEditor?.chain().focus().toggleItalic().run()}
+          onUnderline={() => (window as unknown as { activeRichTextEditor?: { chain: () => { focus: () => { toggleUnderline: () => { run: () => void } } } } }).activeRichTextEditor?.chain().focus().toggleUnderline().run()}
+          onMath={() => (window as unknown as { activeRichTextEditor?: { chain: () => { focus: () => { run: () => void } } } }).activeRichTextEditor?.chain().focus().run()}
+          onAddOR={contextMenu.questionId ? (() => {
+            const sec = paper.sections.find(s => s.questions.some(q => q.id === contextMenu.questionId));
+            const q = sec?.questions.find(q => q.id === contextMenu.questionId);
+            if (sec && q && !q.optionalChoice) addInternalChoice(sec.id, q.id);
+          }) : undefined}
+          onAddSubpart={contextMenu.questionId ? (() => {
+            const sec = paper.sections.find(s => s.questions.some(q => q.id === contextMenu.questionId));
+            if (sec && contextMenu.questionId) addSubpart(sec.id, contextMenu.questionId);
+          }) : undefined}
+          onAddDiagram={contextMenu.questionId ? (() => {
+            const sec = paper.sections.find(s => s.questions.some(q => q.id === contextMenu.questionId));
+            if (sec && contextMenu.questionId) addDiagramPlaceholder(sec.id, contextMenu.questionId);
+          }) : undefined}
+          onDuplicate={contextMenu.questionId ? (() => {
+            const sec = paper.sections.find(s => s.questions.some(q => q.id === contextMenu.questionId));
+            if (sec && contextMenu.questionId) duplicateQuestion(sec.id, contextMenu.questionId);
+          }) : undefined}
+          onDelete={contextMenu.questionId ? (() => {
+            const sec = paper.sections.find(s => s.questions.some(q => q.id === contextMenu.questionId));
+            if (sec && contextMenu.questionId) deleteQuestion(sec.id, contextMenu.questionId);
+          }) : undefined}
+        />
+      )}
 
       {replacePrompt && (
         <ReplacePromptModal
@@ -2046,9 +2348,11 @@ export function PaperEditor({
 interface TextBlockActionsProps {
   className?: string;
   isReplacing?: boolean;
+  hasChoice?: boolean;
   onReplace?: () => void;
   onDuplicate?: () => void;
   onAddChoice?: () => void;
+  onRemoveChoice?: () => void;
   onAddSubpart?: () => void;
   onAddDiagram?: () => void;
   onAddImage?: (file: File) => void;
@@ -2060,9 +2364,11 @@ interface TextBlockActionsProps {
 function TextBlockActions({
   className = "",
   isReplacing = false,
+  hasChoice = false,
   onReplace,
   onDuplicate,
   onAddChoice,
+  onRemoveChoice,
   onAddSubpart,
   onAddDiagram,
   onAddImage,
@@ -2082,9 +2388,14 @@ function TextBlockActions({
           <Copy size={15} />
         </button>
       )}
-      {onAddChoice && (
-        <button className="editor-icon-button" title="Add internal choice" onClick={onAddChoice} type="button">
-          OR
+      {onAddChoice && !hasChoice && (
+        <button className="editor-icon-button text-blue-600" title="Add OR choice" onClick={onAddChoice} type="button">
+          <LogIn size={13} />
+        </button>
+      )}
+      {onRemoveChoice && hasChoice && (
+        <button className="editor-icon-button text-blue-600" title="Remove OR choice" onClick={onRemoveChoice} type="button">
+          <LogOut size={13} />
         </button>
       )}
       {onAddSubpart && (
@@ -2219,6 +2530,159 @@ function SourceMixPill({ label, value }: { label: string; value: number }) {
   );
 }
 
+function MarksInput({
+  value,
+  onCommit,
+  "aria-label": ariaLabel,
+}: {
+  value: number;
+  onCommit: (value: number) => void;
+  "aria-label"?: string;
+}) {
+  const [localValue, setLocalValue] = useState(String(value));
+
+  useEffect(() => {
+    setLocalValue(String(value));
+  }, [value]);
+
+  return (
+    <input
+      aria-label={ariaLabel}
+      className="w-14 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+      inputMode="numeric"
+      pattern="[0-9.]*"
+      value={localValue}
+      onChange={(e) => {
+        const newVal = e.target.value;
+        setLocalValue(newVal);
+        const parsed = Number(newVal);
+        if (!Number.isNaN(parsed) && parsed >= 0) onCommit(parsed);
+      }}
+      onBlur={() => {
+        const parsed = Number(localValue);
+        if (!Number.isNaN(parsed) && parsed >= 0) onCommit(parsed);
+        else setLocalValue(String(value));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+    />
+  );
+}
+
+function ContextMenuPanel({
+  x, y, questionId, sectionId, inMathField, latex,
+  activeEditor,
+  onClose,
+  onAddOR, onAddSubpart, onAddDiagram, onDelete, onDuplicate, onReplace,
+  onBold, onItalic, onUnderline, onMath,
+}: {
+  x: number; y: number;
+  questionId?: string; sectionId?: string;
+  inMathField?: boolean; latex?: string;
+  activeEditor?: unknown;
+  onClose: () => void;
+  onAddOR?: () => void;
+  onAddSubpart?: () => void;
+  onAddDiagram?: () => void;
+  onDelete?: () => void;
+  onDuplicate?: () => void;
+  onReplace?: () => void;
+  onBold?: () => void;
+  onItalic?: () => void;
+  onUnderline?: () => void;
+  onMath?: () => void;
+}) {
+  const style: React.CSSProperties = {
+    position: "fixed",
+    top: Math.min(y, window.innerHeight - 220),
+    left: Math.min(x, window.innerWidth - 230),
+    zIndex: 1000,
+  };
+
+  return (
+    <div style={style} className="flex flex-col gap-1.5" onContextMenu={(e) => e.stopPropagation()}>
+      {/* Panel 1: mini formatting toolbar */}
+      <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-lg">
+        {onBold && (
+          <button className="editor-icon-button" title="Bold" onClick={() => { onBold(); onClose(); }} type="button">
+            <Bold size={14} />
+          </button>
+        )}
+        {onItalic && (
+          <button className="editor-icon-button" title="Italic" onClick={() => { onItalic(); onClose(); }} type="button">
+            <Italic size={14} />
+          </button>
+        )}
+        {onUnderline && (
+          <button className="editor-icon-button" title="Underline" onClick={() => { onUnderline(); onClose(); }} type="button">
+            <UnderlineIcon size={14} />
+          </button>
+        )}
+        {onMath && (
+          <button className="editor-icon-button text-blue-600" title="Insert Math" onClick={() => { onMath(); onClose(); }} type="button">
+            <Sigma size={14} />
+          </button>
+        )}
+        {inMathField && latex !== undefined && (
+          <span className="ml-1 rounded bg-blue-50 px-2 py-0.5 font-mono text-[10px] text-blue-700">
+            {latex.slice(0, 20)}{latex.length > 20 ? "…" : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Panel 2: question actions */}
+      {questionId && (
+        <div className="flex flex-col rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          {onReplace && (
+            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onReplace(); onClose(); }} type="button">
+              <RefreshCcw size={12} /> Replace with AI
+            </button>
+          )}
+          {onDuplicate && (
+            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onDuplicate(); onClose(); }} type="button">
+              <Copy size={12} /> Duplicate
+            </button>
+          )}
+          {onAddOR && (
+            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-blue-600 hover:bg-blue-50" onClick={() => { onAddOR(); onClose(); }} type="button">
+              <LogIn size={12} /> Add OR choice
+            </button>
+          )}
+          {onAddSubpart && (
+            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onAddSubpart(); onClose(); }} type="button">
+              (a) Add subpart
+            </button>
+          )}
+          {onAddDiagram && (
+            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onAddDiagram(); onClose(); }} type="button">
+              <Shapes size={12} /> Add diagram
+            </button>
+          )}
+          {onDelete && (
+            <>
+              <div className="mx-3 my-1 h-px bg-slate-100" />
+              <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50" onClick={() => { onDelete(); onClose(); }} type="button">
+                <Trash2 size={12} /> Delete question
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function optionsGridClass(options: PaperQuestionOption[]): string {
+  const maxLen = options.reduce((max, o) => {
+    const textLen = (o.text ?? "").length;
+    const richLen = (o.richText ?? "").replace(/<[^>]*>/g, "").length;
+    return Math.max(max, textLen, richLen);
+  }, 0);
+  const hasImages = options.some((o) => (o.imageAssets?.length ?? 0) > 0);
+  return maxLen > 50 || hasImages ? "paper-option-grid paper-option-grid--vertical" : "paper-option-grid";
+}
+
 function formatOptionLabel(label: string | undefined, index: number) {
   const normalized = (label || String.fromCharCode(65 + index)).trim();
   if (/^\(?[A-Z]\)?\.?$/i.test(normalized)) return `(${normalized.replace(/[().]/g, "").toUpperCase()})`;
@@ -2235,24 +2699,25 @@ function richDisplayHtml(richText: string | undefined, text: string | undefined)
 }
 
 function stripEditorOnlyMarkup(html: string) {
-  return html
-    .replace(/\sclass="[^"]*"/g, "")
-    .replace(/\sstyle="[^"]*"/g, "");
+  // Only strip data-* editor attributes that are TipTap-internal — never touch class or style
+  // (KaTeX depends on both for correct fraction/accent rendering).
+  return html.replace(/\s(contenteditable|data-pm-slice|data-drag-handle)="[^"]*"/g, "");
 }
 
 function stripMathSpansToText(html: string) {
-  return html.replace(/<span[^>]*data-latex="([^"]*)"[^>]*><\/span>/g, (_match, latex: string) => renderLatexPreview(unescapeDisplayHtml(latex)));
+  return html.replace(/<span[^>]*data-latex="([^"]*)"[^>]*>[\s\S]*?<\/span>/g, (_match, latex: string) => renderLatexPreview(unescapeDisplayHtml(latex)));
 }
 
 function textToDisplayHtml(value: string) {
+  // Apply plain-text transforms BEFORE KaTeX so later regexes don't corrupt already-rendered HTML
   return escapeDisplayHtml(value)
-    .replace(/\$([^$\n]+)\$/g, (_match, latex: string) => renderLatexPreview(normalizeDisplayLatex(latex)))
-    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, (match) => renderLatexPreview(match))
-    .replace(/\\sqrt\{([^{}]+)\}/g, (match) => renderLatexPreview(match))
     .replace(/([A-Za-z])([23])(?=\b|[^A-Za-z0-9])/g, "$1<sup>$2</sup>")
     .replace(/\(([A-Za-z0-9\s+\-−–*/=.,]+)\)([23])(?=\b|[^A-Za-z0-9])/g, "($1)<sup>$2</sup>")
     .replace(/\b([A-Z][a-z]?)(\d+)(?=[A-Z]|$)/g, "$1<sub>$2</sub>")
-    .replace(/\n/g, "<br>");
+    .replace(/\n/g, "<br>")
+    .replace(/\$([^$\n]+)\$/g, (_match, latex: string) => renderLatexPreview(normalizeDisplayLatex(latex)))
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, (match) => renderLatexPreview(match))
+    .replace(/\\sqrt\{([^{}]+)\}/g, (match) => renderLatexPreview(match));
 }
 
 function normalizeDisplayLatex(value: string) {
@@ -2274,7 +2739,10 @@ function unescapeDisplayHtml(value: string) {
 function renderLatexPreview(latex: string) {
   const normalized = normalizeDisplayLatex(latex);
   try {
-    return katex.renderToString(normalized, { throwOnError: false, strict: false, displayMode: false });
+    // output:"html" prevents KaTeX from emitting a <math> MathML element alongside the
+    // visual HTML span. Without this, stripping classes causes both the MathML text node
+    // and the visual span to render simultaneously, producing doubled characters.
+    return katex.renderToString(normalized, { throwOnError: false, strict: false, displayMode: false, output: "html" });
   } catch {
     return `<span class="math-preview">${escapeDisplayHtml(normalized)}</span>`;
   }

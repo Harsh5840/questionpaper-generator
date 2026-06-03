@@ -19,6 +19,7 @@ export type PaperRequest = {
   template?: PaperTemplate | null;
   sourceBooks?: string[];
   sourceCategories?: string[];
+  chapterWeights?: Record<string, number>;
   directSourceMix?: DirectSourceMix;
   sourceWeights?: DirectSourceMix;
   sourceWeightsNormalized?: boolean;

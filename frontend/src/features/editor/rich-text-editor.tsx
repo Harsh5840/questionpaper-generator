@@ -13,6 +13,7 @@ import Highlight from "@tiptap/extension-highlight";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
 import { BlockMath, InlineMath } from "@tiptap/extension-mathematics";
+import katex from "katex";
 import "katex/dist/katex.min.css";
 import {
   AlignCenter,
@@ -77,6 +78,12 @@ export function activateRichTextEditorFromElement(element: Element | null) {
   return true;
 }
 
+export function commandActiveRichTextEditor(fn: (editor: Editor) => void) {
+  if (!activeRichTextEditor) return false;
+  fn(activeRichTextEditor);
+  return true;
+}
+
 export function openMathLiveEditorForActiveRichTextEditor(initialLatex = "") {
   return insertIntoActiveRichTextEditor({ type: "math", value: initialLatex || "x^2" });
 }
@@ -105,6 +112,16 @@ const LiveInlineMath = InlineMath.extend({
       wrapper.setAttribute("data-latex", currentLatex);
       wrapper.contentEditable = "false";
       wrapper.setAttribute("tabindex", "-1");
+
+      // Show KaTeX fallback while MathLive is loading
+      try {
+        const fallback = document.createElement("span");
+        fallback.className = "qpg-math-katex-fallback";
+        katex.render(currentLatex, fallback, { throwOnError: false, strict: false, displayMode: false });
+        wrapper.appendChild(fallback);
+      } catch {
+        // ignore — MathLive will replace
+      }
 
       const commitLatex = (latex: string) => {
         currentLatex = latex;
@@ -140,6 +157,9 @@ const LiveInlineMath = InlineMath.extend({
         await import("mathlive");
         if (isDestroyed) return;
 
+        // Remove the KaTeX fallback now that MathLive is ready
+        wrapper.querySelector(".qpg-math-katex-fallback")?.remove();
+
         mathField = document.createElement("math-field") as MathLiveFieldElement;
         mathField.value = currentLatex;
         mathField.setAttribute("default-mode", "inline-math");
@@ -157,12 +177,25 @@ const LiveInlineMath = InlineMath.extend({
         mathField.addEventListener("pointerdown", focusMathField);
         mathField.addEventListener("mousedown", focusMathField);
         mathField.addEventListener("click", focusMathField);
+        mathField.addEventListener("contextmenu", handleMathContextMenu);
         mathFieldEventsToOwn.forEach((eventName) => mathField?.addEventListener(eventName, stopProseMirrorEvent));
         wrapper.appendChild(mathField);
       };
 
-      wrapper.addEventListener("pointerdown", focusMathField);
-      wrapper.addEventListener("mousedown", focusMathField);
+      // Only focus math-field when clicking directly on the math-field itself.
+      // Clicks on the outer wrapper (padding area) must reach ProseMirror so it can
+      // place its cursor adjacent to the node — that's what lets users type text
+      // next to a formula-only paragraph.
+      const handleWrapperPointerDown = (e: Event) => {
+        const target = e.target as Element | null;
+        if (mathField && (target === mathField || mathField.contains(target as Node))) {
+          focusMathField();
+        } else {
+          focusEditorContext();
+        }
+      };
+      wrapper.addEventListener("pointerdown", handleWrapperPointerDown);
+      wrapper.addEventListener("mousedown", handleWrapperPointerDown);
       void mountMathLive();
 
       return {
@@ -172,14 +205,32 @@ const LiveInlineMath = InlineMath.extend({
 
           currentLatex = String(nextNode.attrs.latex || "");
           wrapper.setAttribute("data-latex", currentLatex);
-          if (mathField && document.activeElement !== mathField && mathField.value !== currentLatex) {
-            mathField.value = currentLatex;
+          if (mathField) {
+            if (document.activeElement !== mathField && mathField.value !== currentLatex) {
+              mathField.value = currentLatex;
+            }
+          } else {
+            // MathLive not mounted yet — refresh the KaTeX fallback
+            const fallback = wrapper.querySelector(".qpg-math-katex-fallback");
+            if (fallback) {
+              try {
+                katex.render(currentLatex, fallback as HTMLElement, { throwOnError: false, strict: false, displayMode: false });
+              } catch {
+                // ignore
+              }
+            }
           }
 
           return true;
         },
         stopEvent(event) {
-          return event.target instanceof globalThis.Node && wrapper.contains(event.target);
+          if (!(event.target instanceof globalThis.Node)) return false;
+          // Only stop events that target the math-field itself (or its internals).
+          // Events on the outer wrapper must reach ProseMirror so it can position
+          // its cursor adjacent to the node — this is what allows typing text
+          // next to a formula-only paragraph.
+          if (!mathField) return false;
+          return mathField === event.target || mathField.contains(event.target);
         },
         ignoreMutation() {
           return true;
@@ -191,6 +242,7 @@ const LiveInlineMath = InlineMath.extend({
           mathField?.removeEventListener("pointerdown", focusMathField);
           mathField?.removeEventListener("mousedown", focusMathField);
           mathField?.removeEventListener("click", focusMathField);
+          mathField?.removeEventListener("contextmenu", handleMathContextMenu);
           mathFieldEventsToOwn.forEach((eventName) => mathField?.removeEventListener(eventName, stopProseMirrorEvent));
           mathField?.remove();
         },
@@ -199,6 +251,16 @@ const LiveInlineMath = InlineMath.extend({
       function handleInput(event: Event) {
         event.stopPropagation();
         commitLatex(mathField?.value ?? "");
+      }
+
+      function handleMathContextMenu(event: Event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const mouseEvent = event as MouseEvent;
+        wrapper.dispatchEvent(new CustomEvent("qpg:math-contextmenu", {
+          bubbles: true,
+          detail: { x: mouseEvent.clientX, y: mouseEvent.clientY, latex: mathField?.value ?? "" },
+        }));
       }
 
       function stopProseMirrorEvent(event: Event) {
@@ -301,7 +363,10 @@ export function RichTextEditor({
 
     const nextContent = editorContent(value, htmlValue);
 
-    if (!editor.isFocused && editor.getHTML() !== nextContent) {
+    const mathFieldFocused =
+      document.activeElement?.tagName?.toLowerCase() === "math-field" ||
+      document.activeElement?.closest?.(".qpg-inline-math-live") !== null;
+    if (!editor.isFocused && !mathFieldFocused && editor.getHTML() !== nextContent) {
       editor.commands.setContent(nextContent, { emitUpdate: false });
     }
   }, [editor, htmlValue, value]);
@@ -351,6 +416,19 @@ export function RichTextEditor({
               setFormulaValues({});
             }}
           />
+        ) : toolbarMode === "focus" ? (
+          /* Compact toolbar for MCQ option editing — Bold, Italic, Highlight only */
+          <>
+            <ToolbarButton active={editor.isActive("bold")} label="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
+              <Bold size={15} />
+            </ToolbarButton>
+            <ToolbarButton active={editor.isActive("italic")} label="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}>
+              <Italic size={15} />
+            </ToolbarButton>
+            <ToolbarButton active={editor.isActive("highlight")} label="Highlight" onClick={() => editor.chain().focus().toggleHighlight({ color: "#fff2a8" }).run()}>
+              <Highlighter size={15} />
+            </ToolbarButton>
+          </>
         ) : (
           <>
             <ToolbarButton
@@ -430,15 +508,28 @@ export function RichTextEditor({
             >
               <Pilcrow size={15} />
             </ToolbarButton>
+            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
+            <label className="inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-semibold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)]">
+              <span className="sr-only">Text color</span>
+              <input
+                aria-label="Text color"
+                className="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
+                type="color"
+                defaultValue="#141b2b"
+                onChange={(event) => editor.chain().focus().setColor(event.target.value).run()}
+              />
+            </label>
+            <ToolbarButton
+              active={editor.isActive("highlight")}
+              label="Highlight"
+              onClick={() => editor.chain().focus().toggleHighlight({ color: "#fff2a8" }).run()}
+            >
+              <Highlighter size={15} />
+            </ToolbarButton>
           </>
         )}
-        {!activeFormula && (
+        {!activeFormula && toolbarMode !== "focus" && (
           <>
-            {/*
-              Math snippet dropdown is paused for now. LaTeX still renders from
-              pasted/generated text, and the hidden builder code stays nearby so
-              we can bring it back once the UX is redesigned.
-            */}
             {false && (
               <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)] hover:bg-white">
                 <Sigma size={14} />
@@ -471,23 +562,6 @@ export function RichTextEditor({
                 <ChevronDown size={13} />
               </label>
             )}
-            <label className="inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-semibold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)]">
-              <span className="sr-only">Text color</span>
-              <input
-                aria-label="Text color"
-                className="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
-                type="color"
-                defaultValue="#141b2b"
-                onChange={(event) => editor.chain().focus().setColor(event.target.value).run()}
-              />
-            </label>
-            <ToolbarButton
-              active={editor.isActive("highlight")}
-              label="Highlight"
-              onClick={() => editor.chain().focus().toggleHighlight({ color: "#fff2a8" }).run()}
-            >
-              <Highlighter size={15} />
-            </ToolbarButton>
           </>
         )}
       </div>

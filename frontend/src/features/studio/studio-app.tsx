@@ -27,10 +27,12 @@ import {
 import { PaperEditor } from "@/features/editor/paper-editor";
 import {
   activateRichTextEditorFromElement,
+  commandActiveRichTextEditor,
   insertIntoActiveRichTextEditor,
   MathToolkitInsert,
   openMathLiveEditorForActiveRichTextEditor,
 } from "@/features/editor/rich-text-editor";
+import { insertIntoActiveMathBoxField } from "@/features/editor/math-live-box";
 import {
   fetchChaptersViaApi,
   fetchDashboardViaApi,
@@ -155,6 +157,7 @@ export function StudioApp() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
+  const [preAiEditPaper, setPreAiEditPaper] = useState<Paper | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -437,6 +440,7 @@ export function StudioApp() {
 
     const command = applyChatPaperCommand(selectedPaper, instruction, documentStyle);
     if (command.handled) {
+      setPreAiEditPaper(selectedPaper);
       const nextPaper = applyDocumentStyle(recalculatePaper(command.paper), documentStyle);
       if (command.bankQuestion) {
         await saveQuestionToBankViaApi(command.bankQuestion, request);
@@ -454,6 +458,7 @@ export function StudioApp() {
 
     const refinementInstruction = command.providerInstruction ?? buildTargetedRefinementInstruction(selectedPaper, instruction);
 
+    setPreAiEditPaper(selectedPaper);
     setIsChatting(true);
     setStatus({ status: "running", step: "refining", message: "Applying refinement", progress: 65 });
 
@@ -827,6 +832,7 @@ export function StudioApp() {
             chatMessages={chatMessages}
             isOpen={isAssistantOpen}
             isBusy={isGenerating || isChatting}
+            canUndoAiEdit={!!preAiEditPaper}
             preview={retrievalPreview}
             questionBank={questionBank}
             rightPanel={rightPanel}
@@ -840,6 +846,13 @@ export function StudioApp() {
             onRefreshRetrieval={() => void refreshRetrievalPreview()}
             onSetPanel={setRightPanel}
             onToggleOpen={() => setIsAssistantOpen((current) => !current)}
+            onUndoAiEdit={() => {
+              if (preAiEditPaper) {
+                updateSelectedPaper(preAiEditPaper);
+                setPreAiEditPaper(null);
+                addAssistantMessage("Reverted the last AI edit.");
+              }
+            }}
           />
         </div>
       )}
@@ -1476,8 +1489,25 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
   const [activeSmartId, setActiveSmartId] = useState<string | null>(null);
   const [smartValues, setSmartValues] = useState<Record<string, string>>({});
   const activeSmartTemplate = activeSmartId ? smartInsertTemplates[activeSmartId] : null;
+  const [formulasOpen, setFormulasOpen] = useState(false);
+  const [specialCharsOpen, setSpecialCharsOpen] = useState(false);
+  const [isMathBoxMode, setIsMathBoxMode] = useState(false);
 
   useEffect(() => {
+    const openAt = (x: number, y: number, mathBox: boolean, surface: HTMLElement | null) => {
+      const menuHeightBudget = Math.min(620, window.innerHeight - 24);
+      activeSurfaceRef.current = surface;
+      staticInsertAppliedRef.current = false;
+      smartInsertAppliedRef.current = false;
+      setIsMathBoxMode(mathBox);
+      setPosition({
+        x: Math.min(x, window.innerWidth - 360),
+        y: Math.max(12, Math.min(y, window.innerHeight - menuHeightBudget)),
+      });
+      setActiveSmartId(null);
+      setSmartValues({});
+    };
+
     const onContextMenu = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element) || !target.closest(".rich-text-surface")) {
@@ -1487,18 +1517,14 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
 
       event.preventDefault();
       const surface = target.closest(".rich-text-surface") as HTMLElement | null;
-      const menuHeightBudget = Math.min(620, window.innerHeight - 24);
-      activeSurfaceRef.current = surface;
-      staticInsertAppliedRef.current = false;
-      smartInsertAppliedRef.current = false;
       activateRichTextEditorFromElement(surface);
       surface?.focus();
-      setPosition({
-        x: Math.min(event.clientX, window.innerWidth - 360),
-        y: Math.max(12, Math.min(event.clientY, window.innerHeight - menuHeightBudget)),
-      });
-      setActiveSmartId(null);
-      setSmartValues({});
+      openAt(event.clientX, event.clientY, false, surface);
+    };
+
+    const onMathBoxContextMenu = (event: Event) => {
+      const detail = (event as CustomEvent<{ x: number; y: number }>).detail;
+      openAt(detail.x, detail.y, true, null);
     };
     const close = () => {
       setPosition(null);
@@ -1533,12 +1559,14 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
     };
 
     document.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("qpg:math-box-contextmenu", onMathBoxContextMenu);
     document.addEventListener("pointerdown", closeOnOutsidePointerDown);
     document.addEventListener("scroll", closeOnOutsideScroll, true);
     document.addEventListener("keydown", onKeyDown);
 
     return () => {
       document.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("qpg:math-box-contextmenu", onMathBoxContextMenu);
       document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
       document.removeEventListener("scroll", closeOnOutsideScroll, true);
       document.removeEventListener("keydown", onKeyDown);
@@ -1556,8 +1584,16 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
 
   const applyStaticInsert = (insert: MathToolkitInsert) => {
     if (staticInsertAppliedRef.current) return;
-
     staticInsertAppliedRef.current = true;
+
+    if (isMathBoxMode) {
+      // Insert directly into the active MathLive popup field
+      const latex = insert.type === "math" ? insert.value : insert.value;
+      insertIntoActiveMathBoxField(latex);
+      setPosition(null);
+      return;
+    }
+
     activateRichTextEditorFromElement(activeSurfaceRef.current);
     const inserted = onInsert(insert);
     if (!inserted) fallbackInsertIntoSurface(activeSurfaceRef.current, insert.type === "math" ? `$${insert.value}$` : insert.value);
@@ -1572,6 +1608,13 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
 
     smartInsertAppliedRef.current = true;
     const value = activeSmartTemplate.build(smartValues);
+
+    if (isMathBoxMode) {
+      insertIntoActiveMathBoxField(value);
+      setPosition(null);
+      return;
+    }
+
     activateRichTextEditorFromElement(activeSurfaceRef.current);
     const inserted = onInsert({ type: activeSmartTemplate.insertType, value } as MathToolkitInsert);
     if (!inserted) fallbackInsertIntoSurface(activeSurfaceRef.current, activeSmartTemplate.insertType === "math" ? `$${value}$` : value);
@@ -1589,7 +1632,7 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">
-          {activeSmartTemplate ? "Smart insert" : "Insert symbol"}
+          {activeSmartTemplate ? "Smart insert" : isMathBoxMode ? "LaTeX insert" : "Insert symbol"}
         </span>
         <button className="text-xs font-black text-[var(--ink-3)] hover:text-[var(--ink)]" onClick={() => setPosition(null)} type="button">
           Esc
@@ -1662,58 +1705,204 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
         </div>
       ) : (
         <div className="space-y-3">
-          {mathMenuGroups.map((group) => (
-            <section key={group.label}>
-              <div className="mb-1 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">{group.label}</div>
-              <div className="flex flex-wrap gap-1">
-                {group.tools.map((tool) => (
-                  <button
-                    key={`${group.label}-${tool.label}`}
-                    className={`min-h-8 rounded-md border px-2 text-xs font-black hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)] ${
-                      tool.smart ? "border-[var(--accent-soft)] bg-[var(--paper-tint)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink-2)]"
-                    }`}
-                    onClick={() => {
-                      if (tool.smart) {
-                        startSmartInsert(tool.smart);
-                        return;
-                      }
+          {isMathBoxMode && (
+            <div className="rounded-md border border-[var(--accent-soft)] bg-[var(--accent-soft)] px-3 py-1.5 text-[10px] font-bold text-[var(--accent-deep)]">
+              Inserting into LaTeX formula editor
+            </div>
+          )}
+          {/* ALIGNMENT — not applicable inside a LaTeX formula */}
+          {!isMathBoxMode && <section>
+            <div className="mb-1.5 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Alignment</div>
+            <div className="flex gap-1.5">
+              {([["Left", "left", "▸ Left"], ["Center", "center", "≡ Center"], ["Right", "right", "◂ Right"]] as const).map(([label, align, display]) => (
+                <button
+                  key={align}
+                  className="flex-1 rounded-md border border-[var(--border)] bg-[var(--surface)] py-1.5 text-[11px] font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={() => {
+                    activateRichTextEditorFromElement(activeSurfaceRef.current);
+                    commandActiveRichTextEditor((ed) => ed.chain().focus().setTextAlign(align).run());
+                    setPosition(null);
+                  }}
+                  type="button"
+                  aria-label={label}
+                >
+                  {display}
+                </button>
+              ))}
+            </div>
+          </section>}
 
-                      if ("live" in tool && tool.live) {
-                        activateRichTextEditorFromElement(activeSurfaceRef.current);
-                        openMathLiveEditorForActiveRichTextEditor();
-                        setPosition(null);
-                        return;
-                      }
+          {/* FORMULAS */}
+          <section>
+            <button
+              className="flex w-full items-center justify-between font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)] hover:text-[var(--ink)]"
+              onClick={() => setFormulasOpen((v) => !v)}
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              type="button"
+            >
+              <span>Formulas</span>
+              <span>{formulasOpen ? "▲" : "▼"}</span>
+            </button>
+            {formulasOpen && (
+              <div className="mt-2 space-y-2">
+                <div>
+                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--ink-3)]">Maths</div>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { label: "a/b", insert: { type: "math" as const, value: "\\frac{a}{b}" } },
+                      { label: "√x", insert: { type: "math" as const, value: "\\sqrt{x}" } },
+                      { label: "xⁿ", insert: { type: "math" as const, value: "x^{n}" } },
+                      { label: "∫", insert: { type: "math" as const, value: "\\int_{a}^{b}" } },
+                      { label: "Σ", insert: { type: "math" as const, value: "\\sum_{i=1}^{n}" } },
+                      { label: "lim", insert: { type: "math" as const, value: "\\lim_{x \\to 0}" } },
+                      { label: "log", insert: { type: "math" as const, value: "\\log_{a}(b)" } },
+                      { label: "aⁿ√x", insert: { type: "math" as const, value: "\\sqrt[n]{x}" } },
+                      { label: "d/dx", insert: { type: "math" as const, value: "\\frac{d}{dx}" } },
+                      { label: "∂/∂x", insert: { type: "math" as const, value: "\\frac{\\partial}{\\partial x}" } },
+                    ].map((item) => (
+                      <button key={item.label} className="min-h-7 rounded border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }}
+                        type="button">{item.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--ink-3)]">Science</div>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { label: "H₂O", insert: { type: "text" as const, value: "H₂O" } },
+                      { label: "CO₂", insert: { type: "text" as const, value: "CO₂" } },
+                      { label: "CₙHₙ", insert: { type: "text" as const, value: "CₙHₙ" } },
+                      { label: "CₙH₂ₙ", insert: { type: "text" as const, value: "CₙH₂ₙ" } },
+                      { label: "CₙH₂ₙ₊₁OH", insert: { type: "text" as const, value: "CₙH₂ₙ₊₁OH" } },
+                      { label: "NaCl", insert: { type: "text" as const, value: "NaCl" } },
+                      { label: "→", insert: { type: "text" as const, value: " → " } },
+                      { label: "⇌", insert: { type: "text" as const, value: " ⇌ " } },
+                      { label: "F=ma", insert: { type: "math" as const, value: "F = ma" } },
+                      { label: "E=mc²", insert: { type: "math" as const, value: "E = mc^2" } },
+                    ].map((item) => (
+                      <button key={item.label} className="min-h-7 rounded border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }}
+                        type="button">{item.label}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
 
-                      applyStaticInsert(tool.insert);
+          {/* SPECIAL CHARACTERS */}
+          <section>
+            <button
+              className="flex w-full items-center justify-between font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)] hover:text-[var(--ink)]"
+              onClick={() => setSpecialCharsOpen((v) => !v)}
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              type="button"
+            >
+              <span>Special Characters</span>
+              <span>{specialCharsOpen ? "▲" : "▼"}</span>
+            </button>
+            {specialCharsOpen && (
+              <div className="mt-2 space-y-2">
+                <div>
+                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--ink-3)]">Currency</div>
+                  <div className="flex flex-wrap gap-1">
+                    {["₹", "$", "€", "£", "¥", "¢", "₩", "₪"].map((ch) => (
+                      <button key={ch} className="min-h-7 min-w-8 rounded border border-[var(--border)] bg-[var(--surface)] text-sm font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }}
+                        type="button">{ch}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--ink-3)]">Greek</div>
+                  <div className="flex flex-wrap gap-1">
+                    {["α", "β", "γ", "δ", "ε", "θ", "λ", "μ", "π", "σ", "φ", "ω", "Γ", "Δ", "Σ", "Ω", "∞", "±", "×", "÷", "≈", "≠", "≤", "≥"].map((ch) => (
+                      <button key={ch} className="min-h-7 min-w-8 rounded border border-[var(--border)] bg-[var(--surface)] text-sm font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }}
+                        type="button">{ch}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* TEXT COLOR + HIGHLIGHT + NUMBERING — not applicable in formula editor */}
+          {!isMathBoxMode && (
+            <section>
+              <div className="mb-1.5 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Text</div>
+              <div className="flex flex-wrap gap-1.5">
+                <label className="flex min-h-8 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]" title="Text color">
+                  <span>A</span>
+                  <input type="color" className="h-4 w-4 cursor-pointer border-0 bg-transparent p-0" defaultValue="#e63946"
+                    onChange={(e) => {
+                      activateRichTextEditorFromElement(activeSurfaceRef.current);
+                      commandActiveRichTextEditor((ed) => ed.chain().focus().setColor(e.target.value).run());
                     }}
-                    onPointerDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-
-                      if (tool.smart) {
-                        startSmartInsert(tool.smart);
-                        return;
-                      }
-
-                      if ("live" in tool && tool.live) {
-                        activateRichTextEditorFromElement(activeSurfaceRef.current);
-                        openMathLiveEditorForActiveRichTextEditor();
-                        setPosition(null);
-                        return;
-                      }
-
-                      applyStaticInsert(tool.insert);
-                    }}
-                    type="button"
-                  >
-                    {tool.label}
-                    {tool.smart ? "…" : ""}
-                  </button>
-                ))}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  />
+                </label>
+                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={() => {
+                    activateRichTextEditorFromElement(activeSurfaceRef.current);
+                    commandActiveRichTextEditor((ed) => ed.chain().focus().toggleHighlight({ color: "#fff2a8" }).run());
+                    setPosition(null);
+                  }}
+                  type="button" title="Highlight">🖊 Highlight</button>
+                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={() => {
+                    activateRichTextEditorFromElement(activeSurfaceRef.current);
+                    commandActiveRichTextEditor((ed) => ed.chain().focus().toggleBulletList().run());
+                    setPosition(null);
+                  }}
+                  type="button" title="Bullet list">• List</button>
+                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={() => {
+                    activateRichTextEditorFromElement(activeSurfaceRef.current);
+                    commandActiveRichTextEditor((ed) => ed.chain().focus().toggleOrderedList().run());
+                    setPosition(null);
+                  }}
+                  type="button" title="Numbered list">1. Numbered</button>
               </div>
             </section>
-          ))}
+          )}
+
+          {/* INSERT OBJECTS */}
+          <section>
+            <div className="mb-1.5 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Insert</div>
+            <div className="flex flex-wrap gap-1.5">
+              {!isMathBoxMode && (
+                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={() => {
+                    applyStaticInsert({ type: "html", value: '<table style="border-collapse:collapse;width:100%"><tr><td style="border:1px solid #cbd5e1;padding:4px">A</td><td style="border:1px solid #cbd5e1;padding:4px">B</td></tr><tr><td style="border:1px solid #cbd5e1;padding:4px">C</td><td style="border:1px solid #cbd5e1;padding:4px">D</td></tr></table>' });
+                  }}
+                  type="button">⊞ Table</button>
+              )}
+              <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={() => {
+                  applyStaticInsert({ type: "math", value: "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}" });
+                }}
+                type="button">⊡ Matrix</button>
+              {!isMathBoxMode && (
+                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    activateRichTextEditorFromElement(activeSurfaceRef.current);
+                    openMathLiveEditorForActiveRichTextEditor();
+                    setPosition(null);
+                  }}
+                  type="button">+ LaTeX box</button>
+              )}
+            </div>
+          </section>
         </div>
       )}
     </div>
@@ -2250,8 +2439,46 @@ function StepFineTune({
     { value: "PYQ" as const, label: "PYQ only", count: availability?.totals.pyq ?? 0, disabled: availability ? !hasPyq : false },
     { value: "NCERT + PYQ" as const, label: "NCERT + PYQ", count: (availability?.totals.ncert ?? 0) + (availability?.totals.pyq ?? 0), disabled: availability ? !hasNcert || !hasPyq : false },
   ];
-  const bookOptions = uniqueSourceOptions(availability?.books ?? []);
-  const categoryOptions = (availability?.categories ?? []).map((category) => category.category);
+  const multipleChapters = request.chapterScope !== "single" && request.chapters.length > 1;
+  const effectiveChapterWeights: Record<string, number> = (() => {
+    if (!multipleChapters) return {};
+    const chapters = request.chapters;
+    const stored = request.chapterWeights ?? {};
+    if (chapters.every((ch) => ch in stored)) return stored;
+    const equal = Math.floor(100 / chapters.length);
+    const result: Record<string, number> = {};
+    chapters.forEach((ch, i) => { result[ch] = i === 0 ? 100 - equal * (chapters.length - 1) : equal; });
+    return result;
+  })();
+  const totalChapterWeight = Object.values(effectiveChapterWeights).reduce((sum, w) => sum + w, 0);
+
+  const updateChapterWeight = (chapter: string, raw: number) => {
+    const chapters = request.chapters;
+    const clamped = Math.max(0, Math.min(100, raw));
+    const others = chapters.filter((ch) => ch !== chapter);
+    const remaining = 100 - clamped;
+    const otherTotal = others.reduce((sum, ch) => sum + (effectiveChapterWeights[ch] ?? 0), 0) || 1;
+    const next: Record<string, number> = { ...effectiveChapterWeights, [chapter]: clamped };
+    let distributed = 0;
+    others.forEach((ch, i) => {
+      if (i === others.length - 1) {
+        next[ch] = Math.max(0, remaining - distributed);
+      } else {
+        const share = Math.round(((effectiveChapterWeights[ch] ?? 0) / otherTotal) * remaining);
+        next[ch] = share;
+        distributed += share;
+      }
+    });
+    onUpdateRequest("chapterWeights", next);
+  };
+
+  const equalizeChapterWeights = () => {
+    const chapters = request.chapters;
+    const equal = Math.floor(100 / chapters.length);
+    const result: Record<string, number> = {};
+    chapters.forEach((ch, i) => { result[ch] = i === 0 ? 100 - equal * (chapters.length - 1) : equal; });
+    onUpdateRequest("chapterWeights", result);
+  };
 
   return (
     <div className="mx-auto max-w-[880px] space-y-6">
@@ -2317,6 +2544,44 @@ function StepFineTune({
         }}
       />
 
+      {multipleChapters && (
+        <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <FlowLabel>Chapter coverage</FlowLabel>
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--accent-deep)] hover:bg-[var(--accent-soft)]"
+                onClick={equalizeChapterWeights}
+                type="button"
+              >
+                Equal split
+              </button>
+              <span className={`font-mono text-[10px] font-black uppercase tracking-[0.12em] ${totalChapterWeight === 100 ? "text-emerald-700" : "text-[var(--ink-3)]"}`}>
+                Total {totalChapterWeight}%
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(request.chapters.length, 3)}, 1fr)` }}>
+            {request.chapters.map((chapter) => (
+              <label key={chapter} className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+                <span className="flex justify-between">
+                  <span className="max-w-[75%] truncate">{chapter}</span>
+                  <span>{effectiveChapterWeights[chapter] ?? 0}%</span>
+                </span>
+                <input
+                  className="mt-2 w-full accent-[var(--accent)]"
+                  max={100}
+                  min={0}
+                  type="range"
+                  value={effectiveChapterWeights[chapter] ?? 0}
+                  onChange={(event) => updateChapterWeight(chapter, Number(event.target.value))}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         <FlowLabel>AI provider</FlowLabel>
         <div className="inline-grid grid-cols-2 rounded-[var(--radius-md)] bg-[var(--surface-2)] p-1">
@@ -2326,23 +2591,6 @@ function StepFineTune({
             </button>
           ))}
         </div>
-      </div>
-
-      <div className="grid gap-5 md:grid-cols-2">
-        <ChipMultiSelect
-          label="Books to pull from"
-          emptyText="No source books match this chapter yet."
-          options={bookOptions}
-          selected={request.sourceBooks ?? []}
-          onChange={(values) => onUpdateRequest("sourceBooks", values)}
-        />
-        <ChipMultiSelect
-          label="Source categories"
-          emptyText="No tagged categories match this chapter yet."
-          options={categoryOptions}
-          selected={request.sourceCategories ?? []}
-          onChange={(values) => onUpdateRequest("sourceCategories", values)}
-        />
       </div>
 
       <div>
@@ -2373,7 +2621,7 @@ function StepFineTune({
           <div className="font-bold text-[var(--ink)]">
             You will generate a {request.totalMarks}-mark, {request.difficulty.toLowerCase()} paper across {request.chapterScope === "full_syllabus" ? "the full syllabus" : `${request.chapters.length} chapter${request.chapters.length === 1 ? "" : "s"}`}.
           </div>
-          <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}{request.sourceBooks?.length ? ` · ${request.sourceBooks.join(", ")}` : ""}. {request.questionTypes.length} question types selected. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
+          <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}. {request.questionTypes.length} question types selected. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
           <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Difficulty mix: {mix.easy}% easy · {mix.medium}% medium · {mix.hard}% hard.</div>
           <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Source mix target: {sourceMix.ncertDirect}% NCERT direct · {sourceMix.pyqDirect}% PYQ direct · {sourceMix.questionBank}% bank · {sourceMix.aiGenerated}% AI from dump. Provider: {(request.provider ?? "gemini").toUpperCase()}.</div>
         </div>
@@ -2382,53 +2630,7 @@ function StepFineTune({
   );
 }
 
-function ChipMultiSelect({
-  emptyText,
-  label,
-  options,
-  selected,
-  onChange,
-}: {
-  emptyText?: string;
-  label: string;
-  options: string[];
-  selected: string[];
-  onChange: (values: string[]) => void;
-}) {
-  return (
-    <div>
-      <FlowLabel>{label}</FlowLabel>
-      <div className="flex flex-wrap gap-2">
-        {options.length === 0 ? <span className="rounded-full border border-dashed border-[var(--border)] px-3 py-1.5 text-xs text-[var(--ink-3)]">{emptyText ?? "No options available."}</span> : null}
-        {options.map((option) => {
-          const isSelected = selected.includes(option);
-          return (
-            <button
-              key={option}
-              className={`rounded-full border px-3 py-1.5 text-xs font-bold ${isSelected ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--accent-soft-2)]"}`}
-              onClick={() => onChange(isSelected ? selected.filter((item) => item !== option) : [...selected, option])}
-              type="button"
-            >
-              {option}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
-function uniqueSourceOptions(books: NonNullable<RetrievalPreview["availability"]>["books"]) {
-  const preferredOrder = ["NCERT", "RD Sharma", "Selina", "OSWAL PYQ", "Most Likely Question Bank", "PYQ"];
-  const options = Array.from(new Set(books.map((book) => book.sourceGroup || book.title).filter(Boolean)));
-
-  return options.sort((left, right) => {
-    const leftIndex = preferredOrder.indexOf(left);
-    const rightIndex = preferredOrder.indexOf(right);
-    if (leftIndex !== -1 || rightIndex !== -1) return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
-    return left.localeCompare(right);
-  });
-}
 
 function DifficultyMixSliders({ mix, onChange }: { mix: NonNullable<PaperRequest["difficultyMix"]>; onChange: (mix: NonNullable<PaperRequest["difficultyMix"]>) => void }) {
   const update = (key: keyof typeof mix, value: number) => {
@@ -2664,6 +2866,9 @@ function FlowLabel({ children }: { children: React.ReactNode }) {
 }
 
 function NumberStepper({ label, onChange, suffix, value }: { label: string; onChange: (value: number) => void; suffix?: string; value: number }) {
+  const [localValue, setLocalValue] = useState(String(value));
+  useEffect(() => { setLocalValue(String(value)); }, [value]);
+
   return (
     <div>
       <FlowLabel>{label}</FlowLabel>
@@ -2671,9 +2876,24 @@ function NumberStepper({ label, onChange, suffix, value }: { label: string; onCh
         <button className="flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--surface-2)]" onClick={() => onChange(value - 1)} type="button">
           <Minus size={16} />
         </button>
-        <div className="flex items-center justify-center gap-2 text-lg font-semibold text-[var(--ink)]">
-          {value}
-          {suffix && <span className="font-mono text-[10px] font-normal text-[var(--ink-3)]">{suffix}</span>}
+        <div className="flex items-center justify-center gap-1">
+          <input
+            className="w-full bg-transparent text-center text-lg font-semibold text-[var(--ink)] outline-none"
+            inputMode="numeric"
+            value={localValue}
+            onChange={(e) => {
+              setLocalValue(e.target.value);
+              const parsed = Number(e.target.value);
+              if (!Number.isNaN(parsed) && parsed >= 0) onChange(parsed);
+            }}
+            onBlur={() => {
+              const parsed = Number(localValue);
+              if (!Number.isNaN(parsed) && parsed >= 0) onChange(parsed);
+              else setLocalValue(String(value));
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          />
+          {suffix && <span className="shrink-0 font-mono text-[10px] font-normal text-[var(--ink-3)]">{suffix}</span>}
         </div>
         <button className="flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--surface-2)]" onClick={() => onChange(value + 1)} type="button">
           <Plus size={16} />
@@ -2929,12 +3149,14 @@ function PaperNavigator({
                     <span>{section.title}</span>
                     <span>{section.questions.reduce((total, question) => total + Number(question.marks || 0), 0)}m</span>
                   </div>
+                  <div className="grid grid-cols-2 gap-0.5">
                   {section.questions.map((question, index) => (
-                    <button key={question.id} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]" onClick={() => document.getElementById(`question-${question.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} type="button">
-                      <span className="font-mono font-black text-[var(--accent)]">Q{index + 1}</span>
-                      <span className="truncate">{question.text || "Untitled question"}</span>
+                    <button key={question.id} className="flex items-center gap-1 rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]" onClick={() => document.getElementById(`question-${question.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} type="button">
+                      <span className="shrink-0 font-mono font-black text-[var(--accent)]">Q{index + 1}</span>
+                      <span className="truncate">{question.text || "…"}</span>
                     </button>
                   ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -2980,6 +3202,7 @@ function GenerationCanvasState({ isGenerating, status }: { isGenerating: boolean
 }
 
 function AssistantPanel({
+  canUndoAiEdit,
   chatInput,
   chatMessages,
   isOpen,
@@ -2993,11 +3216,13 @@ function AssistantPanel({
   onRefreshRetrieval,
   onSetPanel,
   onToggleOpen,
+  onUndoAiEdit,
   preview,
   questionBank,
   rightPanel,
   usage,
 }: {
+  canUndoAiEdit: boolean;
   chatInput: string;
   chatMessages: ChatMessage[];
   isOpen: boolean;
@@ -3011,6 +3236,7 @@ function AssistantPanel({
   onRefreshRetrieval: () => void;
   onSetPanel: (panel: RightPanel) => void;
   onToggleOpen: () => void;
+  onUndoAiEdit: () => void;
   preview: RetrievalPreview | null;
   questionBank: QuestionBankItem[];
   rightPanel: RightPanel;
@@ -3091,6 +3317,31 @@ function AssistantPanel({
               <div className="mr-8 flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--ink-2)]">
                 <LoaderCircle className="animate-spin" size={14} />
                 Working on the paper...
+              </div>
+            )}
+            {!isBusy && canUndoAiEdit && (
+              <div className="flex justify-start">
+                <button
+                  className="flex items-center gap-1.5 rounded-full border border-[var(--accent-soft)] bg-[var(--accent-soft)] px-3 py-1.5 text-[11px] font-bold text-[var(--accent-deep)] hover:bg-[var(--accent)] hover:text-[var(--paper-tint)]"
+                  onClick={onUndoAiEdit}
+                  type="button"
+                >
+                  <RefreshCcw size={11} />
+                  Undo last AI edit
+                </button>
+              </div>
+            )}
+            {!isBusy && chatMessages.length > 0 && chatMessages[chatMessages.length - 1]?.role === "assistant" && (chatMessages[chatMessages.length - 1]?.text ?? "").toLowerCase().includes("failed") && (
+              <div className="mr-8 rounded-xl border border-[var(--error)] bg-[var(--error-container)] px-3 py-2 text-xs">
+                <div className="font-bold text-[var(--on-error-container)]">The assistant ran into an issue.</div>
+                <div className="mt-1 text-[var(--on-error-container)] opacity-80">Try rephrasing your request, or use the question controls directly for targeted edits.</div>
+                <button
+                  className="mt-2 rounded border border-[var(--error)] px-2 py-1 text-[10px] font-bold text-[var(--on-error-container)] hover:bg-[var(--error)] hover:text-white"
+                  onClick={onAsk}
+                  type="button"
+                >
+                  Retry last message
+                </button>
               </div>
             )}
           </div>
@@ -3280,13 +3531,15 @@ function QuestionBankPanel({ compact = false, items, onImport, onRefresh }: { co
       {items.length === 0 ? (
         <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No saved questions yet. Use the save icon on any question card.</div>
       ) : (
-        items.map((item) => (
-          <button key={item.id} className="w-full rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3 text-left text-xs hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onImport(item)} type="button">
-            <span className="font-bold text-[var(--on-surface)]">{item.questionType ?? "Question"} · {item.marks ?? "?"} marks</span>
-            <span className="mt-1 line-clamp-4 block text-[var(--on-surface-variant)]">{item.text}</span>
-            <span className="mt-2 block text-[11px] font-bold text-[var(--on-surface-variant)]">{item.chapter ?? "No chapter"} · {item.difficulty ?? "Mixed"}</span>
-          </button>
-        ))
+        <div className={compact ? "grid grid-cols-2 gap-2" : "space-y-3"}>
+          {items.map((item) => (
+            <button key={item.id} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-2 text-left text-xs hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onImport(item)} type="button">
+              <span className="font-bold text-[var(--on-surface)]">{item.questionType ?? "Q"} · {item.marks ?? "?"} m</span>
+              <span className={`mt-1 block text-[var(--on-surface-variant)] ${compact ? "line-clamp-2" : "line-clamp-4"}`}>{item.text}</span>
+              {!compact && <span className="mt-2 block text-[11px] font-bold text-[var(--on-surface-variant)]">{item.chapter ?? "No chapter"} · {item.difficulty ?? "Mixed"}</span>}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

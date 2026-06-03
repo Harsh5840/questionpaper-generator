@@ -631,6 +631,7 @@ function toBackendRequest(request: PaperRequest) {
     variant_count: request.variantCount,
     source_books: sourceBooks,
     source_categories: sourceCategories,
+    chapter_weights: request.chapterWeights && Object.keys(request.chapterWeights).length > 1 ? request.chapterWeights : undefined,
     direct_source_mix: request.directSourceMix,
     source_weights: request.sourceWeights ?? request.directSourceMix,
     source_weights_normalized: request.sourceWeightsNormalized ?? false,

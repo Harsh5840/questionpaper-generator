@@ -643,9 +643,40 @@ button:disabled {
 .paper-option-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 2rem;
-  row-gap: 0.18rem;
+  column-gap: 2.5rem;
+  row-gap: 0.55rem;
   padding-left: 1.25rem;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+}
+
+.paper-option-grid--vertical {
+  grid-template-columns: 1fr;
+}
+
+@media print {
+  .paper-option-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    column-gap: 2rem !important;
+    row-gap: 0.4rem !important;
+  }
+  .paper-option-grid--vertical {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.qpg-math-katex-fallback {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75em;
+  padding: 0.1rem 0.35rem;
+  border: 1.5px dashed #93c5fd;
+  border-radius: 0.3rem;
+  background: #f8faff;
+  font-size: 1em;
+  color: #334155;
+  pointer-events: none;
 }
 
 .paper-option-row {
