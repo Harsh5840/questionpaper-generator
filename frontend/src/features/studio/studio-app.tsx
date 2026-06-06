@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import katex from "katex";
 import {
   Bot,
@@ -52,6 +52,7 @@ import {
 } from "@/lib/api";
 import { defaultRequest, requestFromPrompt } from "@/lib/request-defaults";
 import { normalizePaperStructure, normalizeRawQuestion, richTextFromText } from "@/lib/normalize-paper-structure";
+import { calculateSourceMix, choiceHasContent, countedQuestionMarks, countedSectionMarks, escapeAttribute, escapeHtml, normalizeLatexChars, questionWithComputedMarks, unescapeHtml } from "@/lib/paper-utils";
 import {
   AiUsageSummary,
   CatalogSubject,
@@ -71,6 +72,7 @@ import {
   QuestionBankItem,
   RetrievalPreview,
   RetrievalResult,
+  SectionBlueprint,
   SourceAvailability,
 } from "@/lib/types";
 
@@ -155,9 +157,14 @@ export function StudioApp() {
   const [status, setStatus] = useState<GenerationStatus>(emptyStatus);
   const [lastError, setLastError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSavingVersion, setIsSavingVersion] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
-  const [preAiEditPaper, setPreAiEditPaper] = useState<Paper | null>(null);
+  // #173: stack of up to 5 pre-AI snapshots; last entry is most recent
+  const [undoStack, setUndoStack] = useState<Paper[]>([]);
+  // #170: synchronous in-flight guard — prevents concurrent AI requests from
+  // bypassing the isChatting state check before the first React re-render
+  const aiInFlightRef = useRef(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -416,7 +423,11 @@ export function StudioApp() {
 
   async function askAi(instructionOverride?: string) {
     const instruction = (instructionOverride ?? chatInput).trim();
-    if (!instruction || isChatting) return;
+    // #170: synchronous ref guard prevents concurrent requests even before React re-renders
+    if (!instruction || isChatting || aiInFlightRef.current) return;
+
+    // #202: strip HTML tags to prevent XSS-style injection via chat input
+    const cleanInstruction = instruction.replace(/<[^>]*>/g, "").replace(/&(?:lt|gt|amp|quot|#\d+);/g, "").trim();
 
     setChatInput("");
     addUserMessage(instruction);
@@ -426,8 +437,35 @@ export function StudioApp() {
       return;
     }
 
-    if (isImageImportCommand(instruction)) {
-      const section = findSectionForChatCommand(selectedPaper, instruction);
+    // #235: intercept "undo" before sending to AI
+    if (/^\s*undo\s*$/i.test(cleanInstruction)) {
+      if (undoStack.length > 0) {
+        const prev = undoStack[undoStack.length - 1];
+        setUndoStack((stack) => stack.slice(0, -1));
+        updateSelectedPaper(prev);
+        addAssistantMessage("Reverted the last AI edit.");
+      } else {
+        addAssistantMessage("Nothing to undo. The Undo button appears after an AI edit is applied.");
+      }
+      return;
+    }
+
+    // #171: catch question-targeted commands on an empty paper
+    const totalQuestions = selectedPaper.sections.reduce((t, s) => t + s.questions.length, 0);
+    if (totalQuestions === 0 && /\b(?:q|ques|question)\s*\d+\b/i.test(cleanInstruction)) {
+      addAssistantMessage("This paper has no questions yet. Add a blank question or generate content first.");
+      return;
+    }
+
+    // #195: cap unreasonably large bulk-generation requests
+    const bulkMatch = /\b(?:add|generate|create)\s+(\d+)\s+(?:questions?|q\b)/i.exec(cleanInstruction);
+    if (bulkMatch && Number(bulkMatch[1]) > 20) {
+      addAssistantMessage(`Adding ${bulkMatch[1]} questions at once is too large. Try a batch of up to 20 and repeat.`);
+      return;
+    }
+
+    if (isImageImportCommand(cleanInstruction)) {
+      const section = findSectionForChatCommand(selectedPaper, cleanInstruction);
       if (!section) {
         addAssistantMessage("I could not find a section for the image import.");
         return;
@@ -438,9 +476,10 @@ export function StudioApp() {
       return;
     }
 
-    const command = applyChatPaperCommand(selectedPaper, instruction, documentStyle);
+    const command = applyChatPaperCommand(selectedPaper, cleanInstruction, documentStyle);
     if (command.handled) {
-      setPreAiEditPaper(selectedPaper);
+      // #176/#173: only push undo snapshot when the paper actually changed
+      if (command.paper !== selectedPaper) setUndoStack((stack) => [...stack.slice(-4), selectedPaper]);
       const nextPaper = applyDocumentStyle(recalculatePaper(command.paper), documentStyle);
       if (command.bankQuestion) {
         await saveQuestionToBankViaApi(command.bankQuestion, request);
@@ -456,14 +495,82 @@ export function StudioApp() {
       return;
     }
 
-    const refinementInstruction = command.providerInstruction ?? buildTargetedRefinementInstruction(selectedPaper, instruction);
+    // #227: intercept "generate N questions from topic" — route to generation API, not refinement
+    const genCmd = parseGenerateQuestionsCommand(cleanInstruction);
+    if (genCmd) {
+      const { count, questionType, topic } = genCmd;
+      const typeLabel = questionType ?? "question";
+      const typePlural = questionType ? `${questionType} question` : "question";
+      const genPrompt = [
+        `Generate exactly ${count} ${typePlural}${count !== 1 ? "s" : ""} about "${topic}".`,
+        questionType === "MCQ" ? "Each MCQ must have exactly 4 options labeled A, B, C, D with one correct answer indicated." : "",
+        "Use clear, exam-appropriate language.",
+      ].filter(Boolean).join(" ");
 
-    setPreAiEditPaper(selectedPaper);
+      aiInFlightRef.current = true;
+      setIsChatting(true);
+      setStatus({ status: "running", step: "generating", message: `Generating ${count} ${typeLabel}${count !== 1 ? "s" : ""}…`, progress: 40 });
+
+      try {
+        const genRequest = finalizeGenerationRequest({ ...request, freePrompt: genPrompt, variantCount: 1 });
+        const papers = await generateViaApi(genRequest, { onStatus: (s) => setStatus(s) });
+        const generated = papers[0];
+        if (!generated) throw new Error("No questions were generated.");
+
+        const newQuestions = generated.sections.flatMap((s) => s.questions).slice(0, count);
+        if (newQuestions.length === 0) throw new Error("The generator returned no questions.");
+
+        setUndoStack((stack) => [...stack.slice(-4), selectedPaper]);
+        let nextSections;
+        if (selectedPaper.sections.length > 0) {
+          const lastIdx = selectedPaper.sections.length - 1;
+          nextSections = selectedPaper.sections.map((s, i) =>
+            i === lastIdx ? { ...s, questions: [...s.questions, ...newQuestions] } : s,
+          );
+        } else {
+          nextSections = [{ id: crypto.randomUUID(), title: "Section A", instructions: "", questions: newQuestions }];
+        }
+        const nextPaper = applyDocumentStyle(recalculatePaper({ ...selectedPaper, sections: nextSections }), documentStyle);
+        updateSelectedPaper(nextPaper);
+        await saveVersionViaApi(nextPaper, "chat_generate_questions");
+        await refreshVersions(nextPaper.paperId);
+        setStatus({ status: "completed", step: "generated", message: "Questions added", progress: 100 });
+        addAssistantMessage(
+          `Added ${newQuestions.length} ${typeLabel}${newQuestions.length !== 1 ? "s" : ""} about "${topic}" to the paper.`,
+        );
+      } catch (error) {
+        const message = getErrorMessage(error);
+        setLastError(message);
+        setStatus({ status: "failed", step: "generate_failed", message, progress: 100 });
+        addAssistantMessage(`I couldn't generate those questions: ${message}`);
+      } finally {
+        setIsChatting(false);
+        aiInFlightRef.current = false;
+      }
+      return;
+    }
+
+    const refinementInstruction = command.providerInstruction ?? buildTargetedRefinementInstruction(selectedPaper, cleanInstruction);
+
+    aiInFlightRef.current = true;
     setIsChatting(true);
     setStatus({ status: "running", step: "refining", message: "Applying refinement", progress: 65 });
 
     try {
       const refinement = await refineViaApi(selectedPaper, refinementInstruction);
+      const currentQuestionCount = selectedPaper.sections.reduce((t, s) => t + s.questions.length, 0);
+      const nextQuestionCount = refinement.preview.sections.reduce((t, s) => t + s.questions.length, 0);
+      if (nextQuestionCount === 0 && currentQuestionCount > 0 && !window.confirm("This will remove all questions from the paper. Continue?")) {
+        setStatus({ status: "completed", step: "cancelled", message: "Cancelled", progress: 100 });
+        return;
+      }
+      // #176/#173: push undo snapshot before applying AI change
+      setUndoStack((stack) => [...stack.slice(-4), selectedPaper]);
+      // Empty patchOps + empty message = backend rescue (AI error) — silently abort, no UI change
+      if ((!refinement.patchOps || refinement.patchOps.length === 0) && !refinement.message) {
+        setStatus({ status: "completed", step: "refined", message: "No changes", progress: 100 });
+        return;
+      }
       const nextPaper = applyDocumentStyle(recalculatePaper(refinement.preview), documentStyle);
       updateSelectedPaper(nextPaper);
       await saveVersionViaApi(nextPaper, "ai_refinement");
@@ -477,6 +584,7 @@ export function StudioApp() {
       addAssistantMessage(`I could not apply that refinement: ${message}`);
     } finally {
       setIsChatting(false);
+      aiInFlightRef.current = false;
     }
   }
 
@@ -518,16 +626,36 @@ export function StudioApp() {
       addAssistantMessage("Generate or select a saved paper before saving a version.");
       return;
     }
-
-    const saved = await saveVersionViaApi(applyDocumentStyle(selectedPaper, documentStyle), "manual_structured_edit");
-
-    if (!saved) {
-      addAssistantMessage("Could not save this version. Check that Phoenix is running.");
+    const totalQuestions = selectedPaper.sections.reduce((t, s) => t + s.questions.length, 0);
+    if (totalQuestions === 0) {
+      addAssistantMessage("Add at least one question before saving a version.");
       return;
     }
+    if (isSavingVersion) return;
+    setIsSavingVersion(true);
 
-    await refreshVersions(selectedPaper.paperId);
-    addAssistantMessage(`Saved structured version ${saved.version_number ?? ""}.`);
+    try {
+      const saved = await saveVersionViaApi(applyDocumentStyle(selectedPaper, documentStyle), "manual_structured_edit");
+
+      if (!saved) {
+        addAssistantMessage("Could not save this version. Check that Phoenix is running.");
+        return;
+      }
+
+      const savedRecord = saved as Record<string, unknown>;
+      const newVersion: PaperVersion = {
+        id: String(savedRecord.id ?? crypto.randomUUID()),
+        versionNumber: Number(savedRecord.version_number ?? savedRecord.versionNumber ?? (versions[0]?.versionNumber ?? 0) + 1),
+        changeSource: "manual_structured_edit",
+        payload: {},
+        marksTotal: savedRecord.marks_total === undefined ? undefined : Number(savedRecord.marks_total),
+        insertedAt: savedRecord.inserted_at ? String(savedRecord.inserted_at) : undefined,
+      };
+      setVersions((current) => [newVersion, ...current.filter((v) => v.id !== newVersion.id)]);
+      addAssistantMessage(`Saved structured version ${newVersion.versionNumber}.`);
+    } finally {
+      setIsSavingVersion(false);
+    }
   }
 
   async function restoreVersion(version: PaperVersion) {
@@ -664,7 +792,8 @@ export function StudioApp() {
       }
       win.document.write(html);
       win.document.close();
-      win.print();
+      // print is triggered by the load-event script inside the HTML —
+      // waits for KaTeX CSS, JS, and web fonts before opening print dialog
       return;
     }
 
@@ -740,6 +869,7 @@ export function StudioApp() {
         onOpenSetup={openGuidedSetup}
         onOpenView={setAppView}
         onRefresh={() => void refreshDashboard()}
+        isSaving={isSavingVersion}
         onSave={() => void saveCurrentVersion()}
         onToggleAI={() => {
           setRightPanel("chat");
@@ -832,7 +962,7 @@ export function StudioApp() {
             chatMessages={chatMessages}
             isOpen={isAssistantOpen}
             isBusy={isGenerating || isChatting}
-            canUndoAiEdit={!!preAiEditPaper}
+            canUndoAiEdit={undoStack.length > 0}
             preview={retrievalPreview}
             questionBank={questionBank}
             rightPanel={rightPanel}
@@ -847,9 +977,10 @@ export function StudioApp() {
             onSetPanel={setRightPanel}
             onToggleOpen={() => setIsAssistantOpen((current) => !current)}
             onUndoAiEdit={() => {
-              if (preAiEditPaper) {
-                updateSelectedPaper(preAiEditPaper);
-                setPreAiEditPaper(null);
+              if (undoStack.length > 0) {
+                const prev = undoStack[undoStack.length - 1];
+                setUndoStack((stack) => stack.slice(0, -1));
+                updateSelectedPaper(prev);
                 addAssistantMessage("Reverted the last AI edit.");
               }
             }}
@@ -889,6 +1020,8 @@ export function StudioApp() {
           onGenerate={generateFromCreateFlow}
           onPromptChange={setPrompt}
           prompt={prompt}
+          request={request}
+          onUpdateRequest={updateRequest}
         />
       )}
       <MathContextMenu onInsert={(insert) => insertIntoActiveRichTextEditor(insert)} />
@@ -900,6 +1033,7 @@ function PaperLabTopBar({
   aiOpen,
   appView,
   currentTitle,
+  isSaving,
   onExport,
   onHome,
   onOpenSetup,
@@ -915,6 +1049,7 @@ function PaperLabTopBar({
   aiOpen: boolean;
   appView: AppView;
   currentTitle: string;
+  isSaving: boolean;
   onExport: (format: "pdf" | "docx") => void;
   onHome: () => void;
   onOpenSetup: () => void;
@@ -1011,8 +1146,8 @@ function PaperLabTopBar({
                       </button>
                     ))
                   )}
-                  <button className="mt-1 w-full rounded-md border border-[var(--border)] px-2 py-2 text-left text-xs font-bold text-[var(--accent-deep)] hover:bg-[var(--accent-soft)]" onClick={onSave} type="button">
-                    Save current as new version
+                  <button className="mt-1 w-full rounded-md border border-[var(--border)] px-2 py-2 text-left text-xs font-bold text-[var(--accent-deep)] hover:bg-[var(--accent-soft)] disabled:opacity-50" disabled={isSaving} onClick={onSave} type="button">
+                    {isSaving ? "Saving…" : "Save current as new version"}
                   </button>
                 </div>
               )}
@@ -1043,7 +1178,7 @@ function PaperLabTopBar({
               <Check size={14} className="text-emerald-700" />
               Saved
             </span>
-            <button className="icon-button" onClick={onSave} title="Save version" type="button">
+            <button className="icon-button disabled:opacity-50" disabled={isSaving} onClick={onSave} title={isSaving ? "Saving…" : "Save version"} type="button">
               <Save size={16} />
             </button>
             <div className="relative">
@@ -1490,8 +1625,10 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
   const [smartValues, setSmartValues] = useState<Record<string, string>>({});
   const activeSmartTemplate = activeSmartId ? smartInsertTemplates[activeSmartId] : null;
   const [formulasOpen, setFormulasOpen] = useState(false);
-  const [specialCharsOpen, setSpecialCharsOpen] = useState(false);
+  const [scienceOpen, setScienceOpen] = useState(false);
   const [isMathBoxMode, setIsMathBoxMode] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<"alpha" | "pm" | null>(null);
+  const [textColor, setTextColor] = useState("#000000");
 
   useEffect(() => {
     const openAt = (x: number, y: number, mathBox: boolean, surface: HTMLElement | null) => {
@@ -1530,6 +1667,7 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
       setPosition(null);
       setActiveSmartId(null);
       setSmartValues({});
+      setOpenDropdown(null);
       activeSurfaceRef.current = null;
       staticInsertAppliedRef.current = false;
       smartInsertAppliedRef.current = false;
@@ -1622,288 +1760,280 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
     activeSurfaceRef.current = null;
   };
 
+  // shared button style helpers
+  const symBtn = "flex h-9 w-full items-center justify-center rounded-md bg-[#2a2a3e] text-sm font-bold text-white hover:bg-[#3c3c58] transition-colors";
+  const menuItem = "flex w-full items-center gap-2.5 px-4 py-2 text-[13px] text-[#e0e0f0] hover:bg-[#2a2a3e] transition-colors text-left";
+
   return (
     <div
       ref={menuRef}
-      className="fixed z-[70] max-h-[72vh] w-[340px] overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-3 shadow-[var(--shadow-xl)]"
+      className="fixed z-[70] w-[260px] overflow-hidden rounded-xl border border-[#35355a] bg-[#16162a] shadow-2xl"
       style={{ left: position.x, top: position.y }}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">
-          {activeSmartTemplate ? "Smart insert" : isMathBoxMode ? "LaTeX insert" : "Insert symbol"}
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[#2a2a3e] px-4 py-2">
+        <span className="font-mono text-[9px] font-black uppercase tracking-[0.2em] text-[#7878a0]">
+          {activeSmartTemplate ? "Smart insert" : isMathBoxMode ? "LaTeX insert" : "Right-click on text"}
         </span>
-        <button className="text-xs font-black text-[var(--ink-3)] hover:text-[var(--ink)]" onClick={() => setPosition(null)} type="button">
-          Esc
-        </button>
+        <button className="text-[10px] font-black text-[#7878a0] hover:text-white" onClick={() => setPosition(null)} type="button">ESC</button>
       </div>
+
       {activeSmartTemplate ? (
-        <div className="space-y-3">
+        <div className="p-3 space-y-3">
           <div className="flex items-center justify-between gap-2">
+            <button className="text-xs font-bold text-[#aaaadd] hover:text-white" onClick={() => { setActiveSmartId(null); setSmartValues({}); }} type="button">← Back</button>
             <button
-              className="text-xs font-bold text-[var(--accent)] hover:text-[var(--accent-deep)]"
-              onClick={() => {
-                setActiveSmartId(null);
-                setSmartValues({});
-              }}
-              type="button"
-            >
-              ← Back to symbols
-            </button>
-            <button
-              className="rounded-full border border-[var(--accent-soft)] bg-[var(--accent-soft)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--accent-deep)] hover:border-[var(--accent)]"
+              className="rounded-full bg-[#5555aa] px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white hover:bg-[#7777cc]"
               onClick={applySmartInsert}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                applySmartInsert();
-              }}
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applySmartInsert(); }}
               type="button"
-            >
-              Insert now
-            </button>
+            >Insert now</button>
           </div>
           <div>
-            <div className="font-display text-xl italic leading-tight text-[var(--ink)]">{activeSmartTemplate.label}</div>
-            <p className="mt-1 text-xs leading-5 text-[var(--ink-2)]">{activeSmartTemplate.description}</p>
+            <div className="text-base italic text-white">{activeSmartTemplate?.label}</div>
+            <p className="mt-1 text-xs text-[#9999bb]">{activeSmartTemplate?.description}</p>
           </div>
           <div className="grid gap-2">
-            {activeSmartTemplate.fields.map((field) => (
-              <label key={field.key} className="grid gap-1 text-xs font-bold text-[var(--ink-2)]">
+            {activeSmartTemplate?.fields.map((field) => (
+              <label key={field.key} className="grid gap-1 text-xs font-bold text-[#9999bb]">
                 <span>{field.label}</span>
                 <input
-                  className="h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  className="h-8 rounded-md border border-[#35355a] bg-[#2a2a3e] px-2 font-mono text-xs text-white outline-none focus:border-[#7777cc]"
                   placeholder={field.placeholder}
                   value={smartValues[field.key] ?? ""}
-                  onChange={(event) => setSmartValues((current) => ({ ...current, [field.key]: event.target.value }))}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" || !activeSmartTemplate) return;
-                    event.preventDefault();
-                    applySmartInsert();
-                  }}
+                  onChange={(e) => setSmartValues((c) => ({ ...c, [field.key]: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applySmartInsert(); } }}
                 />
               </label>
             ))}
           </div>
-          <div className="rounded-md border border-[var(--border)] bg-white px-3 py-2">
-            <div className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">LaTeX preview</div>
-            <code className="mt-1 block break-words font-mono text-[11px] text-[var(--ink-2)]">{previewValue}</code>
+          <div className="rounded-md border border-[#35355a] bg-[#0d0d1a] px-3 py-2">
+            <div className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[#7878a0]">LaTeX preview</div>
+            <code className="mt-1 block break-words font-mono text-[11px] text-[#aaaadd]">{previewValue}</code>
           </div>
           <button
-            className="w-full rounded-md bg-[var(--ink)] px-3 py-2 text-xs font-black text-[var(--paper-tint)] hover:bg-[var(--accent-deep)]"
+            className="w-full rounded-md bg-[#5555aa] px-3 py-2 text-xs font-black text-white hover:bg-[#7777cc]"
             onClick={applySmartInsert}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              applySmartInsert();
-            }}
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applySmartInsert(); }}
             type="button"
-          >
-            Insert {activeSmartTemplate.label}
-          </button>
+          >Insert {activeSmartTemplate?.label}</button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <>
+          {/* ── 12 Math symbols, 2 × 6 grid ────────────────────────── */}
           {isMathBoxMode && (
-            <div className="rounded-md border border-[var(--accent-soft)] bg-[var(--accent-soft)] px-3 py-1.5 text-[10px] font-bold text-[var(--accent-deep)]">
+            <div className="mx-3 mt-2 rounded-md border border-[#4a4a7a] bg-[#2a2a3e] px-3 py-1.5 text-[10px] font-bold text-[#aaaadd]">
               Inserting into LaTeX formula editor
             </div>
           )}
-          {/* ALIGNMENT — not applicable inside a LaTeX formula */}
-          {!isMathBoxMode && <section>
-            <div className="mb-1.5 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Alignment</div>
-            <div className="flex gap-1.5">
-              {([["Left", "left", "▸ Left"], ["Center", "center", "≡ Center"], ["Right", "right", "◂ Right"]] as const).map(([label, align, display]) => (
-                <button
-                  key={align}
-                  className="flex-1 rounded-md border border-[var(--border)] bg-[var(--surface)] py-1.5 text-[11px] font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onClick={() => {
-                    activateRichTextEditorFromElement(activeSurfaceRef.current);
-                    commandActiveRichTextEditor((ed) => ed.chain().focus().setTextAlign(align).run());
-                    setPosition(null);
-                  }}
-                  type="button"
-                  aria-label={label}
-                >
-                  {display}
-                </button>
-              ))}
+          <div className="grid grid-cols-6 gap-1 p-3 pb-2">
+            {/* 1 · x² superscript */}
+            <button className={symBtn} title="Superscript (x²)" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "x^{2}" }); }} type="button">x²</button>
+            {/* 2 · x₂ subscript */}
+            <button className={symBtn} title="Subscript (x₂)" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "x_{2}" }); }} type="button">x₂</button>
+            {/* 3 · √ root */}
+            <button className={symBtn} title="Square root" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "\\sqrt{x}" }); }} type="button">√</button>
+            {/* 4 · π */}
+            <button className={symBtn} title="Pi" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "\\pi" }); }} type="button">π</button>
+            {/* 5 · α with dropdown */}
+            <div className="relative">
+              <button
+                className={`${symBtn} gap-0.5 ${openDropdown === "alpha" ? "bg-[#4a4a7a]" : ""}`}
+                title="Greek letters"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDropdown(openDropdown === "alpha" ? null : "alpha"); }}
+                type="button"
+              >α<span className="text-[7px] text-[#8888aa]">▾</span></button>
+              {openDropdown === "alpha" && (
+                <div className="absolute right-0 top-full z-20 mt-1 w-max grid grid-cols-4 gap-1 rounded-lg border border-[#35355a] bg-[#16162a] p-2 shadow-2xl">
+                  {["β","γ","ρ","σ","δ","ε","θ","λ","μ","φ","ω","Ω"].map((ch) => (
+                    <button key={ch} className="flex h-7 w-7 items-center justify-center rounded bg-[#2a2a3e] text-sm font-bold text-white hover:bg-[#5555aa]" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }} type="button">{ch}</button>
+                  ))}
+                </div>
+              )}
             </div>
-          </section>}
-
-          {/* FORMULAS */}
-          <section>
+            {/* 6 · ∫ integral */}
+            <button className={symBtn} title="Integral" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "\\int_{a}^{b} f(x)\\,dx" }); }} type="button">∫</button>
+            {/* 7 · ∂ differentiation */}
+            <button className={symBtn} title="Partial / differentiation" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "\\frac{\\partial}{\\partial x}" }); }} type="button">∂</button>
+            {/* 8 · lim */}
+            <button className={`${symBtn} text-xs`} title="Limit" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "\\lim_{x \\to \\infty}" }); }} type="button">lim</button>
+            {/* 9 · ± with dropdown */}
+            <div className="relative">
+              <button
+                className={`${symBtn} gap-0.5 ${openDropdown === "pm" ? "bg-[#4a4a7a]" : ""}`}
+                title="Comparison operators"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDropdown(openDropdown === "pm" ? null : "pm"); }}
+                type="button"
+              >±<span className="text-[7px] text-[#8888aa]">▾</span></button>
+              {openDropdown === "pm" && (
+                <div className="absolute left-0 top-full z-20 mt-1 w-max grid grid-cols-4 gap-1 rounded-lg border border-[#35355a] bg-[#16162a] p-2 shadow-2xl">
+                  {["≤","≥","≠","≈","→","⇒","∝","≡"].map((ch) => (
+                    <button key={ch} className="flex h-7 w-7 items-center justify-center rounded bg-[#2a2a3e] text-sm font-bold text-white hover:bg-[#5555aa]" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }} type="button">{ch}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* 10 · Σ summation */}
+            <button className={symBtn} title="Summation" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "\\sum_{i=1}^{n}" }); }} type="button">Σ</button>
+            {/* 11 · a/b fraction — opens smart insert */}
+            <button className={`${symBtn} text-xs`} title="Fraction (smart)" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); startSmartInsert(smartInsertTemplates.fraction); }} type="button">a/b</button>
+            {/* 12 · □ LaTeX box */}
             <button
-              className="flex w-full items-center justify-between font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)] hover:text-[var(--ink)]"
-              onClick={() => setFormulasOpen((v) => !v)}
-              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              className="flex h-9 w-full items-center justify-center rounded-md border-2 border-[#6666aa] bg-transparent text-sm font-bold text-[#aaaadd] hover:border-white hover:text-white transition-colors"
+              title="Insert LaTeX box"
+              onPointerDown={(e) => {
+                e.preventDefault(); e.stopPropagation();
+                if (!isMathBoxMode) { activateRichTextEditorFromElement(activeSurfaceRef.current); openMathLiveEditorForActiveRichTextEditor(); }
+                setPosition(null);
+              }}
               type="button"
-            >
-              <span>Formulas</span>
-              <span>{formulasOpen ? "▲" : "▼"}</span>
-            </button>
-            {formulasOpen && (
-              <div className="mt-2 space-y-2">
-                <div>
-                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--ink-3)]">Maths</div>
+            >□</button>
+          </div>
+
+          <div className="mx-3 h-px bg-[#2a2a3e]" />
+
+          {/* ── Text options ─────────────────────────────────────────── */}
+          {!isMathBoxMode && (
+            <>
+              {/* Paste options row */}
+              <div className="px-4 py-2">
+                <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-[#7878a0]">Paste options:</span>
+                <div className="mt-2 flex gap-1.5">
+                  <button className="flex h-8 w-10 items-center justify-center rounded-md border border-[#35355a] bg-[#2a2a3e] text-base text-white hover:bg-[#3c3c58]" title="Paste"
+                    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={async () => { try { const t = await navigator.clipboard.readText(); applyStaticInsert({ type: "text", value: t }); } catch { document.execCommand("paste"); setPosition(null); } }}
+                    type="button">📋</button>
+                  <button className="flex h-8 w-10 items-center justify-center rounded-md border border-[#35355a] bg-[#2a2a3e] text-sm font-black text-white hover:bg-[#3c3c58]" title="Paste as plain text"
+                    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={async () => { try { const t = await navigator.clipboard.readText(); applyStaticInsert({ type: "text", value: t.replace(/<[^>]*>/g, "") }); } catch { setPosition(null); } }}
+                    type="button">A</button>
+                </div>
+              </div>
+              <div className="h-px bg-[#2a2a3e]" />
+              {/* Cut */}
+              <button className="flex w-full items-center justify-between px-4 py-2 text-[13px] text-[#e0e0f0] hover:bg-[#2a2a3e] transition-colors"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={() => { activateRichTextEditorFromElement(activeSurfaceRef.current); document.execCommand("cut"); setPosition(null); }}
+                type="button">
+                <span className="flex items-center gap-2.5">✂ Cut</span>
+                <span className="text-[11px] text-[#7878a0]">Ctrl X</span>
+              </button>
+              {/* Copy */}
+              <button className="flex w-full items-center justify-between px-4 py-2 text-[13px] text-[#e0e0f0] hover:bg-[#2a2a3e] transition-colors"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={() => { activateRichTextEditorFromElement(activeSurfaceRef.current); document.execCommand("copy"); setPosition(null); }}
+                type="button">
+                <span className="flex items-center gap-2.5">⎘ Copy</span>
+                <span className="text-[11px] text-[#7878a0]">Ctrl C</span>
+              </button>
+              <div className="h-px bg-[#2a2a3e]" />
+              {/* Insert LaTeX box */}
+              <button className={menuItem}
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={() => { activateRichTextEditorFromElement(activeSurfaceRef.current); openMathLiveEditorForActiveRichTextEditor(); setPosition(null); }}
+                type="button">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[#8888aa] text-[9px] font-black text-[#aaaadd]">f</span>
+                Insert LaTeX box
+              </button>
+              {/* Maths formula (collapsible) */}
+              <button className={`${menuItem} justify-between`} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => setFormulasOpen((v) => !v)} type="button">
+                <span className="flex items-center gap-2.5">⊞ Maths formula</span>
+                <span className="text-[#7878a0]">{formulasOpen ? "▼" : "▶"}</span>
+              </button>
+              {formulasOpen && (
+                <div className="border-t border-[#2a2a3e] px-4 py-2">
                   <div className="flex flex-wrap gap-1">
                     {[
                       { label: "a/b", insert: { type: "math" as const, value: "\\frac{a}{b}" } },
-                      { label: "√x", insert: { type: "math" as const, value: "\\sqrt{x}" } },
                       { label: "xⁿ", insert: { type: "math" as const, value: "x^{n}" } },
-                      { label: "∫", insert: { type: "math" as const, value: "\\int_{a}^{b}" } },
-                      { label: "Σ", insert: { type: "math" as const, value: "\\sum_{i=1}^{n}" } },
-                      { label: "lim", insert: { type: "math" as const, value: "\\lim_{x \\to 0}" } },
-                      { label: "log", insert: { type: "math" as const, value: "\\log_{a}(b)" } },
-                      { label: "aⁿ√x", insert: { type: "math" as const, value: "\\sqrt[n]{x}" } },
                       { label: "d/dx", insert: { type: "math" as const, value: "\\frac{d}{dx}" } },
                       { label: "∂/∂x", insert: { type: "math" as const, value: "\\frac{\\partial}{\\partial x}" } },
+                      { label: "log", insert: { type: "math" as const, value: "\\log_{a}(b)" } },
+                      { label: "ⁿ√x", insert: { type: "math" as const, value: "\\sqrt[n]{x}" } },
                     ].map((item) => (
-                      <button key={item.label} className="min-h-7 rounded border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }}
-                        type="button">{item.label}</button>
+                      <button key={item.label} className="rounded border border-[#35355a] bg-[#2a2a3e] px-2 py-1 text-xs font-bold text-white hover:bg-[#5555aa]"
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }} type="button">{item.label}</button>
                     ))}
                   </div>
                 </div>
-                <div>
-                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--ink-3)]">Science</div>
+              )}
+              {/* Science formula (collapsible) */}
+              <button className={`${menuItem} justify-between`} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => setScienceOpen((v) => !v)} type="button">
+                <span className="flex items-center gap-2.5">⊗ Science formula</span>
+                <span className="text-[#7878a0]">{scienceOpen ? "▼" : "▶"}</span>
+              </button>
+              {scienceOpen && (
+                <div className="border-t border-[#2a2a3e] px-4 py-2">
                   <div className="flex flex-wrap gap-1">
                     {[
                       { label: "H₂O", insert: { type: "text" as const, value: "H₂O" } },
                       { label: "CO₂", insert: { type: "text" as const, value: "CO₂" } },
-                      { label: "CₙHₙ", insert: { type: "text" as const, value: "CₙHₙ" } },
-                      { label: "CₙH₂ₙ", insert: { type: "text" as const, value: "CₙH₂ₙ" } },
-                      { label: "CₙH₂ₙ₊₁OH", insert: { type: "text" as const, value: "CₙH₂ₙ₊₁OH" } },
-                      { label: "NaCl", insert: { type: "text" as const, value: "NaCl" } },
-                      { label: "→", insert: { type: "text" as const, value: " → " } },
-                      { label: "⇌", insert: { type: "text" as const, value: " ⇌ " } },
                       { label: "F=ma", insert: { type: "math" as const, value: "F = ma" } },
                       { label: "E=mc²", insert: { type: "math" as const, value: "E = mc^2" } },
+                      { label: "→", insert: { type: "text" as const, value: " → " } },
+                      { label: "⇌", insert: { type: "text" as const, value: " ⇌ " } },
                     ].map((item) => (
-                      <button key={item.label} className="min-h-7 rounded border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }}
-                        type="button">{item.label}</button>
+                      <button key={item.label} className="rounded border border-[#35355a] bg-[#2a2a3e] px-2 py-1 text-xs font-bold text-white hover:bg-[#5555aa]"
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }} type="button">{item.label}</button>
                     ))}
                   </div>
                 </div>
+              )}
+              {/* Special character */}
+              <button className={`${menuItem} justify-between`} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => {
+                applyStaticInsert({ type: "html", value: '<span>Ω</span>' });
+              }}
+              type="button">
+                <span className="flex items-center gap-2.5">Ω Special character</span>
+              </button>
+              <div className="h-px bg-[#2a2a3e]" />
+              {/* Insert table */}
+              <button className={menuItem}
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={() => { applyStaticInsert({ type: "html", value: '<table style="border-collapse:collapse;width:100%"><tr><td style="border:1px solid #cbd5e1;padding:4px">A</td><td style="border:1px solid #cbd5e1;padding:4px">B</td></tr><tr><td style="border:1px solid #cbd5e1;padding:4px">C</td><td style="border:1px solid #cbd5e1;padding:4px">D</td></tr></table>' }); }}
+                type="button">⊞ Insert table</button>
+              {/* Insert matrix */}
+              <button className={menuItem}
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={() => { applyStaticInsert({ type: "math", value: "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}" }); }}
+                type="button">⊡ Insert matrix</button>
+              <div className="h-px bg-[#2a2a3e]" />
+              {/* Text color */}
+              <div className="flex items-center justify-between px-4 py-2">
+                <span className="flex items-center gap-2.5 text-[13px] text-[#e0e0f0]">
+                  <span className="font-black">A</span> Text color
+                </span>
+                <input type="color" className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                  value={textColor}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onChange={(e) => { setTextColor(e.target.value); activateRichTextEditorFromElement(activeSurfaceRef.current); commandActiveRichTextEditor((ed) => ed.chain().focus().setColor(e.target.value).run()); }}
+                />
               </div>
-            )}
-          </section>
-
-          {/* SPECIAL CHARACTERS */}
-          <section>
-            <button
-              className="flex w-full items-center justify-between font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)] hover:text-[var(--ink)]"
-              onClick={() => setSpecialCharsOpen((v) => !v)}
-              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-              type="button"
-            >
-              <span>Special Characters</span>
-              <span>{specialCharsOpen ? "▲" : "▼"}</span>
-            </button>
-            {specialCharsOpen && (
-              <div className="mt-2 space-y-2">
-                <div>
-                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--ink-3)]">Currency</div>
-                  <div className="flex flex-wrap gap-1">
-                    {["₹", "$", "€", "£", "¥", "¢", "₩", "₪"].map((ch) => (
-                      <button key={ch} className="min-h-7 min-w-8 rounded border border-[var(--border)] bg-[var(--surface)] text-sm font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }}
-                        type="button">{ch}</button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--ink-3)]">Greek</div>
-                  <div className="flex flex-wrap gap-1">
-                    {["α", "β", "γ", "δ", "ε", "θ", "λ", "μ", "π", "σ", "φ", "ω", "Γ", "Δ", "Σ", "Ω", "∞", "±", "×", "÷", "≈", "≠", "≤", "≥"].map((ch) => (
-                      <button key={ch} className="min-h-7 min-w-8 rounded border border-[var(--border)] bg-[var(--surface)] text-sm font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }}
-                        type="button">{ch}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* TEXT COLOR + HIGHLIGHT + NUMBERING — not applicable in formula editor */}
-          {!isMathBoxMode && (
-            <section>
-              <div className="mb-1.5 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Text</div>
-              <div className="flex flex-wrap gap-1.5">
-                <label className="flex min-h-8 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]" title="Text color">
-                  <span>A</span>
-                  <input type="color" className="h-4 w-4 cursor-pointer border-0 bg-transparent p-0" defaultValue="#e63946"
-                    onChange={(e) => {
-                      activateRichTextEditorFromElement(activeSurfaceRef.current);
-                      commandActiveRichTextEditor((ed) => ed.chain().focus().setColor(e.target.value).run());
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                  />
-                </label>
-                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onClick={() => {
-                    activateRichTextEditorFromElement(activeSurfaceRef.current);
-                    commandActiveRichTextEditor((ed) => ed.chain().focus().toggleHighlight({ color: "#fff2a8" }).run());
-                    setPosition(null);
-                  }}
-                  type="button" title="Highlight">🖊 Highlight</button>
-                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onClick={() => {
-                    activateRichTextEditorFromElement(activeSurfaceRef.current);
-                    commandActiveRichTextEditor((ed) => ed.chain().focus().toggleBulletList().run());
-                    setPosition(null);
-                  }}
-                  type="button" title="Bullet list">• List</button>
-                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onClick={() => {
-                    activateRichTextEditorFromElement(activeSurfaceRef.current);
-                    commandActiveRichTextEditor((ed) => ed.chain().focus().toggleOrderedList().run());
-                    setPosition(null);
-                  }}
-                  type="button" title="Numbered list">1. Numbered</button>
-              </div>
-            </section>
+              {/* Highlight */}
+              <button className={menuItem}
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={() => { activateRichTextEditorFromElement(activeSurfaceRef.current); commandActiveRichTextEditor((ed) => ed.chain().focus().toggleHighlight({ color: "#fff2a8" }).run()); setPosition(null); }}
+                type="button">🖊 Highlight</button>
+            </>
           )}
 
-          {/* INSERT OBJECTS */}
-          <section>
-            <div className="mb-1.5 font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Insert</div>
-            <div className="flex flex-wrap gap-1.5">
-              {!isMathBoxMode && (
-                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onClick={() => {
-                    applyStaticInsert({ type: "html", value: '<table style="border-collapse:collapse;width:100%"><tr><td style="border:1px solid #cbd5e1;padding:4px">A</td><td style="border:1px solid #cbd5e1;padding:4px">B</td></tr><tr><td style="border:1px solid #cbd5e1;padding:4px">C</td><td style="border:1px solid #cbd5e1;padding:4px">D</td></tr></table>' });
-                  }}
-                  type="button">⊞ Table</button>
-              )}
-              <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                onClick={() => {
-                  applyStaticInsert({ type: "math", value: "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}" });
-                }}
-                type="button">⊡ Matrix</button>
-              {!isMathBoxMode && (
-                <button className="min-h-8 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 text-xs font-black text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-deep)]"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    activateRichTextEditorFromElement(activeSurfaceRef.current);
-                    openMathLiveEditorForActiveRichTextEditor();
-                    setPosition(null);
-                  }}
-                  type="button">+ LaTeX box</button>
-              )}
+          {/* Math box mode extras */}
+          {isMathBoxMode && (
+            <div className="px-4 py-3">
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { label: "a/b", insert: { type: "math" as const, value: "\\frac{a}{b}" } },
+                  { label: "Matrix", insert: { type: "math" as const, value: "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}" } },
+                ].map((item) => (
+                  <button key={item.label} className="rounded border border-[#35355a] bg-[#2a2a3e] px-2 py-1 text-xs font-bold text-white hover:bg-[#5555aa]"
+                    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }} type="button">{item.label}</button>
+                ))}
+              </div>
             </div>
-          </section>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -2613,6 +2743,12 @@ function StepFineTune({
         </div>
       </div>
 
+      <SectionBlueprintEditor
+        blueprint={request.sectionBlueprint ?? []}
+        onChange={(bp) => onUpdateRequest("sectionBlueprint", bp)}
+        availableTypes={questionTypeOptions}
+      />
+
       <div className="flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
         <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-soft)] text-[var(--accent-deep)]">
           <Sparkles size={19} />
@@ -2805,32 +2941,267 @@ function sourceMixLabel(key: keyof DirectSourceMix) {
   return labels[key] ?? key;
 }
 
-function FreePromptModal({ onClose, onGenerate, onPromptChange, prompt }: { onClose: () => void; onGenerate: () => void; onPromptChange: (value: string) => void; prompt: string }) {
+function SectionBlueprintEditor({
+  blueprint,
+  onChange,
+  availableTypes,
+}: {
+  blueprint: SectionBlueprint[];
+  onChange: (blueprint: SectionBlueprint[]) => void;
+  availableTypes: string[];
+}) {
+  const isActive = blueprint.length > 0;
+
+  const activate = () => {
+    onChange([
+      { id: crypto.randomUUID(), title: "Section A", questionTypes: ["MCQ"], questionCount: 10, marksEach: 1, difficulty: "Mixed" },
+      { id: crypto.randomUUID(), title: "Section B", questionTypes: ["Short Answer"], questionCount: 5, marksEach: 3, difficulty: "Mixed" },
+    ]);
+  };
+
+  const addSection = () => {
+    const label = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[blueprint.length] ?? String(blueprint.length + 1);
+    onChange([...blueprint, {
+      id: crypto.randomUUID(),
+      title: `Section ${label}`,
+      questionTypes: ["MCQ"],
+      questionCount: 5,
+      marksEach: 2,
+      difficulty: "Mixed",
+    }]);
+  };
+
+  const removeSection = (id: string) => onChange(blueprint.filter((s) => s.id !== id));
+
+  const updateSection = (id: string, patch: Partial<SectionBlueprint>) =>
+    onChange(blueprint.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+
+  const toggleType = (id: string, type: string) => {
+    const section = blueprint.find((s) => s.id === id);
+    if (!section) return;
+    const has = section.questionTypes.includes(type);
+    const next = has ? section.questionTypes.filter((t) => t !== type) : [...section.questionTypes, type];
+    if (next.length === 0) return;
+    updateSection(id, { questionTypes: next });
+  };
+
+  const totalMarks = blueprint.reduce((sum, s) => sum + s.questionCount * s.marksEach, 0);
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <FlowLabel>Section question types</FlowLabel>
+        {isActive ? (
+          <button
+            className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--ink-3)] hover:bg-[var(--surface)]"
+            onClick={() => onChange([])}
+            type="button"
+          >
+            Reset to auto
+          </button>
+        ) : (
+          <button
+            className="rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--accent-deep)] hover:bg-[var(--accent-soft-2)]"
+            onClick={activate}
+            type="button"
+          >
+            Customize
+          </button>
+        )}
+      </div>
+
+      {!isActive && (
+        <p className="text-xs text-[var(--ink-3)]">
+          AI distributes question types automatically. Click <span className="font-semibold text-[var(--accent-deep)]">Customize</span> to control which types go in each section.
+        </p>
+      )}
+
+      {isActive && (
+        <div className="space-y-2.5">
+          {blueprint.map((section) => (
+            <div key={section.id} className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] p-3">
+              {/* Header row: title + count + marks + remove */}
+              <div className="mb-2.5 flex items-center gap-2">
+                <input
+                  className="w-28 shrink-0 rounded border border-[var(--border-2)] bg-transparent px-2 py-0.5 text-sm font-bold text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  value={section.title}
+                  onChange={(e) => updateSection(section.id, { title: e.target.value })}
+                />
+                {/* Question count stepper */}
+                <div className="flex items-center gap-0.5 text-[11px] text-[var(--ink-3)]">
+                  <button
+                    className="flex h-5 w-5 items-center justify-center rounded border border-[var(--border-2)] bg-[var(--surface-2)] font-bold hover:bg-[var(--surface)]"
+                    onClick={() => updateSection(section.id, { questionCount: Math.max(1, section.questionCount - 1) })}
+                    type="button"
+                  >−</button>
+                  <span className="w-6 text-center font-bold text-[var(--ink)]">{section.questionCount}</span>
+                  <button
+                    className="flex h-5 w-5 items-center justify-center rounded border border-[var(--border-2)] bg-[var(--surface-2)] font-bold hover:bg-[var(--surface)]"
+                    onClick={() => updateSection(section.id, { questionCount: section.questionCount + 1 })}
+                    type="button"
+                  >+</button>
+                  <span className="ml-1">Qs</span>
+                </div>
+                {/* Marks per question stepper */}
+                <div className="flex items-center gap-0.5 text-[11px] text-[var(--ink-3)]">
+                  <button
+                    className="flex h-5 w-5 items-center justify-center rounded border border-[var(--border-2)] bg-[var(--surface-2)] font-bold hover:bg-[var(--surface)]"
+                    onClick={() => updateSection(section.id, { marksEach: Math.max(1, section.marksEach - 1) })}
+                    type="button"
+                  >−</button>
+                  <span className="w-5 text-center font-bold text-[var(--ink)]">{section.marksEach}</span>
+                  <button
+                    className="flex h-5 w-5 items-center justify-center rounded border border-[var(--border-2)] bg-[var(--surface-2)] font-bold hover:bg-[var(--surface)]"
+                    onClick={() => updateSection(section.id, { marksEach: section.marksEach + 1 })}
+                    type="button"
+                  >+</button>
+                  <span className="ml-1">m ea.</span>
+                </div>
+                <span className="ml-auto text-[11px] font-bold text-[var(--ink-3)]">
+                  {section.questionCount * section.marksEach}m
+                </span>
+                {blueprint.length > 1 && (
+                  <button
+                    className="flex h-5 w-5 items-center justify-center rounded text-[var(--ink-3)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+                    onClick={() => removeSection(section.id)}
+                    type="button"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              {/* Question type chip row */}
+              <div className="flex flex-wrap gap-1">
+                {availableTypes.map((type) => {
+                  const selected = section.questionTypes.includes(type);
+                  return (
+                    <button
+                      key={type}
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${
+                        selected
+                          ? "bg-[var(--accent)] text-[var(--paper-tint)]"
+                          : "border border-[var(--border-2)] bg-[var(--surface-2)] text-[var(--ink-2)] hover:border-[var(--accent)] hover:text-[var(--accent-deep)]"
+                      }`}
+                      onClick={() => toggleType(section.id, type)}
+                      type="button"
+                    >
+                      {type}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          {blueprint.length < 6 && (
+            <button
+              className="flex w-full items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-dashed border-[var(--border-2)] py-2 text-xs font-semibold text-[var(--ink-3)] hover:border-[var(--accent)] hover:text-[var(--accent-deep)]"
+              onClick={addSection}
+              type="button"
+            >
+              <Plus size={12} /> Add section
+            </button>
+          )}
+
+          <div className="text-right text-[11px] text-[var(--ink-3)]">
+            {blueprint.map((s) => `${s.title}: ${s.questionCount * s.marksEach}m`).join(" · ")}{" "}
+            — <span className="font-bold text-[var(--ink)]">{totalMarks} total marks</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FreePromptModal({
+  onClose,
+  onGenerate,
+  onPromptChange,
+  prompt,
+  request,
+  onUpdateRequest,
+}: {
+  onClose: () => void;
+  onGenerate: () => void;
+  onPromptChange: (value: string) => void;
+  prompt: string;
+  request: PaperRequest;
+  onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
+}) {
   const extracted = requestFromPrompt(prompt);
-  const rows = [
-    ["Board", extracted.board],
-    ["Class", extracted.classLevel ? `Class ${extracted.classLevel}` : ""],
-    ["Subject", extracted.subject],
-    ["Marks", extracted.totalMarks ? `${extracted.totalMarks}` : ""],
-    ["Difficulty", extracted.difficulty],
-    ["Chapters", extracted.chapters.join(", ")],
-    ["Types", extracted.questionTypes.join(", ")],
-  ];
+  const [availableChapters, setAvailableChapters] = useState<string[]>([]);
+
+  // Fetch chapters whenever board/class/subject changes
+  useEffect(() => {
+    if (!request.board || !request.classLevel || !request.subject) return;
+    let cancelled = false;
+    fetchChaptersViaApi({ board: request.board, classLevel: request.classLevel, subject: request.subject }).then((ch) => {
+      if (!cancelled) setAvailableChapters(ch);
+    });
+    return () => { cancelled = true; };
+  }, [request.board, request.classLevel, request.subject]);
+
+  // Chapters to display: prefer explicitly set chapters on request, fall back to prompt extraction
+  const detectedChapters: string[] = (() => {
+    if (request.chapters && request.chapters.length > 0) return request.chapters;
+    if (extracted.chapter) return [extracted.chapter];
+    return [];
+  })();
+
+  // Normalize chapter weights: equal distribution if not set or chapters changed
+  const chapterWeights: Record<string, number> = (() => {
+    const existing = request.chapterWeights ?? {};
+    if (detectedChapters.length === 0) return {};
+    const equal = Math.round(100 / detectedChapters.length);
+    return Object.fromEntries(
+      detectedChapters.map((ch, i) => [
+        ch,
+        existing[ch] ?? (i === detectedChapters.length - 1
+          ? 100 - equal * (detectedChapters.length - 1)
+          : equal),
+      ]),
+    );
+  })();
+
+  const updateChapterWeight = (chapter: string, value: number) => {
+    const others = detectedChapters.filter((c) => c !== chapter);
+    const remaining = Math.max(0, 100 - value);
+    const otherTotal = others.reduce((s, c) => s + (chapterWeights[c] ?? 0), 0) || 1;
+    const next: Record<string, number> = { ...chapterWeights, [chapter]: value };
+    others.forEach((c, i) => {
+      next[c] = i === others.length - 1
+        ? Math.max(0, 100 - value - others.slice(0, -1).reduce((s, k) => s + next[k], 0))
+        : Math.round(((chapterWeights[c] ?? 0) / otherTotal) * remaining);
+    });
+    onUpdateRequest("chapterWeights", next);
+  };
+
+  // Difficulty mix derived from extracted difficulty string
+  const diffMix = request.difficultyMix ?? difficultyPresets[extracted.difficulty as keyof typeof difficultyPresets] ?? difficultyPresets.Medium;
+  const diffTotal = diffMix.easy + diffMix.medium + diffMix.hard || 100;
+
+  // Segment colors for chapter ratio bar
+  const CHAPTER_COLORS = ["bg-blue-400", "bg-violet-400", "bg-pink-400", "bg-teal-400", "bg-orange-400", "bg-cyan-400"];
+  const CHAPTER_TEXT_COLORS = ["text-blue-600", "text-violet-600", "text-pink-600", "text-teal-600", "text-orange-600", "text-cyan-600"];
 
   return (
     <div className="fixed inset-0 z-50 bg-[rgba(34,23,16,0.34)] p-0 backdrop-blur-sm">
-      <div className="scale-in mx-auto flex h-full max-h-[min(660px,100vh)] w-full max-w-[1024px] flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--bg)] shadow-[var(--shadow-xl)]">
+      <div className="scale-in mx-auto flex h-full max-h-[min(720px,100vh)] w-full max-w-[1080px] flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--bg)] shadow-[var(--shadow-xl)]">
         <CreateFlowHeader eyebrow="New paper · Free prompt" onClose={onClose} subtitle="Plain English. We will fill in the blanks and ask only if needed." title="Describe the paper" />
-        <div className="grid min-h-0 flex-1 gap-7 overflow-y-auto px-16 py-7 md:grid-cols-[1.25fr_0.9fr]">
-          <div>
-            <FlowLabel>Your prompt</FlowLabel>
-            <textarea
-              className="min-h-48 w-full resize-y rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-5 font-display text-xl leading-8 text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)] focus:border-[var(--accent)]"
-              onChange={(event) => onPromptChange(event.target.value)}
-              placeholder="e.g. CBSE Class 10 Maths, 50 marks unit test on Quadratic Equations, mix of MCQ and long answer..."
-              value={prompt}
-            />
-            <div className="mt-5">
+
+        <div className="grid min-h-0 flex-1 gap-7 overflow-y-auto px-10 py-7 md:grid-cols-[1.3fr_0.85fr]">
+          {/* Left: prompt textarea + samples */}
+          <div className="flex flex-col gap-5">
+            <div>
+              <FlowLabel>Your prompt</FlowLabel>
+              <textarea
+                className="min-h-44 w-full resize-y rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-5 font-display text-xl leading-8 text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)] focus:border-[var(--accent)]"
+                onChange={(event) => onPromptChange(event.target.value)}
+                placeholder="e.g. CBSE Class 10 Maths, 50 marks unit test on Quadratic Equations, mix of MCQ and long answer..."
+                value={prompt}
+              />
+            </div>
+            <div>
               <FlowLabel>Try one of these</FlowLabel>
               {[
                 "CBSE Class 10 Maths unit test on Quadratic Equations, 30 marks, only MCQs and short answers",
@@ -2843,19 +3214,194 @@ function FreePromptModal({ onClose, onGenerate, onPromptChange, prompt }: { onCl
               ))}
             </div>
           </div>
-          <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-5">
-            <FlowLabel>What I&apos;m picking up</FlowLabel>
-            <div className="mt-4 space-y-2">
-              {rows.map(([label, value]) => (
-                <div key={label} className="grid grid-cols-[92px_1fr] rounded-[var(--radius-sm)] border border-dashed border-[var(--border-2)] px-3 py-2 text-sm">
-                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">{label}</span>
-                  <span className={value ? "text-[var(--ink)]" : "italic text-[var(--ink-3)]"}>{value || "not specified"}</span>
+
+          {/* Right: extracted params + difficulty bar */}
+          <div className="flex flex-col gap-4">
+            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-5">
+              <FlowLabel>What I&apos;m picking up</FlowLabel>
+              <div className="mt-3 space-y-2">
+                {/* Board dropdown */}
+                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
+                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Board</span>
+                  <select
+                    className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    value={request.board}
+                    onChange={(e) => onUpdateRequest("board", e.target.value as PaperRequest["board"])}
+                  >
+                    {["CBSE", "ICSE"].map((b) => <option key={b} value={b}>{b}</option>)}
+                    {!["CBSE", "ICSE"].includes(extracted.board) && extracted.board && <option value={extracted.board}>{extracted.board}</option>}
+                  </select>
                 </div>
-              ))}
+                {/* Class dropdown */}
+                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
+                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Class</span>
+                  <select
+                    className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    value={request.classLevel}
+                    onChange={(e) => onUpdateRequest("classLevel", e.target.value as PaperRequest["classLevel"])}
+                  >
+                    {["6","7","8","9","10","11","12"].map((c) => <option key={c} value={c}>Class {c}</option>)}
+                  </select>
+                </div>
+                {/* Subject — text display only (dynamic) */}
+                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
+                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Subject</span>
+                  <span className={extracted.subject ? "text-sm text-[var(--ink)]" : "text-sm italic text-[var(--ink-3)]"}>{extracted.subject || "not specified"}</span>
+                </div>
+                {/* Marks display */}
+                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
+                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Marks</span>
+                  <span className={extracted.totalMarks ? "text-sm text-[var(--ink)]" : "text-sm italic text-[var(--ink-3)]"}>{extracted.totalMarks || "not specified"}</span>
+                </div>
+                {/* Chapters row */}
+                <div className="grid grid-cols-[88px_1fr] items-start gap-2">
+                  <span className="pt-0.5 font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Chapters</span>
+                  {detectedChapters.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {detectedChapters.map((ch) => (
+                        <span key={ch} className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                          {ch}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-sm italic text-[var(--ink-3)]">not detected</span>
+                  )}
+                </div>
+                {/* Source dropdown */}
+                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
+                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Source</span>
+                  <select
+                    className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    value={request.source}
+                    onChange={(e) => onUpdateRequest("source", e.target.value as PaperRequest["source"])}
+                  >
+                    {(["NCERT", "PYQ", "NCERT + PYQ"] as const).map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                {/* Difficulty dropdown */}
+                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
+                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Difficulty</span>
+                  <select
+                    className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    value={request.difficulty ?? extracted.difficulty ?? "Medium"}
+                    onChange={(e) => {
+                      const d = e.target.value as keyof typeof difficultyPresets;
+                      onUpdateRequest("difficulty", d);
+                      onUpdateRequest("difficultyMix", difficultyPresets[d] ?? difficultyPresets.Medium);
+                    }}
+                  >
+                    {["Easy", "Medium", "Hard", "Mixed"].map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              </div>
             </div>
+
+            {/* Chapter ratio panel — only when 2+ chapters detected */}
+            {detectedChapters.length >= 1 && (
+              <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-4">
+                <FlowLabel>Chapter ratio</FlowLabel>
+                {/* Segmented bar */}
+                <div className="mt-2 flex h-4 w-full overflow-hidden rounded-full">
+                  {detectedChapters.map((ch, i) => (
+                    <div
+                      key={ch}
+                      className={`h-full transition-all ${CHAPTER_COLORS[i % CHAPTER_COLORS.length]}`}
+                      style={{ width: `${chapterWeights[ch] ?? 0}%` }}
+                      title={`${ch}: ${chapterWeights[ch] ?? 0}%`}
+                    />
+                  ))}
+                </div>
+                {/* Legend */}
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {detectedChapters.map((ch, i) => (
+                    <span key={ch} className={`flex items-center gap-1 text-[11px] ${CHAPTER_TEXT_COLORS[i % CHAPTER_TEXT_COLORS.length]}`}>
+                      <span className={`inline-block h-2 w-2 rounded-full ${CHAPTER_COLORS[i % CHAPTER_COLORS.length]}`} />
+                      <span className="max-w-[120px] truncate font-medium" title={ch}>{ch}</span>
+                      <span className="font-bold">{chapterWeights[ch] ?? 0}%</span>
+                    </span>
+                  ))}
+                </div>
+                {/* Per-chapter sliders (only when 2+) */}
+                {detectedChapters.length >= 2 && (
+                  <div className="mt-3 grid gap-2">
+                    {detectedChapters.map((ch, i) => (
+                      <label key={ch} className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${CHAPTER_COLORS[i % CHAPTER_COLORS.length]}`} />
+                        <span className="w-20 truncate" title={ch}>{ch}</span>
+                        <input
+                          className="flex-1 accent-[var(--accent)]"
+                          type="range" min={0} max={100}
+                          value={chapterWeights[ch] ?? 0}
+                          onChange={(e) => updateChapterWeight(ch, Number(e.target.value))}
+                        />
+                        <span className="w-8 text-right font-bold">{chapterWeights[ch] ?? 0}%</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {/* Available chapters hint */}
+                {availableChapters.length > 0 && detectedChapters.length < availableChapters.length && (
+                  <p className="mt-2 text-[11px] italic text-[var(--ink-3)]">
+                    {availableChapters.length} chapters available in syllabus — mention more in your prompt to include them.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Weightage bar */}
+            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-4">
+              <FlowLabel>Difficulty weightage</FlowLabel>
+              {/* Segmented bar */}
+              <div className="mt-2 flex h-4 w-full overflow-hidden rounded-full">
+                <div className="h-full bg-emerald-400 transition-all" style={{ width: `${(diffMix.easy / diffTotal) * 100}%` }} title={`Easy ${diffMix.easy}%`} />
+                <div className="h-full bg-amber-400 transition-all" style={{ width: `${(diffMix.medium / diffTotal) * 100}%` }} title={`Medium ${diffMix.medium}%`} />
+                <div className="h-full bg-rose-500 transition-all" style={{ width: `${(diffMix.hard / diffTotal) * 100}%` }} title={`Hard ${diffMix.hard}%`} />
+              </div>
+              {/* Legend */}
+              <div className="mt-2 flex justify-between">
+                {[["Easy", "bg-emerald-400", diffMix.easy], ["Medium", "bg-amber-400", diffMix.medium], ["Hard", "bg-rose-500", diffMix.hard]].map(([label, color, pct]) => (
+                  <span key={String(label)} className="flex items-center gap-1 text-[11px] text-[var(--ink-2)]">
+                    <span className={`inline-block h-2 w-2 rounded-full ${String(color)}`} />
+                    {label} <span className="font-bold">{pct}%</span>
+                  </span>
+                ))}
+              </div>
+              {/* Sliders */}
+              <div className="mt-3 grid gap-2">
+                {(["easy", "medium", "hard"] as const).map((key) => (
+                  <label key={key} className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
+                    <span className="w-12 capitalize">{key}</span>
+                    <input
+                      className="flex-1 accent-[var(--accent)]"
+                      type="range" min={0} max={100}
+                      value={diffMix[key]}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        const other = (["easy","medium","hard"] as const).filter((k) => k !== key);
+                        const remaining = Math.max(0, 100 - val);
+                        const otherTotal = (diffMix[other[0]] + diffMix[other[1]]) || 1;
+                        const next = { ...diffMix, [key]: val, [other[0]]: Math.round((diffMix[other[0]] / otherTotal) * remaining) };
+                        next[other[1]] = Math.max(0, 100 - next[key] - next[other[0]]);
+                        onUpdateRequest("difficultyMix", next);
+                      }}
+                    />
+                    <span className="w-8 text-right font-bold">{diffMix[key]}%</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Section question types */}
+            <SectionBlueprintEditor
+              blueprint={request.sectionBlueprint ?? []}
+              onChange={(bp) => onUpdateRequest("sectionBlueprint", bp)}
+              availableTypes={questionTypeOptions}
+            />
           </div>
         </div>
-        <CreateFlowFooter leftText={prompt.trim() ? "Ready to generate from prompt" : "Start typing - suggestions appear live"} onBack={onClose} onNext={onGenerate} primaryLabel="Generate paper" showBack={false} sparkles />
+
+        <CreateFlowFooter leftText={prompt.trim() ? "Ready to generate from prompt" : "Start typing — suggestions appear live"} onBack={onClose} onNext={onGenerate} primaryLabel="Generate paper" showBack={false} sparkles />
       </div>
     </div>
   );
@@ -3857,31 +4403,18 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
     };
   }
 
-  if (isAddSectionCommand(lower)) {
-    const nextPaper = normalizePaperStructure({
-      ...paper,
-      sections: [
-        ...paper.sections,
-        {
-          id: crypto.randomUUID(),
-          title: inferSectionTitle(normalizedInstruction, paper.sections.length),
-          instructions: "Add questions or import source-backed questions into this section.",
-          difficulty: inferDifficulty(normalizedInstruction),
-          targetMarks: inferMarks(normalizedInstruction),
-          questions: [],
-        },
-      ],
-    });
-
-    return {
-      handled: true,
-      paper: applyDocumentStyle(nextPaper, documentStyle),
-      message: "Added a new editable section. You can now drag questions into it or import questions there.",
-      versionLabel: "chat_add_section",
-      toolName: "add_section",
-    };
+  // #190: explicit no-op phrases — don't forward to AI
+  if (/^\s*do\s+nothing\s*$/i.test(lower) || /^\s*(?:ignore|skip|cancel|never\s+mind)\s*$/i.test(lower)) {
+    return { handled: true, paper, message: "No changes made.", skipVersion: true };
   }
 
+  // #194: reject zero-marks instruction before it reaches the AI
+  if (/\b0\s*marks?\b/i.test(lower) && /\b(?:make|set|change|update)\b/i.test(lower)) {
+    return { handled: true, paper, message: "Setting 0 marks is not allowed. Please specify a positive number.", skipVersion: true };
+  }
+
+  // #237/#238: check specific question-add commands BEFORE the generic section check
+  // so "add MCQ in section B" and "add blank question to section A" don't trigger add_section
   if (isCreateMcqCommand(lower)) {
     const target = findQuestionRefFromInstruction(refs, normalizedInstruction);
     const targetSectionId = target?.section.id ?? paper.sections[0]?.id;
@@ -3933,6 +4466,32 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       message: "Added a blank editable question.",
       versionLabel: "chat_add_blank_question",
       toolName: "add_question",
+    };
+  }
+
+  // #237/#238: add_section now comes after more-specific question-add commands
+  if (isAddSectionCommand(lower)) {
+    const nextPaper = normalizePaperStructure({
+      ...paper,
+      sections: [
+        ...paper.sections,
+        {
+          id: crypto.randomUUID(),
+          title: inferSectionTitle(normalizedInstruction, paper.sections.length),
+          instructions: "Add questions or import source-backed questions into this section.",
+          difficulty: inferDifficulty(normalizedInstruction),
+          targetMarks: inferMarks(normalizedInstruction),
+          questions: [],
+        },
+      ],
+    });
+
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: "Added a new editable section. You can now drag questions into it or import questions there.",
+      versionLabel: "chat_add_section",
+      toolName: "add_section",
     };
   }
 
@@ -4201,6 +4760,10 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
     const subpart = target?.question.subparts?.find((item) => (item.label ?? "").toLowerCase() === partChoice.label);
     if (!target || !subpart) return { handled: true, paper, message: `I could not find part (${partChoice.label}) in Q${partChoice.questionNumber}.` };
 
+    if (subpart.optionalChoice) {
+      return { handled: true, paper, message: `Q${partChoice.questionNumber} part (${partChoice.label}) already has an OR choice. Remove the existing OR first.` };
+    }
+
     const nextPaper = updateSubpartInPaper(paper, target.section.id, target.question.id, subpart.id, {
       optionalChoice: {
         id: crypto.randomUUID(),
@@ -4226,6 +4789,10 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
     const target = refs.find((ref) => ref.number === wholeChoiceNumber);
     if (!target) return { handled: true, paper, message: `I could not find Q${wholeChoiceNumber} to add OR.` };
 
+    if (target.question.optionalChoice) {
+      return { handled: true, paper, message: `Q${wholeChoiceNumber} already has an OR choice. Remove the existing OR first, or use 'replace OR of Q${wholeChoiceNumber}' to update it.` };
+    }
+
     const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, {
       optionalChoice: emptyChoiceFromQuestion(target.question),
     });
@@ -4237,6 +4804,104 @@ function applyChatPaperCommand(paper: Paper, instruction: string, documentStyle:
       versionLabel: "chat_add_question_or",
       toolName: "add_question_or",
     };
+  }
+
+  // #226: local marks setter — avoids global-vs-section index confusion in the AI
+  const marksChange = parseSetMarksCommand(normalizedInstruction);
+  if (marksChange) {
+    const target = refs.find((ref) => ref.number === marksChange.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${marksChange.questionNumber}.` };
+    const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, { marks: marksChange.marks });
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Set Q${marksChange.questionNumber} marks to ${marksChange.marks}.`,
+      versionLabel: "chat_set_marks",
+      toolName: "add_subpart",
+    };
+  }
+
+  // #230: "convert Q5 to 3-part" — add multiple subparts at once
+  const convertToParts = parseConvertToPartsCommand(normalizedInstruction);
+  if (convertToParts) {
+    const target = refs.find((ref) => ref.number === convertToParts.questionNumber);
+    if (!target) return { handled: true, paper, message: `I could not find Q${convertToParts.questionNumber}.` };
+    const existing = target.question.subparts ?? [];
+    const toAdd = Math.max(0, convertToParts.count - existing.length);
+    if (toAdd === 0) {
+      return { handled: true, paper, message: `Q${convertToParts.questionNumber} already has ${existing.length} part${existing.length !== 1 ? "s" : ""}.` };
+    }
+    let subparts: PaperSubpart[] = [...existing];
+    for (let i = 0; i < toAdd; i++) {
+      const label = nextSubpartLabel(subparts);
+      subparts = [...subparts, { id: crypto.randomUUID(), label, text: "", richText: "", marks: 1, answer: "" }];
+    }
+    const nextPaper = updateQuestionInPaper(paper, target.section.id, target.question.id, { subparts });
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Q${convertToParts.questionNumber} now has ${convertToParts.count} parts. Fill in the text and marks for each.`,
+      versionLabel: "chat_convert_to_parts",
+      toolName: "add_subpart",
+    };
+  }
+
+  // #199: no-op type conversion — detect "convert Q1 MCQ to MCQ" before sending to AI
+  const typeConvTarget = parseNoOpTypeConversionCommand(normalizedInstruction);
+  if (typeConvTarget) {
+    const target = refs.find((ref) => ref.number === typeConvTarget.questionNumber);
+    if (target && normalizeQuestionTypeName(target.question.type) === typeConvTarget.type) {
+      return { handled: true, paper, message: `Q${typeConvTarget.questionNumber} is already ${target.question.type}.`, skipVersion: true };
+    }
+  }
+
+  // #229: swap two sections locally
+  const swapCmd = parseSwapSectionsCommand(normalizedInstruction);
+  if (swapCmd) {
+    const findSection = (key: string) => {
+      const k = key.toLowerCase();
+      const wordRe = new RegExp(`\\b${k}\\b`);
+      return (
+        paper.sections.find((s) => s.title.toLowerCase() === k) ??
+        paper.sections.find((s) => s.title.toLowerCase() === `section ${k}`) ??
+        paper.sections.find((s) => wordRe.test(s.title.toLowerCase()))
+      );
+    };
+    const sA = findSection(swapCmd.keyA);
+    const sB = findSection(swapCmd.keyB);
+    if (!sA || !sB || sA.id === sB.id) {
+      return { handled: true, paper, message: `Could not find both sections to swap (tried "${swapCmd.keyA}" and "${swapCmd.keyB}").` };
+    }
+    const idxA = paper.sections.indexOf(sA);
+    const idxB = paper.sections.indexOf(sB);
+    const sections = [...paper.sections];
+    [sections[idxA], sections[idxB]] = [sections[idxB], sections[idxA]];
+    const nextPaper = normalizePaperStructure({ ...paper, sections });
+    return {
+      handled: true,
+      paper: applyDocumentStyle(nextPaper, documentStyle),
+      message: `Swapped ${sA.title} and ${sB.title}.`,
+      versionLabel: "chat_swap_sections",
+      toolName: "swap_sections",
+    };
+  }
+
+  // #233: marks integrity check — answer locally without AI
+  if (/\b(check|verify|validate)\b/i.test(lower) && /\bmarks?\b/i.test(lower)) {
+    const total = paper.sections.reduce((t, s) => t + countedSectionMarks(s), 0);
+    const headerTotal = (paper as unknown as { summary?: { totalMarks?: number } }).summary?.totalMarks;
+    if (headerTotal !== undefined) {
+      const ok = total === headerTotal;
+      return {
+        handled: true,
+        paper,
+        message: ok
+          ? `Marks check passed: ${total} marks (matches header).`
+          : `Marks mismatch: paper totals ${total} marks but the header says ${headerTotal}. Adjust question marks to fix.`,
+        skipVersion: true,
+      };
+    }
+    return { handled: true, paper, message: `Current paper total: ${total} marks.`, skipVersion: true };
   }
 
   return { handled: false };
@@ -4437,6 +5102,97 @@ function parseAddWholeQuestionChoiceCommand(instruction: string) {
   return questionNumbersFromText(lower)[0] ?? null;
 }
 
+function parseSetMarksCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(set|change|update|make)\b/.test(lower) || !/\bmarks?\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  const toMatch = lower.match(/\bto\s+(\d+)\b/);
+  const marks = inferMarks(instruction) ?? (toMatch ? Number(toMatch[1]) : NaN);
+  if (!questionNumber || !Number.isFinite(marks) || marks <= 0) return null;
+  return { questionNumber, marks };
+}
+
+function parseConvertToPartsCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(convert|make|change|turn|split)\b/.test(lower)) return null;
+  if (!/\b(part|parts|subpart|subparts)\b/.test(lower)) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  const countMatch = lower.match(/\b(\d+)[- ]?(?:part|subpart)/);
+  const count = countMatch ? Number(countMatch[1]) : NaN;
+  if (!questionNumber || !Number.isFinite(count) || count < 2) return null;
+  return { questionNumber, count };
+}
+
+// #199: detect "convert Q1 MCQ to MCQ" — same-type no-op
+function parseNoOpTypeConversionCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(convert|change|make|turn)\b/.test(lower)) return null;
+  const toMatch = lower.match(/\bto\s+(mcq|multiple[\s-]?choice|sa|short[\s-]?answer|la|long[\s-]?answer|fill[\s-]?in|true[\s\/]false|case\s+study|vsa|very\s+short)\b/);
+  if (!toMatch) return null;
+  const questionNumber = questionNumbersFromText(lower)[0];
+  if (!questionNumber) return null;
+  return { questionNumber, type: normalizeQuestionTypeName(toMatch[1]) };
+}
+
+// #227: "generate N MCQs from Quadratic Equations"
+function parseGenerateQuestionsCommand(
+  instruction: string,
+): { count: number; questionType: string | null; topic: string } | null {
+  const lower = instruction.toLowerCase();
+  if (!/\b(?:generate|create|add|make|write|give\s+me)\b/.test(lower)) return null;
+  if (!/\b(?:questions?|mcqs?|multiple[\s-]?choice|short[\s-]?answer\b|\bsa\b|long[\s-]?answer\b|\bla\b|vsa\b|very[\s-]?short|fill[\s-]?in|fib\b|true[\s-]?false|case[\s-]?study)\b/.test(lower)) return null;
+
+  const countMatch = lower.match(/\b(\d+)\b/);
+  if (!countMatch) return null;
+  const count = parseInt(countMatch[1], 10);
+  if (count < 1 || count > 20) return null;
+
+  let questionType: string | null = null;
+  if (/\bmcqs?\b|\bmultiple[\s-]?choice\b/.test(lower)) questionType = "MCQ";
+  else if (/\bvsa\b|\bvery[\s-]?short\b/.test(lower)) questionType = "VSA";
+  else if (/\bla\b|\blong[\s-]?answer\b/.test(lower)) questionType = "LA";
+  else if (/\bsa\b|\bshort[\s-]?answer\b/.test(lower)) questionType = "SA";
+  else if (/\bfill[\s-]?in\b|\bfib\b/.test(lower)) questionType = "Fill in the Blanks";
+  else if (/\btrue[\s-]?false\b/.test(lower)) questionType = "True/False";
+  else if (/\bcase[\s-]?study\b/.test(lower)) questionType = "Case Study";
+
+  const topicMatch = instruction.match(/\b(?:from|on|about|related\s+to|based\s+on|of|for)\s+(.+)$/i);
+  if (!topicMatch) return null;
+  const topic = topicMatch[1].trim().replace(/[.!?]+$/, "");
+  if (!topic) return null;
+
+  return { count, questionType, topic };
+}
+
+// #229: "swap/exchange/switch section(s) A and/with B"
+function parseSwapSectionsCommand(instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (!/\b(?:swap|exchange|switch|interchange)\b/.test(lower)) return null;
+  if (!/\bsections?\b/.test(lower)) return null;
+
+  // "swap section A and/with section B" — both names prefixed with "section"
+  const m1 = lower.match(/\bsections?\s+([a-z][a-z0-9]*)\s+(?:and|with)\s+sections?\s+([a-z][a-z0-9]*)(?:\s|$)/);
+  if (m1) return { keyA: m1[1].trim(), keyB: m1[2].trim() };
+
+  // "swap sections A and/with B" — second name has no "section" prefix
+  const m2 = lower.match(/\bsections?\s+([a-z][a-z0-9]*)\s+(?:and|with)\s+([a-z][a-z0-9]*)(?:\s|$)/);
+  if (m2) return { keyA: m2[1].trim(), keyB: m2[2].trim() };
+
+  return null;
+}
+
+function normalizeQuestionTypeName(raw: string) {
+  const s = raw.toLowerCase().replace(/[-\s]+/g, "");
+  if (s.includes("mcq") || s.includes("multiplechoice")) return "MCQ";
+  if (s.includes("shortanswer") || s === "sa") return "SA";
+  if (s.includes("longanswer") || s === "la") return "LA";
+  if (s.includes("fill")) return "Fill in the Blanks";
+  if (s.includes("true") || s.includes("false")) return "True/False";
+  if (s.includes("case")) return "Case Study";
+  if (s.includes("veryshort") || s === "vsa") return "VSA";
+  return raw.trim();
+}
+
 function parseSaveQuestionToBankCommand(instruction: string) {
   const lower = instruction.toLowerCase();
   if (!/\bsave\b/.test(lower) || !/\b(bank|question bank|library|reuse)\b/.test(lower)) return null;
@@ -4499,7 +5255,12 @@ function isSaveVersionCommand(instruction: string) {
 }
 
 function isAddSectionCommand(instruction: string) {
-  return /\b(add|create|insert)\b/.test(instruction) && /\bsection\b/.test(instruction);
+  // #237/#238: only match when "section" is the primary target, not a location ("in section A", "to section B")
+  return (
+    /\b(add|create|insert)\b/.test(instruction) &&
+    /\bsection\b/.test(instruction) &&
+    !/\b(in|to|into|for)\s+(?:the\s+)?section\b/.test(instruction)
+  );
 }
 
 function isCreateMcqCommand(instruction: string) {
@@ -4528,6 +5289,9 @@ function findSectionForChatCommand(paper: Paper, instruction: string) {
 function inferSectionTitle(instruction: string, existingCount: number) {
   const quoted = instruction.match(/["']([^"']+)["']/)?.[1];
   if (quoted) return quoted;
+  // #246: capture unquoted names after "called" or "named"
+  const named = instruction.match(/\b(?:called|named)\s+([A-Za-z][A-Za-z0-9 ]*?)(?:\s+with\b|\s+\d|\s*$)/i)?.[1]?.trim();
+  if (named) return named;
   const letter = String.fromCharCode(65 + existingCount);
   return `Section ${letter}`;
 }
@@ -4598,17 +5362,6 @@ function moveQuestionIntoInternalChoice(paper: Paper, source: QuestionRef, targe
       ),
     })),
   });
-}
-
-function choiceHasContent(choice: PaperQuestion["optionalChoice"]) {
-  if (!choice) return false;
-  return Boolean(
-    choice.text?.trim() ||
-      choice.richText?.replace(/<[^>]*>/g, "").trim() ||
-      (choice.options && choice.options.some((option) => option.text?.trim() || option.richText?.replace(/<[^>]*>/g, "").trim())) ||
-      (choice.subparts && choice.subparts.length > 0) ||
-      (choice.imageAssets && choice.imageAssets.length > 0),
-  );
 }
 
 function choiceFromQuestion(question: PaperQuestion): NonNullable<PaperQuestion["optionalChoice"]> {
@@ -4800,16 +5553,6 @@ function nextSubpartLabel(subparts: PaperSubpart[]) {
   return String.fromCharCode(97 + subparts.length);
 }
 
-function countedQuestionMarks(question: PaperQuestion) {
-  const subpartTotal = (question.subparts ?? []).reduce((total, subpart) => total + Number(subpart.marks || 0), 0);
-  return subpartTotal > 0 ? subpartTotal : Number(question.marks || 0);
-}
-
-function questionWithComputedMarks(question: PaperQuestion): PaperQuestion {
-  const marks = countedQuestionMarks(question);
-  return marks !== Number(question.marks || 0) ? { ...question, marks } : question;
-}
-
 function recalculatePaper(paper: Paper): Paper {
   const sections = paper.sections.map((section) => ({
     ...section,
@@ -4838,44 +5581,6 @@ function recalculatePaper(paper: Paper): Paper {
     sourceMix: calculateSourceMix(paper),
     pageCount: Math.max(1, Math.ceil((questionCount * 76 + sections.length * 120 + 260) / 980)),
   };
-}
-
-function countedSectionMarks(section: PaperSection) {
-  const marks = section.questions.map(countedQuestionMarks);
-  const rawTotal = marks.reduce((total, value) => total + value, 0);
-  const rule = section.attemptRule;
-  if (!rule || rule.required >= rule.offered || rule.required >= section.questions.length) return rawTotal;
-
-  const uniform = marks.length > 0 && marks.every((value) => value === marks[0]);
-  if (uniform) return rule.required * (marks[0] ?? 0);
-
-  return marks
-    .slice()
-    .sort((left, right) => right - left)
-    .slice(0, rule.required)
-    .reduce((total, value) => total + value, 0);
-}
-
-function calculateSourceMix(paper: Paper): NonNullable<Paper["sourceMix"]> {
-  const counts = { ncert: 0, pyq: 0, questionBank: 0, aiGenerated: 0, uncited: 0 };
-
-  paper.sections.forEach((section) => {
-    section.questions.forEach((question) => {
-      const source = `${question.generationMode ?? ""} ${question.source ?? ""} ${(question.sourceCitations ?? []).join(" ")}`.toLowerCase();
-      const hasCitation = Boolean(question.sourceCitations?.length);
-      const isManual = source.includes("manual");
-      const isGeneratedFromRequest = source.includes("ai generated") || source.includes("retrieved context") || source.includes("owned corpus");
-      const paperUsedOwnedSources = /ncert|pyq/i.test(paper.metadata.source || "");
-
-      if (question.generationMode === "direct_ncert" || source.includes("direct_ncert")) counts.ncert += 1;
-      else if (question.generationMode === "direct_pyq" || source.includes("direct_pyq")) counts.pyq += 1;
-      else if (question.generationMode === "question_bank" || source.includes("question bank")) counts.questionBank += 1;
-      else if (question.generationMode === "ai_generated" || hasCitation || isGeneratedFromRequest || (paperUsedOwnedSources && !isManual)) counts.aiGenerated += 1;
-      else counts.uncited += 1;
-    });
-  });
-
-  return counts;
 }
 
 function applyDocumentStyle(paper: Paper, documentStyle: DocumentStyle): Paper {
@@ -5021,8 +5726,9 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
                 const subpartChoiceOptionsHtml = optionListToHtml(subpart.optionalChoice?.options);
 
                 return `
-                  <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${richOrTextHtml(subpart.richText, subpart.text)}${imageAssetsToHtml(subpart.imageAssets)}${subpartOptionsHtml}</div><span>[${subpart.marks ?? ""} marks]</span></div>
-                  ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${richOrTextHtml(subpart.optionalChoice.richText, subpart.optionalChoice.text)}${imageAssetsToHtml(subpart.optionalChoice.imageAssets)}${subpartChoiceOptionsHtml}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>` : ""}
+                  <div class="subpart"><strong>(${escapeHtml(subpart.label || "")})</strong><div>${richOrTextHtml(subpart.richText, subpart.text)}${imageAssetsToHtml(subpart.imageAssets)}</div><span>[${subpart.marks ?? ""} marks]</span></div>
+                  ${subpartOptionsHtml ? `<div class="subpart-opts">${subpartOptionsHtml}</div>` : ""}
+                  ${subpart.optionalChoice ? `<div class="or">OR</div><div class="subpart choice"><strong></strong><div>${richOrTextHtml(subpart.optionalChoice.richText, subpart.optionalChoice.text)}${imageAssetsToHtml(subpart.optionalChoice.imageAssets)}</div><span>[${subpart.optionalChoice.marks ?? subpart.marks ?? ""} marks]</span></div>${subpartChoiceOptionsHtml ? `<div class="subpart-opts">${subpartChoiceOptionsHtml}</div>` : ""}` : ""}
                 `;
               },
             )
@@ -5048,7 +5754,7 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     .join("");
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(printablePaper.title)}</title><style>
-    @page{size:A4;margin:${Math.max(16, Math.round(documentStyle.margin / 2))}px}
+    @page{size:A4;margin:${Math.max(10, Math.round(documentStyle.margin * 0.264583))}mm}
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body{font-family:Georgia,serif;line-height:${documentStyle.lineHeight};margin:0;color:${documentStyle.textColor};background:${documentStyle.pageColor};font-size:11px}
     header{text-align:center;border-bottom:1px solid #cbd5e1;padding-bottom:10px;margin-bottom:12px}
@@ -5060,7 +5766,7 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     .option{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;margin:3px 0 3px 32px;break-inside:avoid}
     .option div,.q-main div,.subpart div{min-width:0}
     .option p,.q-main p,.subpart p{margin:0 0 2px}
-    .subpart{margin:4px 0 4px 24px}
+    .subpart{margin:4px 0 4px 24px}.subpart-opts{margin:0 0 4px 24px}
     .instructions{font-size:11px;color:#475569;margin:0 0 6px}.or{text-align:center;font-family:Arial,sans-serif;font-weight:bold;color:#1d4ed8;margin:5px 0}
     .watermark{position:fixed;inset:42% 0 auto;z-index:-1;text-align:center;font-family:Georgia,serif;font-size:54px;font-weight:700;color:${escapeHtml(documentStyle.accentColor)};opacity:${documentStyle.watermark?.opacity ?? 0};transform:${documentStyle.watermark?.position === "diagonal" ? "rotate(-28deg)" : "none"};pointer-events:none}
     .q-image-grid{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;justify-content:center}
@@ -5068,7 +5774,37 @@ function paperToHtml(paper: Paper, documentStyle: DocumentStyle) {
     .q-image{max-width:180px;border:1px solid #cbd5e1;padding:3px;border-radius:4px}
     .q-image img{display:block;max-width:100%;max-height:120px;object-fit:contain}
     .q-image figcaption{font-family:Arial,sans-serif;font-size:8px;color:#64748b;margin-top:2px}
-  </style><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css"></head><body>${documentStyle.watermark?.text ? `<div class="watermark">${escapeHtml(documentStyle.watermark.text)}</div>` : ""}<header><div>Series: QPG/${escapeHtml(printablePaper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(printablePaper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(printablePaper.title)}</h1><div class="meta"><span>${escapeHtml(printablePaper.metadata.board)} Class ${escapeHtml(printablePaper.metadata.classLevel)}</span><span>${escapeHtml(printablePaper.metadata.subject)}</span><span>Time: ${formatDuration(printablePaper.metadata.durationMinutes)}</span><span>Max Marks: ${printablePaper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
+  </style>
+  <!-- KaTeX CSS: styles pre-rendered math spans produced by katex.renderToString() -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css">
+  <!-- KaTeX JS: must load before auto-render (defer preserves order) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
+  <!-- auto-render: catches any raw $...$ that escaped server-side rendering -->
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js"></script>
+  <script>
+    // Open print dialog only after:
+    //  1. All deferred scripts (KaTeX + auto-render) have run
+    //  2. CSS and its referenced web fonts are fully loaded (document.fonts.ready)
+    // Without this, print fires before KaTeX CSS/fonts load → math appears as broken spans
+    window.addEventListener('load', function () {
+      if (window.renderMathInElement) {
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$',  right: '$',  display: false }
+          ],
+          throwOnError: false
+        });
+      }
+      var doPrint = function () { window.focus(); window.print(); };
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(doPrint);
+      } else {
+        doPrint();
+      }
+    });
+  </script>
+</head><body>${documentStyle.watermark?.text ? `<div class="watermark">${escapeHtml(documentStyle.watermark.text)}</div>` : ""}<header><div>Series: QPG/${escapeHtml(printablePaper.metadata.board || "CBSE")} · Q.P. Code: ${escapeHtml(printablePaper.metadata.qpCode || "30/S/1")}</div><h1>${escapeHtml(printablePaper.title)}</h1><div class="meta"><span>${escapeHtml(printablePaper.metadata.board)} Class ${escapeHtml(printablePaper.metadata.classLevel)}</span><span>${escapeHtml(printablePaper.metadata.subject)}</span><span>Time: ${formatDuration(printablePaper.metadata.durationMinutes)}</span><span>Max Marks: ${printablePaper.summary.totalMarks}</span></div></header>${sectionHtml}</body></html>`;
 }
 
 async function paperToDocxBlob(paper: Paper, documentStyle: DocumentStyle) {
@@ -5308,13 +6044,7 @@ function renderPrintableLatex(latex: string) {
 }
 
 function normalizePrintableLatex(latex: string) {
-  return latex
-    .trim()
-    .replace(/^\${1,2}/, "")
-    .replace(/\${1,2}$/, "")
-    .replace(/[−–]/g, "-")
-    .replace(/π/g, "\\pi")
-    .replace(/([A-Za-z0-9)\]}])([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (_match, base: string, digits: string) => `${base}^{${digits.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (digit) => "⁰¹²³⁴⁵⁶⁷⁸⁹".indexOf(digit).toString())}}`);
+  return normalizeLatexChars(latex.replace(/^\${1,2}/, "").replace(/\${1,2}$/, ""));
 }
 
 function normalizeTemplateParams(raw: Record<string, unknown>): Partial<PaperRequest> {
@@ -5473,18 +6203,6 @@ function fileToBase64(file: File) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
-}
-
-function escapeHtml(value: string) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-}
-
-function escapeAttribute(value: string) {
-  return escapeHtml(value).replaceAll("'", "&#39;");
-}
-
-function unescapeHtml(value: string) {
-  return value.replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

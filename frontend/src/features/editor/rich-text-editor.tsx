@@ -12,9 +12,11 @@ import { Color } from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
+import Underline from "@tiptap/extension-underline";
 import { BlockMath, InlineMath } from "@tiptap/extension-mathematics";
 import katex from "katex";
 import "katex/dist/katex.min.css";
+import { cleanCorruptMathArtifacts, escapeAttribute, escapeHtml, hasCorruptMathMarkup, unescapeHtml } from "@/lib/paper-utils";
 import {
   AlignCenter,
   AlignLeft,
@@ -294,6 +296,47 @@ function placeCaretAtFormulaEnd(mathField: MathLiveFieldElement) {
   mathField.executeCommand?.("move-to-mathfield-end");
 }
 
+// ── LaTeX paste interception ──────────────────────────────────────────────────
+
+type PasteSegment = { type: "text" | "math"; value: string };
+
+// Matches raw LaTeX commands with no surrounding delimiters (e.g. \frac{a}{b})
+const RAW_LATEX_RE =
+  /^\\(?:f?rac|dfrac|tfrac|sqrt|int|iint|iiint|oint|sum|prod|lim|log|ln|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|alpha|beta|gamma|delta|epsilon|varepsilon|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|pi|varpi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega|infty|cdot|cdots|ldots|times|div|pm|mp|leq|geq|neq|approx|equiv|sim|propto|rightarrow|leftarrow|Rightarrow|Leftarrow|leftrightarrow|Leftrightarrow|partial|nabla|forall|exists|vec|hat|bar|tilde|dot|ddot|mathbb|mathbf|mathcal|mathrm|mathit|text|overline|underline|overbrace|underbrace|binom|begin|left|right|Big|bigg|Bigg|pmatrix|bmatrix|vmatrix|cases)\b/;
+
+function parseLaTeXPaste(text: string): PasteSegment[] {
+  const segments: PasteSegment[] = [];
+  // Match $$...$$, $...$, \[...\], \(...\)
+  const DELIM = /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = DELIM.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: "text", value: text.slice(lastIndex, match.index) });
+    }
+    const raw = match[0];
+    // Strip outer delimiters: $$, $, \[...\], \(...\) are all 2-char pairs
+    const latex = (raw.startsWith("$$") ? raw.slice(2, -2) : raw.startsWith("$") ? raw.slice(1, -1) : raw.slice(2, -2)).trim();
+    if (latex) segments.push({ type: "math", value: latex });
+    lastIndex = match.index + raw.length;
+  }
+
+  const tail = text.slice(lastIndex);
+  if (tail) {
+    // Whole paste (no delimiters found) that looks like a raw LaTeX expression
+    if (segments.length === 0 && RAW_LATEX_RE.test(tail.trim())) {
+      segments.push({ type: "math", value: tail.trim() });
+    } else {
+      segments.push({ type: "text", value: tail });
+    }
+  }
+
+  return segments;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function RichTextEditor({
   value,
   htmlValue,
@@ -324,6 +367,7 @@ export function RichTextEditor({
       Highlight.configure({ multicolor: true }),
       Subscript,
       Superscript,
+      Underline,
       BlockMath,
       LiveInlineMath,
       TextAlign.configure({
@@ -370,6 +414,37 @@ export function RichTextEditor({
       editor.commands.setContent(nextContent, { emitUpdate: false });
     }
   }, [editor, htmlValue, value]);
+
+  // Intercept paste in capture phase so we run before ProseMirror's own handler.
+  // If the clipboard text contains LaTeX delimiters or looks like a raw LaTeX
+  // expression, prevent the default paste and insert math nodes instead.
+  useEffect(() => {
+    if (!editor) return;
+    const el = editor.view.dom;
+
+    const onPaste = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text) return;
+
+      const segments = parseLaTeXPaste(text);
+      if (!segments.some((s) => s.type === "math")) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      editor.commands.focus();
+      for (const seg of segments) {
+        if (seg.type === "math") {
+          editor.chain().insertInlineMath({ latex: seg.value }).run();
+        } else if (seg.value) {
+          editor.chain().insertContent(seg.value).run();
+        }
+      }
+    };
+
+    el.addEventListener("paste", onPaste, true);
+    return () => el.removeEventListener("paste", onPaste, true);
+  }, [editor]);
 
   if (!editor) {
     return (
@@ -979,31 +1054,6 @@ function sanitizeMathHtml(html: string) {
   });
 }
 
-function hasCorruptMathMarkup(value: string) {
-  const decoded = unescapeHtml(value);
-  return (
-    /data-latex=["'][\s\S]*?<\s*span/i.test(decoded) ||
-    /data-latex=["'][\s\S]*?data-type\s*=\s*["']?inline-math/i.test(decoded) ||
-    /&lt;\s*span[^&]*(data-type|data-latex)/i.test(value) ||
-    /\bspandata\s*[–-]?\s*type\s*=/i.test(value)
-  );
-}
-
-function cleanCorruptMathArtifacts(value: string) {
-  if (!hasCorruptMathMarkup(value) && !/(?:<|&lt;)\s*span\b/i.test(value)) return value;
-
-  return value
-    .replace(/<span\b[^>]*data-latex=(["'])(.*?)\1[^>]*>\s*<\/span>/gi, (_match, _quote: string, latex: string) => `$${unescapeHtml(latex)}$`)
-    .replace(/&lt;span\b[\s\S]*?data-latex=(?:&quot;|["'])(.*?)(?:&quot;|["'])[\s\S]*?&lt;\/span&gt;/gi, (_match, latex: string) => `$${unescapeHtml(latex)}$`)
-    .replace(/&lt;\/?span[^&]*(?:&gt;)?/gi, "")
-    .replace(/<\/?span[^>]*>/gi, "")
-    .replace(/\bspandata\s*[–-]?\s*type\s*=\s*/gi, "")
-    .replace(/["']?\s*&gt;/g, "")
-    .replace(/["']?\s*>/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
 function enhanceMathMarkup(html: string) {
   return html
     .split(/(<[^>]+>)/g)
@@ -1140,18 +1190,6 @@ function documentToPlainText(node: RichTextJsonNode | null | undefined): string 
   const children = node.content?.map(documentToPlainText).join("") ?? "";
   if (["paragraph", "heading", "listItem"].includes(node.type ?? "")) return `${children}\n`;
   return children;
-}
-
-function escapeHtml(value: string) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-}
-
-function escapeAttribute(value: string) {
-  return escapeHtml(value).replaceAll("'", "&#39;");
-}
-
-function unescapeHtml(value: string) {
-  return value.replaceAll("&quot;", '"').replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
 }
 
 function heightClass(height: RichTextEditorProps["minHeight"]) {

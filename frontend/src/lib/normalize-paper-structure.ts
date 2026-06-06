@@ -1,4 +1,5 @@
 import { Paper, PaperImageAsset, PaperQuestion, PaperQuestionOption, PaperSubpart } from "./types";
+import { cleanCorruptMathArtifacts, escapeAttribute, escapeHtml, hasCorruptMathMarkup, unescapeHtml } from "./paper-utils";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -13,7 +14,7 @@ export function normalizePaperStructure(paper: Paper): Paper {
   };
 }
 
-export function normalizeQuestionStructure(question: PaperQuestion): PaperQuestion {
+function normalizeQuestionStructure(question: PaperQuestion): PaperQuestion {
   const normalized = normalizeQuestionLike(question);
   return normalized as PaperQuestion;
 }
@@ -99,7 +100,7 @@ export function richTextFromText(text: string) {
     .join("");
 }
 
-export function normalizeMathText(text: string) {
+function normalizeMathText(text: string) {
   return restoreProtectedSegments(protectLatexSegments(text), (value) =>
     value
     .replace(/\b([a-zA-Z])\^(\d+)\b/g, "$1$2")
@@ -112,7 +113,7 @@ export function normalizeMathText(text: string) {
   );
 }
 
-export function toRichTextHtml(text: string, existingHtml?: string) {
+function toRichTextHtml(text: string, existingHtml?: string) {
   if (existingHtml && hasMeaningfulHtml(existingHtml) && !looksLikeStaleBlob(existingHtml, text) && !hasCorruptMathMarkup(existingHtml)) {
     return upgradeRichTextHtml(existingHtml);
   }
@@ -334,31 +335,6 @@ function upgradeRichTextHtml(html: string) {
   return html.replace(/>([^<]*\\(?:frac|sqrt)\{[^<]+)<\/p>/g, (_match, content: string) => `>${inlineMathHtml(content)}</p>`);
 }
 
-function hasCorruptMathMarkup(value: string) {
-  const decoded = unescapeHtml(value);
-  return (
-    /data-latex=["'][\s\S]*?<\s*span/i.test(decoded) ||
-    /data-latex=["'][\s\S]*?data-type\s*=\s*["']?inline-math/i.test(decoded) ||
-    /&lt;\s*span[^&]*(data-type|data-latex)/i.test(value) ||
-    /\bspandata\s*[–-]?\s*type\s*=/i.test(value)
-  );
-}
-
-function cleanCorruptMathArtifacts(value: string) {
-  if (!hasCorruptMathMarkup(value) && !/(?:<|&lt;)\s*span\b/i.test(value)) return value;
-
-  return value
-    .replace(/<span\b[^>]*data-latex=(["'])(.*?)\1[^>]*>\s*<\/span>/gi, (_match, _quote: string, latex: string) => `$${unescapeHtml(latex)}$`)
-    .replace(/&lt;span\b[\s\S]*?data-latex=(?:&quot;|["'])(.*?)(?:&quot;|["'])[\s\S]*?&lt;\/span&gt;/gi, (_match, latex: string) => `$${unescapeHtml(latex)}$`)
-    .replace(/&lt;\/?span[^&]*(?:&gt;)?/gi, "")
-    .replace(/<\/?span[^>]*>/gi, "")
-    .replace(/\bspandata\s*[–-]?\s*type\s*=\s*/gi, "")
-    .replace(/["']?\s*&gt;/g, "")
-    .replace(/["']?\s*>/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
 function toSuperscript(value: string) {
   const map: Record<string, string> = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹" };
   return value.replace(/\d/g, (digit) => map[digit] || digit);
@@ -367,18 +343,6 @@ function toSuperscript(value: string) {
 function toSubscript(value: string) {
   const map: Record<string, string> = { "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉" };
   return value.replace(/\d/g, (digit) => map[digit] || digit);
-}
-
-function escapeHtml(value: string) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-}
-
-function unescapeHtml(value: string) {
-  return value.replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
-}
-
-function escapeAttribute(value: string) {
-  return escapeHtml(value).replaceAll("'", "&#39;");
 }
 
 function stringValue(value: unknown, fallback: string) {

@@ -162,7 +162,9 @@ defmodule Qpg.AI.Orchestrator do
       String.contains?(lower, "optional choice") or
       String.contains?(lower, "internal choice") or
       String.contains?(lower, "or choice") or
-      Regex.match?(~r/\bor\b/, lower)
+      String.contains?(lower, "or version") or
+      String.contains?(lower, "or alternative") or
+      Regex.match?(~r/\bor\s+(?:branch|option\b)/, lower)
   end
 
   defp replacement_path(target, true), do: target.path ++ ["optionalChoice"]

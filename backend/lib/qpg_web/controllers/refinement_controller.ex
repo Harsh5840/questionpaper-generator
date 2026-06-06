@@ -16,6 +16,20 @@ defmodule QpgWeb.RefinementController do
     response =
       try do
         Orchestrator.refine_payload(paper_payload, instruction, paper.id)
+      rescue
+        exception ->
+          Logging.error("api.refinements.create.exception", %{
+            paper_id: id,
+            instruction: instruction,
+            reason: Exception.message(exception)
+          })
+
+          %{
+            "message" => "",
+            "patch_ops" => [],
+            "preview" => paper_payload,
+            "base_version_id" => ""
+          }
       after
         Process.delete(:qpg_paper_id)
         Process.delete(:qpg_ai_operation)

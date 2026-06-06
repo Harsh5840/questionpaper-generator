@@ -117,29 +117,6 @@ export async function saveVersionViaApi(paper: Paper, changeSource: string) {
   }
 }
 
-export async function saveCanvasVersionViaApi(paper: Paper, changeSource: string, documentHtml: string, documentText: string) {
-  if (!paper.paperId) return null;
-
-  try {
-    const payload = {
-      ...toBackendPaper(paper),
-      document_html: documentHtml,
-      document_text: documentText,
-    };
-
-    const response = await fetch(`${API_BASE}/papers/${paper.paperId}/versions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ change_source: changeSource, payload }),
-    });
-
-    if (!response.ok) return null;
-    return response.json();
-  } catch {
-    return null;
-  }
-}
-
 export async function getPaperViaApi(paperId: string): Promise<{ versions: PaperVersion[] } | null> {
   try {
     const response = await fetch(`${API_BASE}/papers/${paperId}`);
@@ -423,27 +400,6 @@ function absoluteAssetUrl(url: string) {
   if (/^https?:\/\//i.test(url) || url.startsWith("data:")) return url;
   const origin = API_BASE.replace(/\/api\/?$/, "");
   return `${origin}${url.startsWith("/") ? "" : "/"}${url}`;
-}
-
-export async function exportToClassroomViaApi(paper: Paper, attrs: { courseId: string; attachmentUrl: string; title?: string }) {
-  if (!paper.paperId) return null;
-
-  try {
-    const response = await fetch(`${API_BASE}/papers/${paper.paperId}/classroom`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        course_id: attrs.courseId,
-        attachment_url: attrs.attachmentUrl,
-        title: attrs.title || paper.title,
-      }),
-    });
-
-    if (!response.ok) return null;
-    return response.json();
-  } catch {
-    return null;
-  }
 }
 
 function toGenerationPayload(request: PaperRequest) {

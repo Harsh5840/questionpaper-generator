@@ -27,6 +27,7 @@ import {
 import katex from "katex";
 import { DocumentStyle, Paper, PaperImageAsset, PaperQuestion, PaperQuestionOption, PaperSection, PaperSubpart } from "@/lib/types";
 import { normalizePaperStructure } from "@/lib/normalize-paper-structure";
+import { calculateSourceMix, choiceHasContent, countedQuestionMarks, countedSectionMarks, escapeHtml, isEmptyRichText, normalizeLatexChars, questionWithComputedMarks, unescapeHtml } from "@/lib/paper-utils";
 import { RichTextEditor } from "./rich-text-editor";
 
 interface PaperEditorProps {
@@ -70,6 +71,15 @@ export function PaperEditor({
 }: PaperEditorProps) {
   const [draggedQuestion, setDraggedQuestion] = useState<DraggedQuestion | null>(null);
   const [draggedDiagram, setDraggedDiagram] = useState<DraggedDiagram | null>(null);
+  const [draggedSection, setDraggedSection] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && draggedQuestion) setDraggedQuestion(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [draggedQuestion]);
   const [expandedAnswers, setExpandedAnswers] = useState<Record<string, boolean>>({});
   const [replacingQuestions, setReplacingQuestions] = useState<Record<string, boolean>>({});
   const [replacingChoices, setReplacingChoices] = useState<Record<string, boolean>>({});
@@ -89,9 +99,16 @@ export function PaperEditor({
     questionId?: string; sectionId?: string;
     inMathField?: boolean; latex?: string;
   } | null>(null);
+  const pageContentRef = useRef<HTMLDivElement>(null);
+  const [pageBreakOffsets, setPageBreakOffsets] = useState<number[]>([]);
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
-  const sourceMix = useMemo(() => (paper ? calculateSourceMix(paper) : null), [paper]);
+  const sourceMix = useMemo(() => {
+    if (!paper) return null;
+    const mix = calculateSourceMix(paper);
+    const total = paper.sections.reduce((count, section) => count + section.questions.length, 0);
+    return { ...mix, total };
+  }, [paper]);
 
   useEffect(() => {
     const clearActiveQuestion = (event: PointerEvent) => {
@@ -122,6 +139,36 @@ export function PaperEditor({
     document.addEventListener("qpg:math-contextmenu", handleMathContextMenu);
     return () => document.removeEventListener("qpg:math-contextmenu", handleMathContextMenu);
   }, []);
+
+  // Compute page break positions from actual rendered height, scaled to match A4 print dimensions.
+  // Print: A4 with @page margin → content height = (297 - 2*marginMm) mm in px at 96dpi.
+  // Editor: max-w-[900px] with padding=margin px → content is wider than print → text wraps less → shorter per page.
+  // Scale the A4 content height by (printWidth / editorWidth) to get the editor-equivalent page height.
+  useEffect(() => {
+    const el = pageContentRef.current;
+    if (!el) return;
+
+    const recompute = () => {
+      const marginMm = Math.max(10, Math.round(documentStyle.margin * 0.264583));
+      const printPageH = (297 - 2 * marginMm) / 25.4 * 96;
+      const printPageW = (210 - 2 * marginMm) / 25.4 * 96;
+      const editorContentW = Math.max(400, el.clientWidth - 2 * documentStyle.margin);
+      const pageH = Math.round(printPageH * (printPageW / editorContentW));
+      const topPad = documentStyle.margin;
+      const breaks: number[] = [];
+      let n = 1;
+      while (n * pageH < el.scrollHeight - 2 * topPad) {
+        breaks.push(topPad + n * pageH);
+        n++;
+      }
+      setPageBreakOffsets(breaks);
+    };
+
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [documentStyle.margin]);
 
   if (!paper) {
     return (
@@ -161,6 +208,24 @@ export function PaperEditor({
     }));
   };
 
+  const deleteSection = (sectionId: string) => {
+    if (paper.sections.length <= 1) {
+      triggerMarksWarning("A paper must have at least one section.");
+      return;
+    }
+    const section = paper.sections.find((s) => s.id === sectionId);
+    if (!section) return;
+    if (
+      section.questions.length > 0 &&
+      !window.confirm(
+        `Delete "${section.title}" and all ${section.questions.length} question${section.questions.length !== 1 ? "s" : ""}?`,
+      )
+    ) {
+      return;
+    }
+    updatePaper((current) => ({ ...current, sections: current.sections.filter((s) => s.id !== sectionId) }));
+  };
+
   const updateQuestion = (sectionId: string, questionId: string, patch: Partial<PaperQuestion>) => {
     if ("marks" in patch) {
       const section = paper.sections.find((s) => s.id === sectionId);
@@ -172,6 +237,11 @@ export function PaperEditor({
         if (newTotal !== section.targetMarks) {
           triggerMarksWarning(`Section total: ${newTotal}m — target: ${section.targetMarks}m`);
         }
+      }
+      const question = section?.questions.find((q) => q.id === questionId);
+      const subpartTotal = (question?.subparts ?? []).reduce((t, sp) => t + Number(sp.marks || 0), 0);
+      if (subpartTotal > 0 && subpartTotal !== Number(patch.marks ?? 0)) {
+        triggerMarksWarning(`Parts total: ${subpartTotal}m — question marks: ${patch.marks}m`);
       }
     }
     updatePaper((current) => ({
@@ -386,9 +456,12 @@ export function PaperEditor({
       [field]: Math.max(1, Math.floor(value || 1)),
     };
 
-    updateSection(sectionId, {
-      attemptRule: next.required >= next.offered ? undefined : { required: Math.min(next.required, next.offered), offered: next.offered },
-    });
+    if (next.required >= next.offered) {
+      triggerMarksWarning("Attempt count cannot exceed offered count.");
+      return;
+    }
+
+    updateSection(sectionId, { attemptRule: { required: next.required, offered: next.offered } });
   };
 
   const addDiagramPlaceholder = (sectionId: string, questionId: string) => {
@@ -798,6 +871,9 @@ export function PaperEditor({
     const section = paper.sections.find((item) => item.id === sectionId);
     const question = section?.questions.find((item) => item.id === questionId);
     const subparts = question?.subparts ?? [];
+    const questionMarks = Number(question?.marks || 1);
+    // First subpart inherits full question marks so the sum already matches
+    const newSubpartMarks = subparts.length === 0 ? questionMarks : 1;
 
     updateQuestion(sectionId, questionId, {
       subparts: [
@@ -807,7 +883,7 @@ export function PaperEditor({
           label: nextSubpartLabel(subparts),
           text: "",
           richText: "",
-          marks: 1,
+          marks: newSubpartMarks,
           answer: "",
         },
       ],
@@ -817,6 +893,16 @@ export function PaperEditor({
   const updateSubpart = (sectionId: string, questionId: string, subpartId: string, patch: Partial<PaperSubpart>) => {
     const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
     if (!question?.subparts) return;
+
+    if ("marks" in patch) {
+      const newSubpartTotal = question.subparts.reduce(
+        (total, sp) => total + (sp.id === subpartId ? Number(patch.marks ?? 0) : Number(sp.marks || 0)),
+        0,
+      );
+      if (newSubpartTotal !== Number(question.marks || 0)) {
+        triggerMarksWarning(`Parts total: ${newSubpartTotal}m — question marks: ${question.marks}m`);
+      }
+    }
 
     updateQuestion(sectionId, questionId, {
       subparts: question.subparts.map((subpart) => (subpart.id === subpartId ? { ...subpart, ...patch } : subpart)),
@@ -947,6 +1033,47 @@ export function PaperEditor({
         )
         .map((subpart, index) => ({ ...subpart, label: String.fromCharCode(97 + index) })),
     });
+  };
+
+  const moveSubpartOrChoiceToOtherQuestion = (
+    sectionId: string,
+    sourceQuestionId: string,
+    sourceSubpartId: string,
+    targetQuestionId: string,
+    targetSubpartId: string,
+  ) => {
+    const sourceQuestion = paper.sections.find((s) => s.id === sectionId)?.questions.find((q) => q.id === sourceQuestionId);
+    const source = sourceQuestion?.subparts?.find((sp) => sp.id === sourceSubpartId);
+    if (!source?.optionalChoice) return;
+
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) => {
+        if (section.id !== sectionId) return section;
+        return {
+          ...section,
+          questions: section.questions.map((question) => {
+            if (question.id === sourceQuestionId) {
+              return {
+                ...question,
+                subparts: (question.subparts ?? []).map((sp) =>
+                  sp.id === sourceSubpartId ? { ...sp, optionalChoice: undefined } : sp,
+                ),
+              };
+            }
+            if (question.id === targetQuestionId) {
+              return {
+                ...question,
+                subparts: (question.subparts ?? []).map((sp) =>
+                  sp.id === targetSubpartId ? { ...sp, optionalChoice: source.optionalChoice } : sp,
+                ),
+              };
+            }
+            return question;
+          }),
+        };
+      }),
+    }));
   };
 
   const moveSubpartToOtherQuestionChoice = (
@@ -1179,6 +1306,10 @@ export function PaperEditor({
 
   const moveDraggedQuestion = (targetSectionId: string, targetQuestionId?: string) => {
     if (!draggedQuestion) return;
+    if (draggedQuestion.questionId === targetQuestionId) {
+      setDraggedQuestion(null);
+      return;
+    }
 
     updatePaper((current) => {
       let movingQuestion: PaperQuestion | null = null;
@@ -1223,6 +1354,23 @@ export function PaperEditor({
     });
 
     setDraggedQuestion(null);
+  };
+
+  const moveDraggedSection = (targetSectionId: string) => {
+    if (!draggedSection || draggedSection === targetSectionId) {
+      setDraggedSection(null);
+      return;
+    }
+    updatePaper((current) => {
+      const sourceIndex = current.sections.findIndex((s) => s.id === draggedSection);
+      const targetIndex = current.sections.findIndex((s) => s.id === targetSectionId);
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+      const sections = [...current.sections];
+      const [removed] = sections.splice(sourceIndex, 1);
+      sections.splice(targetIndex, 0, removed);
+      return { ...current, sections };
+    });
+    setDraggedSection(null);
   };
 
   const promoteChoiceToQuestion = (sectionId: string, questionId: string) => {
@@ -1282,7 +1430,12 @@ export function PaperEditor({
         hasChoice: choiceHasContent(question.optionalChoice),
       })),
     );
-  const visualPageCount = Math.max(1, paper.pageCount ?? 1);
+  const pageCount = Math.max(1, pageBreakOffsets.length + 1);
+  // Minimum height: one A4 content page so the editor always looks like a full sheet.
+  const printPageMinH = (() => {
+    const mm = Math.max(10, Math.round(documentStyle.margin * 0.264583));
+    return Math.round((297 - 2 * mm) / 25.4 * 96);
+  })();
 
   return (
     <div
@@ -1297,14 +1450,15 @@ export function PaperEditor({
       onClick={() => contextMenu && setContextMenu(null)}
     >
       <div
-        className={`paper-page relative mx-auto min-h-[1120px] w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
+        ref={pageContentRef}
+        className={`paper-page relative mx-auto w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
         style={{
           backgroundColor: documentStyle.pageColor,
           color: documentStyle.textColor,
           fontSize: documentStyle.fontSize,
           lineHeight: documentStyle.lineHeight,
           padding: documentStyle.margin,
-          minHeight: visualPageCount * 1120,
+          minHeight: printPageMinH,
         }}
       >
         <div className="absolute right-6 top-4 flex items-center gap-2">
@@ -1320,7 +1474,7 @@ export function PaperEditor({
             </button>
           )}
           <span className="rounded-full bg-slate-100 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-            Page 1 / {visualPageCount}
+            Page 1 / {pageCount}
           </span>
         </div>
         {marksWarning && (
@@ -1329,21 +1483,21 @@ export function PaperEditor({
             {marksWarning}
           </div>
         )}
-        {Array.from({ length: visualPageCount }).map((_page, index) => (
+        {pageBreakOffsets.map((breakY, index) => (
           <div
-            key={`page-marker-${index + 1}`}
+            key={`page-break-${index}`}
             className="pointer-events-none absolute inset-x-0 z-0"
-            style={{ top: index * 1120 }}
+            style={{ top: breakY }}
           >
-            {index > 0 && (
-              <div className="mx-[-1px] flex items-center gap-2 border-t border-slate-300/70">
-                <span className="rounded-b bg-slate-100 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 shadow-sm">
-                  Page {index + 1}
-                </span>
-              </div>
-            )}
-            <div className="absolute right-6 top-[1092px] rounded bg-white/85 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-400 shadow-sm">
-              {index + 1} / {visualPageCount}
+            {/* Page N label at the top of the new page */}
+            <div className="mx-[-1px] flex items-center gap-2 border-t border-slate-300/70">
+              <span className="rounded-b bg-slate-100 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 shadow-sm">
+                Page {index + 2}
+              </span>
+            </div>
+            {/* Bottom-right badge for the page that just ended */}
+            <div className="absolute right-6 -top-7 rounded bg-white/85 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-400 shadow-sm">
+              {index + 1} / {pageCount}
             </div>
           </div>
         ))}
@@ -1463,33 +1617,49 @@ export function PaperEditor({
           return (
             <Fragment key={section.id}>
             <section
-              className="paper-section relative rounded-lg border border-transparent"
+              className={`paper-section relative rounded-lg border transition ${draggedSection === section.id ? "opacity-40 ring-2 ring-inset ring-blue-300" : draggedSection ? "border-dashed border-blue-200" : "border-transparent"}`}
               onDragOver={(event) => event.preventDefault()}
-              onDrop={() => moveDraggedQuestion(section.id)}
+              onDrop={(event) => {
+                event.stopPropagation();
+                if (draggedSection) moveDraggedSection(section.id);
+                else moveDraggedQuestion(section.id);
+              }}
             >
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
-                <input
-                  aria-label="Section title"
-                  className="min-w-48 flex-1 bg-transparent font-sans text-sm font-black uppercase tracking-normal text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                  value={section.title}
-                  onChange={(event) => updateSection(section.id, { title: event.target.value })}
-                />
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                    Difficulty
-                    <select
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                      value={section.difficulty || ""}
-                      onChange={(event) => updateSection(section.id, { difficulty: event.target.value || undefined })}
-                    >
-                      <option value="">Mixed</option>
-                      <option>Low</option>
-                      <option>Medium</option>
-                      <option>High</option>
-                    </select>
-                  </label>
+              <div className="mb-3 border-b border-slate-200 pb-2">
+                {/* Row 1: drag handle + title */}
+                <div className="mb-1.5 flex min-w-0 items-center gap-1">
+                  <div
+                    className="shrink-0 cursor-grab text-slate-300 hover:text-slate-500"
+                    draggable
+                    title="Drag to reorder section"
+                    onDragStart={(e) => { e.stopPropagation(); setDraggedSection(section.id); }}
+                    onDragEnd={() => setDraggedSection(null)}
+                  >
+                    <GripVertical size={14} />
+                  </div>
+                  <input
+                    aria-label="Section title"
+                    className="min-w-0 flex-1 truncate bg-transparent font-sans text-sm font-black uppercase tracking-normal text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    maxLength={100}
+                    value={section.title}
+                    onChange={(event) => updateSection(section.id, { title: event.target.value })}
+                  />
+                </div>
+                {/* Row 2: controls */}
+                <div className="flex flex-wrap items-center gap-2 pl-5">
+                  <select
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                    title="Section difficulty"
+                    value={section.difficulty || ""}
+                    onChange={(event) => updateSection(section.id, { difficulty: event.target.value || undefined })}
+                  >
+                    <option value="">Mixed</option>
+                    <option>Low</option>
+                    <option>Medium</option>
+                    <option>High</option>
+                  </select>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
-                    {sectionMarks} marks{hasAttemptChoice && offeredMarks !== sectionMarks ? ` counted · ${offeredMarks} offered` : ""}
+                    {sectionMarks} marks{hasAttemptChoice && offeredMarks !== sectionMarks ? ` · ${offeredMarks} offered` : ""}
                   </span>
                   <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500" title="Require students to attempt fewer questions than offered">
                     <input
@@ -1506,7 +1676,7 @@ export function PaperEditor({
                         }
                       }}
                     />
-                    Do
+                    Attempt
                   </label>
                   {section.attemptRule && section.attemptRule.required < section.questions.length && (
                     <>
@@ -1529,25 +1699,33 @@ export function PaperEditor({
                       )}
                     </>
                   )}
-                  {section.questions.length === 0 || !section.questions.every((q) => q.type === "MCQ") ? (
-                    <button className="editor-mini-button" onClick={() => addBlankQuestion(section.id)} type="button">
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                    {section.questions.length === 0 || !section.questions.every((q) => q.type === "MCQ") ? (
+                      <button className="editor-mini-button" onClick={() => addBlankQuestion(section.id)} type="button">
+                        <Plus size={14} />
+                        {section.questions.length === 0 ? "Add Question" : (() => {
+                          const counts: Record<string, number> = {};
+                          section.questions.forEach((q) => { if (q.type && q.type !== "MCQ") counts[q.type] = (counts[q.type] ?? 0) + 1; });
+                          const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+                          return `Add ${top ?? "SA"}`;
+                        })()}
+                      </button>
+                    ) : null}
+                    <button className="editor-mini-button" onClick={() => addMcqQuestion(section.id)} type="button">
                       <Plus size={14} />
-                      {section.questions.length === 0 ? "Add Question" : (() => {
-                        const counts: Record<string, number> = {};
-                        section.questions.forEach((q) => { if (q.type && q.type !== "MCQ") counts[q.type] = (counts[q.type] ?? 0) + 1; });
-                        const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
-                        return `Add ${top ?? "SA"}`;
-                      })()}
+                      Add MCQ
                     </button>
-                  ) : null}
-                  <button className="editor-mini-button" onClick={() => addMcqQuestion(section.id)} type="button">
-                    <Plus size={14} />
-                    Add MCQ
-                  </button>
-                  <button className="editor-mini-button" onClick={() => onImportImage(section.id)} type="button">
-                    <ImagePlus size={14} />
-                    Image
-                  </button>
+                    <button className="editor-mini-button" onClick={() => onImportImage(section.id)} type="button">
+                      <ImagePlus size={14} />
+                      Image
+                    </button>
+                    {paper.sections.length > 1 && (
+                      <button className="editor-mini-button text-red-500 hover:text-red-700" onClick={() => deleteSection(section.id)} type="button">
+                        <Trash2 size={14} />
+                        Delete section
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1578,7 +1756,7 @@ export function PaperEditor({
                       id={`question-${question.id}`}
                       className={`question-row group relative rounded-lg border transition ${
                         isActiveQuestion ? "is-active border-amber-300 bg-amber-50/35 p-2 shadow-sm" : "border-transparent bg-transparent px-0 py-0.5"
-                      } ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""}`}
+                      } ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""} ${draggedQuestion?.questionId === question.id ? "opacity-40 ring-2 ring-inset ring-blue-300" : ""}`}
                       draggable
                       onClick={() => setActiveQuestionId(question.id)}
                       onDragStart={() => setDraggedQuestion({ sectionId: section.id, questionId: question.id })}
@@ -1610,6 +1788,11 @@ export function PaperEditor({
                             onChange={(text) => updateQuestion(section.id, question.id, { text })}
                             onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
                           />
+                          {isActiveQuestion && isEmptyRichText(question.text, question.richText, question.imageAssets) && (
+                            <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                              ⚠ Question text is empty — add content before exporting
+                            </p>
+                          )}
 
                           <ImageAssetList
                             assets={question.imageAssets}
@@ -1657,6 +1840,11 @@ export function PaperEditor({
                                         onChange={(text) => updateQuestionOption(section.id, question.id, optionIndex, { text })}
                                         onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
                                       />
+                                      {isEmptyRichText(option.text, option.richText, option.imageAssets) && (
+                                        <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                          ⚠ Option {option.label ?? String.fromCharCode(65 + optionIndex)} is empty
+                                        </p>
+                                      )}
                                       <ImageAssetList
                                         assets={option.imageAssets}
                                         compact
@@ -1702,17 +1890,25 @@ export function PaperEditor({
                                     <select
                                       className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
                                       defaultValue=""
-                                      title="Move this part into another part's OR slot (within or across questions)"
+                                      title={subpart.optionalChoice ? "Move this part's OR choice to another part's OR slot" : "Move this part into another part's OR slot"}
                                       onChange={(event) => {
                                         const val = event.target.value;
                                         if (val) {
                                           const [tQId, tSpId] = val.split("::");
-                                          moveSubpartToOtherQuestionChoice(section.id, question.id, subpart.id, tQId, tSpId);
+                                          if (subpart.optionalChoice) {
+                                            if (tQId === question.id) {
+                                              moveSubpartOrChoice(section.id, question.id, subpart.id, tSpId);
+                                            } else {
+                                              moveSubpartOrChoiceToOtherQuestion(section.id, question.id, subpart.id, tQId, tSpId);
+                                            }
+                                          } else {
+                                            moveSubpartToOtherQuestionChoice(section.id, question.id, subpart.id, tQId, tSpId);
+                                          }
                                         }
                                         event.currentTarget.value = "";
                                       }}
                                     >
-                                      <option value="">Move to part OR...</option>
+                                      <option value="">{subpart.optionalChoice ? "Move OR to part..." : "Move to part OR..."}</option>
                                       {section.questions.flatMap((tQ) => {
                                         const tQNum = stats?.questionNumberById[tQ.id] ?? "?";
                                         return (tQ.subparts ?? [])
@@ -1745,6 +1941,11 @@ export function PaperEditor({
                                         onChange={(text) => updateSubpart(section.id, question.id, subpart.id, { text })}
                                         onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
                                       />
+                                      {isEmptyRichText(subpart.text, subpart.richText, subpart.imageAssets) && (
+                                        <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                          ⚠ Part ({subpart.label}) text is empty
+                                        </p>
+                                      )}
                                       <ImageAssetList
                                         assets={subpart.imageAssets}
                                         compact
@@ -1772,6 +1973,11 @@ export function PaperEditor({
                                                   onChange={(text) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { text })}
                                                   onHtmlChange={(richText) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { richText })}
                                                 />
+                                                {isEmptyRichText(option.text, option.richText, option.imageAssets) && (
+                                                  <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                                    ⚠ Option {option.label ?? String.fromCharCode(65 + optionIndex)} is empty
+                                                  </p>
+                                                )}
                                                 <ImageAssetList
                                                   assets={option.imageAssets}
                                                   compact
@@ -2540,28 +2746,41 @@ function MarksInput({
   "aria-label"?: string;
 }) {
   const [localValue, setLocalValue] = useState(String(value));
+  const [isInvalid, setIsInvalid] = useState(false);
 
   useEffect(() => {
     setLocalValue(String(value));
+    setIsInvalid(false);
   }, [value]);
 
   return (
     <input
       aria-label={ariaLabel}
-      className="w-14 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+      className={`w-14 rounded-md border px-2 py-1 text-xs ${isInvalid ? "border-red-400 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}
       inputMode="numeric"
       pattern="[0-9.]*"
+      title={isInvalid ? "Marks must be 0 or greater" : undefined}
       value={localValue}
       onChange={(e) => {
         const newVal = e.target.value;
         setLocalValue(newVal);
         const parsed = Number(newVal);
-        if (!Number.isNaN(parsed) && parsed >= 0) onCommit(parsed);
+        if (!Number.isNaN(parsed) && parsed >= 0) {
+          setIsInvalid(false);
+          onCommit(parsed);
+        } else {
+          setIsInvalid(true);
+        }
       }}
       onBlur={() => {
         const parsed = Number(localValue);
-        if (!Number.isNaN(parsed) && parsed >= 0) onCommit(parsed);
-        else setLocalValue(String(value));
+        if (!Number.isNaN(parsed) && parsed >= 0) {
+          setIsInvalid(false);
+          onCommit(parsed);
+        } else {
+          setIsInvalid(false);
+          setLocalValue(String(value));
+        }
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
@@ -2705,12 +2924,12 @@ function stripEditorOnlyMarkup(html: string) {
 }
 
 function stripMathSpansToText(html: string) {
-  return html.replace(/<span[^>]*data-latex="([^"]*)"[^>]*>[\s\S]*?<\/span>/g, (_match, latex: string) => renderLatexPreview(unescapeDisplayHtml(latex)));
+  return html.replace(/<span[^>]*data-latex="([^"]*)"[^>]*>[\s\S]*?<\/span>/g, (_match, latex: string) => renderLatexPreview(unescapeHtml(latex)));
 }
 
 function textToDisplayHtml(value: string) {
   // Apply plain-text transforms BEFORE KaTeX so later regexes don't corrupt already-rendered HTML
-  return escapeDisplayHtml(value)
+  return escapeHtml(value)
     .replace(/([A-Za-z])([23])(?=\b|[^A-Za-z0-9])/g, "$1<sup>$2</sup>")
     .replace(/\(([A-Za-z0-9\s+\-−–*/=.,]+)\)([23])(?=\b|[^A-Za-z0-9])/g, "($1)<sup>$2</sup>")
     .replace(/\b([A-Z][a-z]?)(\d+)(?=[A-Z]|$)/g, "$1<sub>$2</sub>")
@@ -2721,19 +2940,7 @@ function textToDisplayHtml(value: string) {
 }
 
 function normalizeDisplayLatex(value: string) {
-  return value
-    .trim()
-    .replace(/[−–]/g, "-")
-    .replace(/π/g, "\\pi")
-    .replace(/([A-Za-z0-9)\]}])([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (_match, base: string, digits: string) => `${base}^{${digits.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (digit) => "⁰¹²³⁴⁵⁶⁷⁸⁹".indexOf(digit).toString())}}`);
-}
-
-function escapeDisplayHtml(value: string) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-}
-
-function unescapeDisplayHtml(value: string) {
-  return value.replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
+  return normalizeLatexChars(value);
 }
 
 function renderLatexPreview(latex: string) {
@@ -2744,7 +2951,7 @@ function renderLatexPreview(latex: string) {
     // and the visual span to render simultaneously, producing doubled characters.
     return katex.renderToString(normalized, { throwOnError: false, strict: false, displayMode: false, output: "html" });
   } catch {
-    return `<span class="math-preview">${escapeDisplayHtml(normalized)}</span>`;
+    return `<span class="math-preview">${escapeHtml(normalized)}</span>`;
   }
 }
 
@@ -2991,17 +3198,6 @@ function questionToChoice(question: PaperQuestion): NonNullable<PaperQuestion["o
   };
 }
 
-function choiceHasContent(choice: PaperQuestion["optionalChoice"]) {
-  if (!choice) return false;
-  return Boolean(
-    choice.text?.trim() ||
-      choice.richText?.replace(/<[^>]*>/g, "").trim() ||
-      (choice.options && choice.options.length > 0 && choice.options.some((option) => option.text?.trim() || option.richText?.replace(/<[^>]*>/g, "").trim())) ||
-      (choice.subparts && choice.subparts.length > 0) ||
-      (choice.imageAssets && choice.imageAssets.length > 0),
-  );
-}
-
 function choiceToQuestion(question: PaperQuestion): PaperQuestion {
   const choice = question.optionalChoice;
 
@@ -3021,16 +3217,6 @@ function choiceToQuestion(question: PaperQuestion): PaperQuestion {
     answer: choice?.answer || "",
     answerRichText: choice?.answerRichText || "",
   };
-}
-
-function countedQuestionMarks(question: PaperQuestion) {
-  const subpartTotal = (question.subparts ?? []).reduce((total, subpart) => total + Number(subpart.marks || 0), 0);
-  return subpartTotal > 0 ? subpartTotal : Number(question.marks || 0);
-}
-
-function questionWithComputedMarks(question: PaperQuestion): PaperQuestion {
-  const marks = countedQuestionMarks(question);
-  return marks !== Number(question.marks || 0) ? { ...question, marks } : question;
 }
 
 function calculateStats(paper: Paper) {
@@ -3061,29 +3247,6 @@ function calculateStats(paper: Paper) {
   return { questionNumberById, totalMarks, questionCount, topicWeights };
 }
 
-function calculateSourceMix(paper: Paper) {
-  const counts = { ncert: 0, pyq: 0, questionBank: 0, aiGenerated: 0, uncited: 0, total: 0 };
-
-  paper.sections.forEach((section) => {
-    section.questions.forEach((question) => {
-      counts.total += 1;
-      const source = `${question.generationMode ?? ""} ${question.source ?? ""} ${(question.sourceCitations ?? []).join(" ")}`.toLowerCase();
-      const hasCitation = Boolean(question.sourceCitations?.length);
-      const isManual = source.includes("manual");
-      const isGeneratedFromRequest = source.includes("ai generated") || source.includes("retrieved context") || source.includes("owned corpus");
-      const paperUsedOwnedSources = /ncert|pyq/i.test(paper.metadata.source || "");
-
-      if (question.generationMode === "direct_ncert" || source.includes("direct_ncert")) counts.ncert += 1;
-      else if (question.generationMode === "direct_pyq" || source.includes("direct_pyq")) counts.pyq += 1;
-      else if (question.generationMode === "question_bank" || source.includes("question bank")) counts.questionBank += 1;
-      else if (question.generationMode === "ai_generated" || hasCitation || isGeneratedFromRequest || (paperUsedOwnedSources && !isManual)) counts.aiGenerated += 1;
-      else counts.uncited += 1;
-    });
-  });
-
-  return counts;
-}
-
 function recalculatePaper(paper: Paper): Paper {
   const sections = paper.sections.map((section) => ({
     ...section,
@@ -3110,22 +3273,6 @@ function recalculatePaper(paper: Paper): Paper {
     },
     topicWeightage,
   };
-}
-
-function countedSectionMarks(section: PaperSection) {
-  const questionMarks = section.questions.map(countedQuestionMarks);
-  const rawTotal = questionMarks.reduce((total, marks) => total + marks, 0);
-  const rule = section.attemptRule;
-  if (!rule || rule.required >= rule.offered || rule.required >= section.questions.length) return rawTotal;
-
-  const uniformMarks = questionMarks.length > 0 && questionMarks.every((marks) => marks === questionMarks[0]);
-  if (uniformMarks) return rule.required * (questionMarks[0] ?? 0);
-
-  return questionMarks
-    .slice()
-    .sort((left, right) => right - left)
-    .slice(0, rule.required)
-    .reduce((total, marks) => total + marks, 0);
 }
 
 function formatDuration(minutes: number) {

@@ -8,7 +8,7 @@ type MathFieldRef = MathfieldElement & HTMLElement & { value: string };
 // Module-level reference to the last focused math-field popup box
 let activeMathBoxField: MathFieldRef | null = null;
 
-export function getActiveMathBoxField() {
+function getActiveMathBoxField() {
   return activeMathBoxField;
 }
 
@@ -28,7 +28,7 @@ interface MathLiveBoxProps {
   onChange: (latex: string) => void;
 }
 
-export function MathLiveBox({ autoFocus = false, value, onChange }: MathLiveBoxProps) {
+function MathLiveBox({ autoFocus = false, value, onChange }: MathLiveBoxProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const mathFieldRef = useRef<MathFieldRef | null>(null);
   const onChangeRef = useRef(onChange);
