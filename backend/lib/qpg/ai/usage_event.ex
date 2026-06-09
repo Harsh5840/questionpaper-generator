@@ -16,7 +16,8 @@ defmodule Qpg.AI.UsageEvent do
     field(:metadata, :map, default: %{})
 
     belongs_to(:generation_run, Qpg.Generation.GenerationRun)
-    belongs_to(:paper, Qpg.Papers.Paper)
+    # Re-pointed to assignments in the Phase 2 cutover (column stays `paper_id`).
+    belongs_to(:paper, Qpg.Assignments.Assignment)
 
     timestamps(type: :utc_datetime)
   end

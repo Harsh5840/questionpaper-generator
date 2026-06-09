@@ -1,19 +1,18 @@
 defmodule QpgWeb.ExportController do
   use Phoenix.Controller, formats: [:json]
 
+  alias Qpg.Assignments
   alias Qpg.Logging
-  alias Qpg.Papers
 
   def create(conn, %{"id" => id} = params) do
     Logging.info("api.exports.create.received", %{
       paper_id: id,
-      version_id: params["version_id"],
       format: params["format"] || "pdf"
     })
 
-    paper = Papers.get_paper!(id)
+    assignment = Assignments.get_assignment!(id)
 
-    case Papers.create_export(paper, params) do
+    case Assignments.create_export(assignment, params) do
       {:ok, export} ->
         Logging.info("api.exports.create.completed", %{
           paper_id: id,

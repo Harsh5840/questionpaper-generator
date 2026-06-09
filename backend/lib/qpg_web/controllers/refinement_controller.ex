@@ -2,20 +2,20 @@ defmodule QpgWeb.RefinementController do
   use Phoenix.Controller, formats: [:json]
 
   alias Qpg.AI.Orchestrator
+  alias Qpg.Assignments
   alias Qpg.Logging
-  alias Qpg.Papers
 
   def create(conn, %{"id" => id, "instruction" => instruction} = params) do
     Logging.info("api.refinements.create.received", %{paper_id: id, instruction: instruction})
 
-    paper = Papers.get_paper!(id)
-    paper_payload = params["paper"] || latest_payload(paper)
-    Process.put(:qpg_paper_id, paper.id)
+    assignment = Assignments.get_assignment!(id)
+    paper_payload = params["paper"] || Assignments.rebuild_payload(assignment)
+    Process.put(:qpg_paper_id, assignment.id)
     Process.put(:qpg_ai_operation, "refinement")
 
     response =
       try do
-        Orchestrator.refine_payload(paper_payload, instruction, paper.id)
+        Orchestrator.refine_payload(paper_payload, instruction, assignment.id)
       rescue
         exception ->
           Logging.error("api.refinements.create.exception", %{
@@ -42,7 +42,4 @@ defmodule QpgWeb.RefinementController do
 
     json(conn, response)
   end
-
-  defp latest_payload(%{versions: [version | _]}), do: version.payload
-  defp latest_payload(_paper), do: %{}
 end

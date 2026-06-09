@@ -29,7 +29,7 @@ defmodule QpgWeb.DashboardController do
     dump_counts = if DumpCorpus.available?(), do: DumpCorpus.corpus_counts(), else: %{}
 
     %{
-      papers: scalar("SELECT count(*) FROM papers"),
+      papers: scalar("SELECT count(*) FROM assignments"),
       templates: scalar("SELECT count(*) FROM templates"),
       generation_runs: scalar("SELECT count(*) FROM generation_runs"),
       completed_runs: scalar("SELECT count(*) FROM generation_runs WHERE status = 'completed'"),
@@ -47,19 +47,17 @@ defmodule QpgWeb.DashboardController do
   defp recent_papers do
     rows("""
     SELECT
-      p.id::text,
-      p.title,
-      p.board,
-      p.class_level,
-      p.subject,
-      p.status,
-      p.updated_at,
-      count(v.id)::int AS version_count,
-      COALESCE(max(v.marks_total), 0)::int AS marks_total
-    FROM papers p
-    LEFT JOIN paper_versions v ON v.paper_id = p.id
-    GROUP BY p.id
-    ORDER BY p.updated_at DESC
+      a.id::text,
+      a.title,
+      a.board_code,
+      a.class_level,
+      a.subject,
+      a.status,
+      a.updated_at,
+      1 AS version_count,
+      COALESCE(a.total_marks, 0)::int AS marks_total
+    FROM assignments a
+    ORDER BY a.updated_at DESC
     LIMIT 8
     """)
     |> Enum.map(fn [

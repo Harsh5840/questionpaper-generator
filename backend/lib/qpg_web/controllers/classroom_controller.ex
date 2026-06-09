@@ -1,9 +1,9 @@
 defmodule QpgWeb.ClassroomController do
   use Phoenix.Controller, formats: [:json]
 
+  alias Qpg.Assignments
   alias Qpg.Integrations.GoogleClassroom
   alias Qpg.Logging
-  alias Qpg.Papers
 
   def create(conn, %{"id" => id} = params) do
     Logging.info("api.classroom.create.received", %{
@@ -12,14 +12,14 @@ defmodule QpgWeb.ClassroomController do
       has_attachment: params["attachment_url"] not in [nil, ""]
     })
 
-    paper = Papers.get_paper!(id)
+    assignment = Assignments.get_assignment!(id)
 
     attrs =
       params
-      |> Map.put_new("title", paper.title)
+      |> Map.put_new("title", assignment.title)
       |> Map.put_new(
         "description",
-        "#{paper.board} Class #{paper.class_level} #{paper.subject} question paper"
+        "#{assignment.board_code} Class #{assignment.class_level} #{assignment.subject} question paper"
       )
 
     case GoogleClassroom.create_material(attrs) do

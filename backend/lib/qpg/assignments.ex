@@ -11,21 +11,42 @@ defmodule Qpg.Assignments do
   can flatten that payload into the tree on write and rebuild it on read without
   changing the API contract.
 
-  Phase 1 runs additively next to the legacy `Qpg.Papers`; nothing here touches
-  the legacy tables. `source_paper_id` ties an assignment back to its legacy
-  paper so backfill / dual-write is idempotent.
+  Since the Phase 2 cutover this is the single source of truth for question
+  papers — there is no version table; the assignment row IS the current state.
+  `source_paper_id` is the (now historical) link to the legacy paper a row was
+  backfilled from, and is left null for papers created after the cutover.
   """
   import Ecto.Query
 
   alias Qpg.Repo
   alias Qpg.Assignments.{Assignment, AssignmentQuestion}
+  alias Qpg.Papers.Export
 
   # ── Reads ──────────────────────────────────────────────────────────────────
 
+  def list do
+    Assignment
+    |> order_by([a], desc: a.updated_at)
+    |> Repo.all()
+  end
+
   def get_assignment(id), do: Repo.get(Assignment, id)
+
+  def get_assignment!(id), do: Repo.get!(Assignment, id)
 
   def get_by_source_paper(paper_id) do
     Repo.get_by(Assignment, source_paper_id: paper_id)
+  end
+
+  @doc """
+  Load an assignment plus its rebuilt nested Paper JSON payload.
+  Returns `nil` when the id is unknown.
+  """
+  def structured(id) do
+    case get_assignment(id) do
+      nil -> nil
+      assignment -> %{assignment: assignment, payload: rebuild_payload(assignment)}
+    end
   end
 
   @doc "Rebuild the nested Paper JSON payload from the stored tree."
@@ -145,42 +166,115 @@ defmodule Qpg.Assignments do
   @doc """
   Create (or replace) an assignment + its question tree from a nested Paper
   JSON payload. Idempotent on `:source_paper_id`: an existing assignment for the
-  same legacy paper is updated in place and its tree rebuilt.
+  same legacy paper is updated in place and its tree rebuilt. Used by the
+  one-time backfill.
   """
   def upsert_from_payload(payload, opts \\ []) when is_map(payload) do
     source_paper_id = Keyword.get(opts, :source_paper_id)
+    attrs = build_attrs(payload, opts)
+
+    Repo.transaction(fn ->
+      case source_paper_id && get_by_source_paper(source_paper_id) do
+        nil -> %Assignment{}
+        existing -> existing
+      end
+      |> Assignment.changeset(attrs)
+      |> Repo.insert_or_update!()
+      |> write_tree!(payload)
+    end)
+  end
+
+  @doc """
+  Create a brand-new assignment + tree from a nested Paper JSON payload.
+  This is the live write path for AI generation.
+  """
+  def create_from_payload(payload, opts \\ []) when is_map(payload) do
+    attrs = build_attrs(payload, opts)
+
+    Repo.transaction(fn ->
+      %Assignment{}
+      |> Assignment.changeset(attrs)
+      |> Repo.insert!()
+      |> write_tree!(payload)
+    end)
+  end
+
+  @doc "Create an assignment from one generated paper variant."
+  def create_from_variant(variant, request, source) when is_map(variant) do
+    create_from_payload(variant,
+      title: Map.get(variant, "title"),
+      board_code: request["board"],
+      class_level: request["class_level"],
+      subject: request["subject"],
+      input_mode: source,
+      status: "draft"
+    )
+  end
+
+  @doc """
+  Persist an edited payload onto an existing assignment, rebuilding its tree.
+  This is the live write path for the editor / AI refinements (replaces the old
+  per-save version row — the assignment row IS the current state).
+  """
+  def save_payload(%Assignment{} = assignment, payload, _change_source) when is_map(payload) do
     metadata = Map.get(payload, "metadata", %{})
 
     attrs = %{
+      title: Map.get(payload, "title") || assignment.title,
+      board_code: val(metadata, ["board"], nil) || assignment.board_code,
+      class_level: val(metadata, ["classLevel", "class_level"], nil) || assignment.class_level,
+      subject: val(metadata, ["subject"], nil) || assignment.subject,
+      instructions: Map.get(payload, "instructions") || assignment.instructions,
+      total_marks: total_marks(payload)
+    }
+
+    Repo.transaction(fn ->
+      assignment
+      |> Assignment.changeset(attrs)
+      |> Repo.update!()
+      |> write_tree!(payload)
+    end)
+  end
+
+  def delete_assignment(%Assignment{} = assignment), do: Repo.delete(assignment)
+
+  @doc "Queue an export row for an assignment (PDF/DOCX)."
+  def create_export(%Assignment{} = assignment, attrs) do
+    %Export{}
+    |> Export.changeset(%{
+      paper_id: assignment.id,
+      format: attrs["format"] || "pdf",
+      status: "queued"
+    })
+    |> Repo.insert()
+  end
+
+  defp build_attrs(payload, opts) do
+    metadata = Map.get(payload, "metadata", %{})
+
+    %{
       tenant_id: Keyword.get(opts, :tenant_id),
-      title: Map.get(payload, "title") || "Question Paper",
-      board_code: Keyword.get(opts, :board_code) || Map.get(metadata, "board"),
-      class_level: Keyword.get(opts, :class_level) || Map.get(metadata, "classLevel"),
-      subject: Keyword.get(opts, :subject) || Map.get(metadata, "subject"),
+      title: Keyword.get(opts, :title) || Map.get(payload, "title") || "Question Paper",
+      board_code: Keyword.get(opts, :board_code) || val(metadata, ["board"], nil),
+      class_level:
+        Keyword.get(opts, :class_level) || val(metadata, ["classLevel", "class_level"], nil),
+      subject: Keyword.get(opts, :subject) || val(metadata, ["subject"], nil),
       instructions: Map.get(payload, "instructions"),
       input_mode: Keyword.get(opts, :input_mode),
       status: Keyword.get(opts, :status, "draft"),
       total_marks: total_marks(payload),
-      source_paper_id: source_paper_id
+      source_paper_id: Keyword.get(opts, :source_paper_id)
     }
+  end
 
-    Repo.transaction(fn ->
-      assignment =
-        case source_paper_id && get_by_source_paper(source_paper_id) do
-          nil -> %Assignment{}
-          existing -> existing
-        end
-        |> Assignment.changeset(attrs)
-        |> Repo.insert_or_update!()
+  # Replace the question tree wholesale — rows are the source of truth.
+  defp write_tree!(%Assignment{} = assignment, payload) do
+    Repo.delete_all(from(q in AssignmentQuestion, where: q.assignment_id == ^assignment.id))
 
-      # Replace the tree wholesale — rows are the source of truth.
-      Repo.delete_all(from(q in AssignmentQuestion, where: q.assignment_id == ^assignment.id))
+    sections = payload |> Map.get("sections", []) |> List.wrap()
+    insert_tree!(assignment, sections)
 
-      sections = payload |> Map.get("sections", []) |> List.wrap()
-      insert_tree!(assignment, sections)
-
-      assignment
-    end)
+    assignment
   end
 
   defp insert_tree!(%Assignment{} = assignment, sections) do

@@ -1,9 +1,12 @@
 defmodule QpgWeb.PaperVersionController do
   use Phoenix.Controller, formats: [:json]
 
+  alias Qpg.Assignments
   alias Qpg.Logging
-  alias Qpg.Papers
 
+  # Save edits. In the prod-aligned model there is no version table — this
+  # persists the edited payload onto the assignment (rebuilding its question
+  # tree) and echoes back a synthetic version envelope the UI expects.
   def create(conn, %{"id" => id, "payload" => payload} = params) do
     Logging.info("api.paper_versions.create.received", %{
       paper_id: id,
@@ -12,29 +15,22 @@ defmodule QpgWeb.PaperVersionController do
       has_document_html: is_binary(payload["document_html"])
     })
 
-    paper = Papers.get_paper!(id)
+    assignment = Assignments.get_assignment!(id)
 
-    case Papers.create_version(paper, payload, params["change_source"] || "manual_edit") do
-      {:ok, version} ->
-        Logging.info("api.paper_versions.create.completed", %{
-          paper_id: id,
-          version_id: version.id,
-          version_number: version.version_number
-        })
+    case Assignments.save_payload(assignment, payload, params["change_source"] || "manual_edit") do
+      {:ok, saved} ->
+        Logging.info("api.paper_versions.create.completed", %{paper_id: id})
 
         json(conn, %{
-          id: version.id,
-          version_number: version.version_number,
-          payload: version.payload
+          id: saved.id,
+          version_number: 1,
+          marks_total: saved.total_marks,
+          payload: Assignments.rebuild_payload(saved)
         })
 
-      {:error, changeset} ->
-        Logging.error("api.paper_versions.create.failed", %{
-          paper_id: id,
-          errors: changeset.errors
-        })
-
-        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(changeset.errors)})
+      {:error, reason} ->
+        Logging.error("api.paper_versions.create.failed", %{paper_id: id, error: inspect(reason)})
+        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end
   end
 end

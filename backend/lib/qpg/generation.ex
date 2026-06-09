@@ -1,10 +1,10 @@
 defmodule Qpg.Generation do
   alias Qpg.AI.Orchestrator
   alias Qpg.AI.Provider
+  alias Qpg.Assignments
   alias Qpg.Generation.GeneratePaperWorker
   alias Qpg.Generation.GenerationRun
   alias Qpg.Logging
-  alias Qpg.Papers
   alias Qpg.Repo
   alias Qpg.Sources
 
@@ -107,8 +107,8 @@ defmodule Qpg.Generation do
       result
       |> fetch("variants", [])
       |> Enum.map(fn variant ->
-        {:ok, paper} = Papers.create_paper_from_variant(variant, run.request, run.mode)
-        paper
+        {:ok, assignment} = Assignments.create_from_variant(variant, run.request, run.mode)
+        assignment
       end)
 
     Logging.info("generation.perform_run.papers_saved", %{
