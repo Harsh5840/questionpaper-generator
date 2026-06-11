@@ -1,7 +1,6 @@
-"use client";
-
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import s from "./rich-text-editor.module.css";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -459,7 +458,7 @@ export function RichTextEditor({
 
   if (!editor) {
     return (
-      <div className="rounded-md border border-[var(--outline-variant)] bg-white px-3 py-2 text-sm font-semibold text-[var(--on-surface-variant)]">
+      <div className={s.loadingShell}>
         Loading editor...
       </div>
     );
@@ -482,11 +481,9 @@ export function RichTextEditor({
 
   return (
     <div
-      className={`rich-text-shell rounded-md border border-[var(--outline-variant)] bg-white ${toolbarMode === "focus" ? "toolbar-focus-only" : ""}`}
+      className={`rich-text-shell ${toolbarMode === "focus" ? "toolbar-focus-only" : ""}`}
     >
-      <div
-        className="flex flex-wrap items-center gap-1 border-b border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-1"
-      >
+      <div className={s.toolbar}>
         {activeFormula ? (
           <FormulaBuilder
             formula={activeFormula}
@@ -552,12 +549,12 @@ export function RichTextEditor({
             >
               <SubscriptIcon size={15} />
             </ToolbarButton>
-            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
+            <span className={s.toolbarSep} aria-hidden="true" />
             <ToolbarButton label="Insert live MathLive formula" onClick={openLocalMathLive}>
               <Sigma size={15} />
-              <span className="ml-1 text-[10px] font-black">Live</span>
+              <span className={s.liveLabel}>Live</span>
             </ToolbarButton>
-            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
+            <span className={s.toolbarSep} aria-hidden="true" />
             <ToolbarButton
               active={editor.isActive("bulletList")}
               label="Bullet list"
@@ -572,7 +569,7 @@ export function RichTextEditor({
             >
               <ListOrdered size={15} />
             </ToolbarButton>
-            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
+            <span className={s.toolbarSep} aria-hidden="true" />
             <ToolbarButton
               active={editor.isActive({ textAlign: "left" })}
               label="Align left"
@@ -594,12 +591,12 @@ export function RichTextEditor({
             >
               <Pilcrow size={15} />
             </ToolbarButton>
-            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
-            <label className="inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-semibold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)]">
-              <span className="sr-only">Text color</span>
+            <span className={s.toolbarSep} aria-hidden="true" />
+            <label className={s.colorLabel}>
+              <span className={s.srOnly}>Text color</span>
               <input
                 aria-label="Text color"
-                className="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
+                className={s.colorInput}
                 type="color"
                 defaultValue="#141b2b"
                 onChange={(event) => editor.chain().focus().setColor(event.target.value).run()}
@@ -616,13 +613,13 @@ export function RichTextEditor({
         )}
         {!activeFormula && toolbarMode !== "focus" && (
           <>
-            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
-            <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-[var(--outline-variant)] px-1.5 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-white">
+            <span className={s.toolbarSep} aria-hidden="true" />
+            <label className={`math-snippet-select ${s.mathSelect}`}>
               <Sigma size={14} />
               <span>Math &amp; Science</span>
               <select
                 aria-label="Insert math or science notation"
-                className="max-w-32 bg-transparent text-xs font-bold outline-none"
+                className={s.mathSelectInner}
                 defaultValue=""
                 onChange={(event) => {
                   const value = event.target.value;
@@ -648,7 +645,7 @@ export function RichTextEditor({
               <ChevronDown size={13} />
             </label>
             <ToolbarButton label="Insert quick symbol ±" onClick={() => editor.chain().focus().insertContent("±").run()}>
-              <span className="px-0.5 text-sm font-black">±</span>
+              <span className={s.plusMinusLabel}>±</span>
             </ToolbarButton>
           </>
         )}
@@ -676,9 +673,7 @@ function ToolbarButton({ active = false, children, label, onClick }: ToolbarButt
     <button
       aria-label={label}
       aria-pressed={active}
-      className={`focus-ring inline-flex min-h-8 min-w-8 items-center justify-center rounded border text-[var(--on-surface)] transition motion-reduce:transition-none ${
-        active ? "border-[var(--primary)] bg-[var(--surface-container-high)]" : "border-transparent hover:border-[var(--outline-variant)] hover:bg-white"
-      }`}
+      className={`focus-ring ${s.toolbarButton} ${active ? s.toolbarButtonActive : ""}`}
       onClick={onClick}
       title={label}
       type="button"
@@ -713,18 +708,18 @@ function FormulaBuilder({ formula, values, onChange, onCancel, onInsert }: Formu
   const preview = formula.build(values);
 
   return (
-    <div className="grid min-h-8 flex-1 grid-cols-1 gap-2 rounded-md border border-[var(--primary-container)] bg-white px-2 py-1 lg:grid-cols-[auto_1fr_auto_auto] lg:items-center">
-      <span className="inline-flex items-center gap-1 text-xs font-black text-[var(--primary)]">
+    <div className={s.formulaBuilder}>
+      <span className={s.formulaTitle}>
         <Sigma size={14} />
         {formula.label}
       </span>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={s.formulaFields}>
         {formula.fields.map((field) => (
-          <label key={field.key} className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--on-surface-variant)]">
+          <label key={field.key} className={s.formulaFieldLabel}>
             <span>{field.label}</span>
             <input
               aria-label={`${formula.label} ${field.label}`}
-              className="h-7 w-16 rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-2 text-xs text-[var(--on-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+              className={s.formulaFieldInput}
               value={values[field.key] ?? field.defaultValue}
               onChange={(event) => onChange(field.key, event.target.value)}
               onKeyDown={(event) => {
@@ -734,14 +729,14 @@ function FormulaBuilder({ formula, values, onChange, onCancel, onInsert }: Formu
             />
           </label>
         ))}
-        <code className="min-w-0 rounded bg-[var(--surface-container-low)] px-2 py-1 text-[11px] font-bold text-[var(--on-surface)]">
+        <code className={s.formulaPreview}>
           Preview: {preview}
         </code>
       </div>
-      <button className="rounded bg-[var(--primary)] px-3 py-1.5 text-xs font-black text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]" onClick={onInsert} type="button">
+      <button className={s.formulaInsertBtn} onClick={onInsert} type="button">
         Insert formula
       </button>
-      <button className="rounded px-3 py-1.5 text-xs font-black text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]" onClick={onCancel} type="button">
+      <button className={s.formulaCancelBtn} onClick={onCancel} type="button">
         Cancel
       </button>
     </div>

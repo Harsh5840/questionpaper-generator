@@ -1,0 +1,42 @@
+query GetPaper($id: ID!) {
+  paper(id: $id) @rest(type: "Paper", path: "/papers/{args.id}") {
+    id
+    title
+    boardCode
+    classLevel
+    subject
+    totalMarks
+    status
+    inputMode
+    createdAt
+    updatedAt
+  }
+}
+
+query GetPaperStructured($id: ID!, $versionId: String) {
+  paperStructured(id: $id, versionId: $versionId)
+    @rest(type: "PaperStructured", path: "/papers/{args.id}/structured?version_id={args.versionId}") {
+    paper
+    version
+  }
+}
+
+mutation SavePaperVersion($id: ID!, $input: SaveVersionInput!) {
+  savePaperVersion(id: $id, input: $input)
+    @rest(type: "PaperVersion", path: "/papers/{args.id}/versions", method: "POST") {
+    id
+    versionNumber
+    marksTotal
+    payload
+  }
+}
+
+mutation RefineWithAI($id: ID!, $input: RefinementInput!) {
+  refineWithAI(id: $id, input: $input)
+    @rest(type: "Refinement", path: "/papers/{args.id}/refinements", method: "POST") {
+    message
+    patchOps
+    preview
+    baseVersionId
+  }
+}

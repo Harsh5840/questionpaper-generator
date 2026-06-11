@@ -1,0 +1,16 @@
+query GetCatalogSubjects($board: String!, $classLevel: String!) {
+  catalogSubjects(board: $board, classLevel: $classLevel)
+    @rest(type: "CatalogSubjects", path: "/catalog/subjects?board={args.board}&class_level={args.classLevel}") {
+    subjects
+  }
+}
+
+query GetCatalogChapters($board: String!, $classLevel: String!, $subject: String!) {
+  catalogChapters(board: $board, classLevel: $classLevel, subject: $subject)
+    @rest(
+      type: "CatalogChapters"
+      path: "/catalog/chapters?board={args.board}&class_level={args.classLevel}&subject={args.subject}"
+    ) {
+    chapters
+  }
+}

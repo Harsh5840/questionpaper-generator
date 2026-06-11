@@ -1,0 +1,20 @@
+query GetQuestionBank($board: String, $classLevel: String, $subject: String) {
+  questionBank(board: $board, classLevel: $classLevel, subject: $subject)
+    @rest(
+      type: "QuestionBankList"
+      path: "/question-bank?board={args.board}&class_level={args.classLevel}&subject={args.subject}"
+    ) {
+    items
+  }
+}
+
+mutation SaveToQuestionBank($input: QuestionBankInput!) {
+  saveToQuestionBank(input: $input)
+    @rest(type: "QuestionBankItem", path: "/question-bank", method: "POST") {
+    id
+    questionText
+    questionType
+    subject
+    createdAt
+  }
+}

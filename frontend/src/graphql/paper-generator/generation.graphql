@@ -1,0 +1,40 @@
+mutation StartGeneration($input: GenerationInput!) {
+  startGeneration(input: $input)
+    @rest(type: "GenerationRun", path: "/generation-runs", method: "POST") {
+    id
+    status
+    variants
+    paperIds
+    warnings
+  }
+}
+
+query PollGeneration($runId: ID!) {
+  generationRun(runId: $runId)
+    @rest(type: "GenerationRun", path: "/generation-runs/{args.runId}") {
+    id
+    status
+    variants
+    paperIds
+    warnings
+  }
+}
+
+query GetGenerationUsage($runId: ID!) {
+  generationUsage(runId: $runId)
+    @rest(type: "GenerationUsage", path: "/generation-runs/{args.runId}/usage") {
+    inputTokens
+    outputTokens
+    totalTokens
+    estimatedCostUsd
+    modelBreakdown
+  }
+}
+
+query GetDashboard {
+  dashboard @rest(type: "Dashboard", path: "/dashboard") {
+    paperCount
+    recentPapers
+    totalGenerations
+  }
+}

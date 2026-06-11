@@ -16,7 +16,7 @@ import {
 } from "./types";
 import { normalizePaperStructure, normalizeRawQuestion } from "./normalize-paper-structure";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4000/api";
+const API_BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE ?? "http://localhost:4000/api";
 const SOCKET_BASE = API_BASE.replace(/\/api\/?$/, "").replace(/^http/, "ws");
 
 type GenerationRun = {

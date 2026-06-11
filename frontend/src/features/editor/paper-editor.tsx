@@ -1,7 +1,6 @@
-"use client";
-
 import type React from "react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import s from "./paper-editor.module.css";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -176,15 +175,15 @@ export function PaperEditor({
   if (!paper) {
     return (
       <div
-        className="relative mx-auto flex min-h-[1120px] w-full max-w-[900px] items-center justify-center border border-slate-200 bg-white p-12 text-center shadow-sm"
+        className={s.emptyPage}
         style={{ backgroundColor: documentStyle.pageColor }}
       >
-        <div className="max-w-sm text-slate-400">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+        <div className={s.emptyPageContent}>
+          <div className={s.emptyPageIcon}>
             {isGenerating ? <RefreshCcw className="animate-spin" size={24} /> : <Plus size={24} />}
           </div>
-          <p className="text-sm font-bold text-slate-500">{isGenerating ? "Generating structured paper" : "Blank paper workspace"}</p>
-          <p className="mt-1 text-xs">Generate a paper or import questions. Cards with marks, drag handles, and rich text controls will appear here.</p>
+          <p className={s.emptyPageTitle}>{isGenerating ? "Generating structured paper" : "Blank paper workspace"}</p>
+          <p className={s.emptyPageDesc}>Generate a paper or import questions. Cards with marks, drag handles, and rich text controls will appear here.</p>
         </div>
       </div>
     );
@@ -1568,10 +1567,10 @@ export function PaperEditor({
   );
 
   return (
-    <div className="flex w-full items-start gap-4">
+    <div className={s.editorLayout}>
       {outlineSlot && createPortal(outlineTree, outlineSlot)}
       <div
-        className="flex min-w-0 flex-1 flex-col gap-8"
+        className={s.editorMain}
         onContextMenu={(e) => {
           // Rich-text surfaces have their own Insert Symbol panel — don't also open the question menu
           if ((e.target as Element).closest(".rich-text-surface, .math-live-host")) return;
@@ -1583,7 +1582,7 @@ export function PaperEditor({
       >
       <div
         ref={pageContentRef}
-        className={`paper-page relative mx-auto w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
+        className={`paper-page ${s.paperPage} ${templateTone.articleClass}`}
         style={{
           backgroundColor: documentStyle.pageColor,
           color: documentStyle.textColor,
@@ -1594,10 +1593,10 @@ export function PaperEditor({
           zoom: pageZoom,
         }}
       >
-        <div className="absolute right-6 top-4 flex items-center gap-2">
+        <div className={s.pageTopRight}>
           {previousPaper && (
             <button
-              className="flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-blue-700 shadow-sm hover:bg-blue-100"
+              className={s.scaleInfo}
               title="Undo last AI edit"
               onClick={() => { onPaperChange(previousPaper); setPreviousPaper(null); }}
               type="button"
@@ -1608,18 +1607,18 @@ export function PaperEditor({
           )}
         </div>
         {marksWarning && (
-          <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 font-sans text-[11px] font-bold text-amber-800 shadow-md">
+          <div className={s.generatingBanner}>
             <AlertTriangle size={12} />
             {marksWarning}
           </div>
         )}
         {documentStyle.watermark?.imageUrl && (
-          <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
+          <div className={s.watermarkOverlay}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               alt="Watermark"
               src={documentStyle.watermark.imageUrl}
-              className="max-h-[60%] max-w-[60%] object-contain"
+              className={s.watermarkImg}
               style={{
                 opacity: documentStyle.watermark.opacity,
                 transform: documentStyle.watermark.position === "diagonal" ? "rotate(-28deg)" : undefined,
@@ -1629,7 +1628,7 @@ export function PaperEditor({
         )}
         {documentStyle.watermark?.text && (
           <div
-            className="pointer-events-none absolute inset-x-0 top-1/2 z-0 text-center font-display text-6xl font-black italic"
+            className={s.watermarkText}
             style={{
               color: documentStyle.accentColor,
               opacity: documentStyle.watermark.opacity,
@@ -1639,21 +1638,21 @@ export function PaperEditor({
             {documentStyle.watermark.text}
           </div>
         )}
-      <header className={`pb-5 text-center ${templateTone.headerClass}`}>
-        <div className="mb-4 flex justify-between text-left text-xs font-bold text-slate-600">
+      <header className={`${s.paperHeader} ${templateTone.headerClass}`}>
+        <div className={s.paperMetaRow}>
           <span>Series: QPG/{paper.metadata.board || "CBSE"}</span>
           <span>Q.P. Code: {paper.metadata.qpCode || "30/S/1"}</span>
         </div>
-        <div className={`mx-auto mb-3 inline-flex rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.08em] ${templateTone.badgeClass}`}>
+        <div className={`${s.paperBadge} ${templateTone.badgeClass}`}>
           {templateName}
         </div>
         <input
           aria-label="Paper title"
-          className="w-full bg-transparent text-center font-sans text-2xl font-black uppercase tracking-normal text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className={s.paperTitleInput}
           value={paper.title}
           onChange={(event) => updatePaper((current) => ({ ...current, title: event.target.value }))}
         />
-        <div className="mt-2 flex flex-wrap justify-center gap-3 text-sm font-semibold text-slate-600">
+        <div className={s.paperSubMeta}>
           <span>{paper.metadata.board} Class {paper.metadata.classLevel}</span>
           <span>{paper.metadata.subject}</span>
           <span>Time: {formatDuration(paper.metadata.durationMinutes)}</span>
@@ -1662,19 +1661,19 @@ export function PaperEditor({
       </header>
 
       {stats && (
-        <div className="my-5 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="mb-2 flex items-center justify-between text-xs font-bold text-slate-700">
+        <div className={s.sourceMixCard}>
+          <div className={s.sourceMixHeader}>
             <span>Topic-wise weightage</span>
             <span>{stats.questionCount} questions · {stats.totalMarks} marks</span>
           </div>
-          <div className="space-y-2">
+          <div className={s.sourceMixItems}>
             {stats.topicWeights.map((item) => (
-              <div key={item.topic} className="grid grid-cols-[130px_1fr_48px] items-center gap-2 text-xs text-slate-600">
-                <span className="truncate font-semibold">{item.topic}</span>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-                  <div className="h-full rounded-full bg-blue-600" style={{ width: `${item.percent}%` }} />
+              <div key={item.topic} className={s.sourceMixItem}>
+                <span className={s.sourceMixLabel}>{item.topic}</span>
+                <div className={s.sourceMixBar}>
+                  <div className={s.sourceMixFill} style={{ width: `${item.percent}%` }} />
                 </div>
-                <span className="text-right font-bold">{item.marks}</span>
+                <span className={s.sourceMixValue}>{item.marks}</span>
               </div>
             ))}
           </div>
@@ -1682,12 +1681,12 @@ export function PaperEditor({
       )}
 
       {sourceMix && (
-        <div className="my-5 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
-          <div className="mb-2 flex items-center justify-between text-xs font-bold text-amber-950">
+        <div className={s.pyqCard}>
+          <div className={s.pyqCardHeader}>
             <span>Source mix</span>
             <span>{sourceMix.total} questions tracked</span>
           </div>
-          <div className="grid gap-2 text-xs text-amber-950 sm:grid-cols-5">
+          <div className={s.pyqCardGrid}>
             <SourceMixPill label="NCERT direct" value={sourceMix.ncert} />
             <SourceMixPill label="PYQ direct" value={sourceMix.pyq} />
             <SourceMixPill label="Question bank" value={sourceMix.questionBank} />
@@ -1697,8 +1696,8 @@ export function PaperEditor({
         </div>
       )}
 
-      <section className="my-6 text-sm text-slate-800">
-        <h2 className="mb-2 font-sans text-sm font-black uppercase">General Instructions</h2>
+      <section className={s.instructionsSection}>
+        <h2 className={s.instructionsHeading}>General Instructions</h2>
         {templateTone.instructions.map((instruction) => (
           <p key={instruction}>
             {instruction
@@ -1708,10 +1707,10 @@ export function PaperEditor({
         ))}
       </section>
 
-      <div className="mt-6 flex flex-wrap items-center justify-end gap-2" onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }); }}>
+      <div className={s.pageControls} onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }); }}>
         <input
           aria-label="Watermark text"
-          className="w-44 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+          className={s.pageSelect}
           placeholder="Watermark"
           value={documentStyle.watermark?.text ?? ""}
           onChange={(event) =>
@@ -1755,7 +1754,7 @@ export function PaperEditor({
         </label>
         {documentStyle.watermark?.imageUrl && (
           <button
-            className="editor-mini-button text-red-500"
+            className={`editor-mini-button ${s.sectionDeleteBtn}`}
             onClick={() =>
               updateDocumentStyle({
                 watermark: documentStyle.watermark?.text?.trim()
@@ -1775,7 +1774,7 @@ export function PaperEditor({
         </button>
       </div>
 
-      <div className="mt-8 space-y-8">
+      <div className={s.sectionsList}>
         {paper.sections.map((section, sectionIndex) => {
           const offeredMarks = section.questions.reduce((total, question) => total + countedQuestionMarks(question), 0);
           const sectionMarks = countedSectionMarks(section);
@@ -1787,7 +1786,7 @@ export function PaperEditor({
             <Fragment key={section.id}>
             <section
               id={`section-${section.id}`}
-              className={`paper-section relative rounded-lg border transition ${draggedSection === section.id ? "opacity-40 ring-2 ring-inset ring-blue-300" : draggedSection ? "border-dashed border-blue-200" : "border-transparent"}`}
+              className={`paper-section ${s.paperSection} ${draggedSection === section.id ? s.paperSectionDragging : draggedSection ? s.paperSectionDragOver : ""}`}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
                 event.stopPropagation();
@@ -1795,11 +1794,11 @@ export function PaperEditor({
                 else moveDraggedQuestion(section.id);
               }}
             >
-              <div className="mb-3 border-b border-slate-200 pb-2">
+              <div className={s.sectionHeader}>
                 {/* Row 1: drag handle + title */}
-                <div className="mb-1.5 flex min-w-0 items-center gap-1">
+                <div className={s.sectionTitleRow}>
                   <div
-                    className="shrink-0 cursor-grab text-slate-300 hover:text-slate-500"
+                    className={s.sectionDragHandle}
                     draggable
                     title="Drag to reorder section"
                     onDragStart={(e) => { e.stopPropagation(); setDraggedSection(section.id); }}
@@ -1809,16 +1808,16 @@ export function PaperEditor({
                   </div>
                   <input
                     aria-label="Section title"
-                    className="min-w-0 flex-1 truncate bg-transparent font-sans text-sm font-black uppercase tracking-normal text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    className={s.sectionTitleInput}
                     maxLength={100}
                     value={section.title}
                     onChange={(event) => updateSection(section.id, { title: event.target.value })}
                   />
                 </div>
                 {/* Row 2: controls */}
-                <div className="flex flex-wrap items-center gap-2 pl-5">
+                <div className={s.sectionControls}>
                   <select
-                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                    className={s.sectionSelect}
                     title="Section difficulty"
                     value={section.difficulty || ""}
                     onChange={(event) => updateSection(section.id, { difficulty: event.target.value || undefined })}
@@ -1828,12 +1827,12 @@ export function PaperEditor({
                     <option>Medium</option>
                     <option>High</option>
                   </select>
-                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
+                  <span className={s.marksBadge}>
                     {sectionMarks} marks{hasAttemptChoice && offeredMarks !== sectionMarks ? ` · ${offeredMarks} offered` : ""}
                   </span>
-                  <label className="flex items-center gap-1 text-[11px] font-bold text-slate-500" title="Require students to attempt fewer questions than offered">
+                  <label className={s.attemptLabel} title="Require students to attempt fewer questions than offered">
                     <input
-                      className="h-3.5 w-3.5 cursor-pointer accent-blue-600"
+                      className={s.attemptCheckbox}
                       type="checkbox"
                       checked={!!section.attemptRule && section.attemptRule.required < section.questions.length}
                       onChange={(event) => {
@@ -1851,25 +1850,25 @@ export function PaperEditor({
                   {section.attemptRule && section.attemptRule.required < section.questions.length && (
                     <>
                       <input
-                        className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800"
+                        className={s.attemptInput}
                         min={1}
                         max={section.questions.length - 1}
                         type="number"
                         value={section.attemptRule.required}
                         onChange={(event) => updateSectionAttemptRule(section.id, "required", Number(event.target.value))}
                       />
-                      <span className="text-[11px] font-bold text-slate-500">
+                      <span className={s.attemptOf}>
                         of {section.questions.length}
                       </span>
                       {new Set(section.questions.map((q) => q.marks)).size > 1 && (
-                        <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                        <span className={s.marksVaryWarning}>
                           <AlertTriangle size={10} />
                           marks vary
                         </span>
                       )}
                     </>
                   )}
-                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <div className={s.sectionActions}>
                     {section.questions.length === 0 || !section.questions.every((q) => q.type === "MCQ") ? (
                       <button className="editor-mini-button" onClick={() => addBlankQuestion(section.id)} type="button">
                         <Plus size={14} />
@@ -1890,7 +1889,7 @@ export function PaperEditor({
                       Image
                     </button>
                     {paper.sections.length > 1 && (
-                      <button className="editor-mini-button text-red-500 hover:text-red-700" onClick={() => deleteSection(section.id)} type="button">
+                      <button className={`editor-mini-button ${s.sectionDeleteBtn}`} onClick={() => deleteSection(section.id)} type="button">
                         <Trash2 size={14} />
                         Delete section
                       </button>
@@ -1901,18 +1900,18 @@ export function PaperEditor({
 
               <textarea
                 aria-label={`${section.title} instructions`}
-                className="mb-4 min-h-10 w-full resize-y rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-slate-600 outline-none hover:border-slate-200 focus:border-blue-400 focus:bg-white"
+                className={s.sectionInstructionsInput}
                 placeholder="Section instructions"
                 value={section.instructions}
                 onChange={(event) => updateSection(section.id, { instructions: event.target.value })}
               />
               {hasAttemptChoice && (
-                <p className="-mt-3 mb-3 px-2 font-sans text-[11px] font-bold text-slate-700">
+                <p className={s.attemptNote}>
                   Attempt any {section.attemptRule?.required} of {section.attemptRule?.offered} questions. Counted marks: {sectionMarks}.
                 </p>
               )}
 
-              <div className="space-y-1">
+              <div className={s.questionsList}>
                 {section.questions.map((question) => {
                   const questionNumber = stats?.questionNumberById[question.id] ?? 0;
                   const isAnswerOpen = expandedAnswers[question.id] ?? false;
@@ -1924,9 +1923,7 @@ export function PaperEditor({
                     <div
                       key={question.id}
                       id={`question-${question.id}`}
-                      className={`question-row group relative rounded-lg border transition ${
-                        isActiveQuestion ? "is-active border-amber-300 bg-amber-50/35 p-2 shadow-sm" : "border-transparent bg-transparent px-0 py-0.5"
-                      } ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""} ${draggedQuestion?.questionId === question.id ? "opacity-40 ring-2 ring-inset ring-blue-300" : ""}`}
+                      className={`question-row ${isActiveQuestion ? `is-active ${s.questionRowActive}` : s.questionRowInactive} ${isReplacing ? `ai-replacing ${s.questionRowReplacing}` : ""} ${draggedQuestion?.questionId === question.id ? s.questionRowDragging : ""}`}
                       // The row itself is NEVER draggable: a draggable ancestor makes
                       // contentEditable/MathLive children untypeable in Chromium (focus is
                       // swallowed). Drag-to-reorder is initiated only from the grip handle below.
@@ -1937,25 +1934,25 @@ export function PaperEditor({
                         moveDraggedQuestion(section.id, question.id);
                       }}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
-                          <div className="flex items-center gap-0.5">
+                      <div className={s.questionInner}>
+                        <div className={s.questionLeft}>
+                          <div className={s.questionNumRow}>
                             <span
                               draggable
                               onDragStart={(event) => {
                                 event.stopPropagation();
                                 setDraggedQuestion({ sectionId: section.id, questionId: question.id });
                               }}
-                              className="cursor-grab"
+                              className={s.questionDragHandle}
                               title="Drag to reorder"
                             >
-                              <GripVertical className={isActiveQuestion ? "text-slate-400" : "text-slate-200 opacity-0 group-hover:opacity-100"} size={11} />
+                              <GripVertical className={isActiveQuestion ? "text-slate-400" : "text-slate-200"} size={11} />
                             </span>
-                            <span className="font-sans text-[11px] font-black text-slate-950 leading-none">{questionNumber}.</span>
+                            <span className={s.questionNumber}>{questionNumber}.</span>
                           </div>
                         </div>
 
-                        <div className={`min-w-0 flex-1 ${isActiveQuestion ? "space-y-2" : "space-y-0.5"}`}>
+                        <div className={`${s.questionBody} ${isActiveQuestion ? s.questionBodyActive : s.questionBodyInactive}`}>
                           {isActiveQuestion ? (
                             <RichTextEditor
                               label={`Question ${questionNumber}`}
@@ -1969,12 +1966,12 @@ export function PaperEditor({
                             />
                           ) : (
                             <div
-                              className="paper-question-text text-sm"
+                              className="paper-question-text"
                               dangerouslySetInnerHTML={{ __html: richDisplayHtml(question.richText, question.text) || "<span class='text-slate-300'>Empty question — click to edit</span>" }}
                             />
                           )}
                           {isActiveQuestion && isEmptyRichText(question.text, question.richText, question.imageAssets) && (
-                            <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                            <p className={s.questionEmptyWarning}>
                               ⚠ Question text is empty — add content before exporting
                             </p>
                           )}
@@ -2003,17 +2000,17 @@ export function PaperEditor({
                           )}
 
                           {question.options && question.options.length > 0 && (
-                            <div className={isActiveQuestion ? "space-y-2 rounded-md border border-slate-200 bg-white p-2" : optionsGridClass(question.options)}>
+                            <div className={isActiveQuestion ? s.optionsEditContainer : optionsGridClass(question.options)}>
                               {question.options.map((option, optionIndex) => (
                                 isActiveQuestion ? (
-                                  <div key={option.id ?? `${question.id}-option-${optionIndex}`} className="group/option grid grid-cols-[44px_1fr_auto] gap-2">
+                                  <div key={option.id ?? `${question.id}-option-${optionIndex}`} className={s.optionRowEdit}>
                                     <input
                                       aria-label={`Question ${questionNumber} option ${optionIndex + 1} label`}
-                                      className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-center text-xs font-black text-slate-700"
+                                      className={s.optionLabelInput}
                                       value={option.label ?? String.fromCharCode(65 + optionIndex)}
                                       onChange={(event) => updateQuestionOption(section.id, question.id, optionIndex, { label: event.target.value })}
                                     />
-                                    <div className="min-w-0 space-y-2">
+                                    <div className={s.optionBody}>
                                       <RichTextEditor
                                         label={`Question ${questionNumber} option ${option.label ?? optionIndex + 1}`}
                                         minHeight="compact"
@@ -2026,7 +2023,7 @@ export function PaperEditor({
                                         onHtmlChange={(richText) => updateQuestionOption(section.id, question.id, optionIndex, { richText })}
                                       />
                                       {isEmptyRichText(option.text, option.richText, option.imageAssets) && (
-                                        <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                        <p className={s.questionEmptyWarning}>
                                           ⚠ Option {option.label ?? String.fromCharCode(65 + optionIndex)} is empty
                                         </p>
                                       )}
@@ -2037,7 +2034,7 @@ export function PaperEditor({
                                       />
                                     </div>
                                     <TextBlockActions
-                                      className="opacity-100 lg:opacity-0 lg:group-hover/option:opacity-100"
+                                      className={s.textBlockActionsGrid}
                                       onDuplicate={() => duplicateQuestionOption(section.id, question.id, optionIndex)}
                                       onAddImage={onUploadImage ? (file) => void attachQuestionOptionImage(section.id, question.id, optionIndex, file) : undefined}
                                       onDelete={() => deleteQuestionOption(section.id, question.id, optionIndex)}
@@ -2052,7 +2049,7 @@ export function PaperEditor({
                                 )
                               ))}
                               {isActiveQuestion && (
-                                <button className="editor-mini-button ml-11" onClick={() => addQuestionOption(section.id, question.id)} type="button">
+                                <button className={`editor-mini-button ${s.addOptionBtn}`} onClick={() => addQuestionOption(section.id, question.id)} type="button">
                                   <Plus size={14} />
                                   Add option
                                 </button>
@@ -2061,11 +2058,11 @@ export function PaperEditor({
                           )}
 
                           {question.subparts && question.subparts.length > 0 && (
-                            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                            <div className={s.subpartsContainer}>
                               {question.subparts.map((subpart) => (
-                                <div key={subpart.id} className="group/subpart rounded-md border border-slate-200 bg-white p-2">
-                                  <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
-                                    <span className="rounded bg-slate-100 px-2 py-1 font-black text-slate-800">({subpart.label})</span>
+                                <div key={subpart.id} className={s.subpartCard}>
+                                  <div className={s.subpartCardHeader}>
+                                    <span className={s.subpartLabelBadge}>({subpart.label})</span>
                                     <MarksInput
                                       aria-label={`Question ${questionNumber} subpart ${subpart.label} marks`}
                                       value={subpart.marks ?? 0}
@@ -2073,7 +2070,7 @@ export function PaperEditor({
                                     />
                                     <span>Marks</span>
                                     <select
-                                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                      className={s.subpartSelect}
                                       defaultValue=""
                                       title={subpart.optionalChoice ? "Move this part's OR choice to another part's OR slot" : "Move this part into another part's OR slot"}
                                       onChange={(event) => {
@@ -2109,12 +2106,12 @@ export function PaperEditor({
                                           ));
                                       })}
                                     </select>
-                                    <button className="editor-mini-button text-red-600" onClick={() => deleteSubpart(section.id, question.id, subpart.id)} type="button">
+                                    <button className={`editor-mini-button ${s.sectionDeleteBtn}`} onClick={() => deleteSubpart(section.id, question.id, subpart.id)} type="button">
                                       Delete part
                                     </button>
                                   </div>
-                                  <div className="grid grid-cols-[1fr_auto] gap-2">
-                                    <div className="min-w-0 space-y-2">
+                                  <div className={s.subpartLayout}>
+                                    <div className={s.subpartContent}>
                                       <RichTextEditor
                                         label={`Question ${questionNumber} subpart ${subpart.label}`}
                                         minHeight="compact"
@@ -2127,7 +2124,7 @@ export function PaperEditor({
                                         onHtmlChange={(richText) => updateSubpart(section.id, question.id, subpart.id, { richText })}
                                       />
                                       {isEmptyRichText(subpart.text, subpart.richText, subpart.imageAssets) && (
-                                        <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                        <p className={s.questionEmptyWarning}>
                                           ⚠ Part ({subpart.label}) text is empty
                                         </p>
                                       )}
@@ -2137,16 +2134,16 @@ export function PaperEditor({
                                         onDelete={(assetId) => removeSubpartImage(section.id, question.id, subpart.id, assetId)}
                                       />
                                       {subpart.options && subpart.options.length > 0 && (
-                                        <div className="space-y-2 rounded-md border border-amber-100 bg-amber-50/50 p-2">
+                                        <div className={s.subpartMcqOptions}>
                                           {subpart.options.map((option, optionIndex) => (
-                                            <div key={option.id ?? `${subpart.id}-option-${optionIndex}`} className="group/subpart-option grid grid-cols-[44px_1fr_auto] gap-2">
+                                            <div key={option.id ?? `${subpart.id}-option-${optionIndex}`} className={s.subpartOptionRow}>
                                               <input
                                                 aria-label={`Question ${questionNumber} subpart ${subpart.label} option ${optionIndex + 1} label`}
-                                                className="h-9 rounded-md border border-amber-100 bg-white px-2 text-center text-xs font-black text-slate-700"
+                                                className={s.subpartOptionInput}
                                                 value={option.label ?? String.fromCharCode(65 + optionIndex)}
                                                 onChange={(event) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { label: event.target.value })}
                                               />
-                                              <div className="min-w-0 space-y-2">
+                                              <div className={s.subpartContent}>
                                                 <RichTextEditor
                                                   label={`Question ${questionNumber} part ${subpart.label} option ${option.label ?? optionIndex + 1}`}
                                                   minHeight="compact"
@@ -2159,7 +2156,7 @@ export function PaperEditor({
                                                   onHtmlChange={(richText) => updateSubpartOption(section.id, question.id, subpart.id, optionIndex, { richText })}
                                                 />
                                                 {isEmptyRichText(option.text, option.richText, option.imageAssets) && (
-                                                  <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                                  <p className={s.questionEmptyWarning}>
                                                     ⚠ Option {option.label ?? String.fromCharCode(65 + optionIndex)} is empty
                                                   </p>
                                                 )}
@@ -2170,14 +2167,14 @@ export function PaperEditor({
                                                 />
                                               </div>
                                               <TextBlockActions
-                                                className="opacity-100 lg:opacity-0 lg:group-hover/subpart-option:opacity-100"
+                                                className={s.textBlockActionsGrid}
                                                 onDuplicate={() => duplicateSubpartOption(section.id, question.id, subpart.id, optionIndex)}
                                                 onAddImage={onUploadImage ? (file) => void attachSubpartOptionImage(section.id, question.id, subpart.id, optionIndex, file) : undefined}
                                                 onDelete={() => deleteSubpartOption(section.id, question.id, subpart.id, optionIndex)}
                                               />
                                             </div>
                                           ))}
-                                          <button className="editor-mini-button ml-11" onClick={() => addSubpartOption(section.id, question.id, subpart.id)} type="button">
+                                          <button className={`editor-mini-button ${s.addOptionBtn}`} onClick={() => addSubpartOption(section.id, question.id, subpart.id)} type="button">
                                             <Plus size={14} />
                                             Add part option
                                           </button>
@@ -2191,7 +2188,7 @@ export function PaperEditor({
                                       )}
                                     </div>
                                     <TextBlockActions
-                                      className="opacity-100 lg:opacity-0 lg:group-hover/subpart:opacity-100"
+                                      className={s.textBlockActionsGrid}
                                       hasChoice={!!subpart.optionalChoice}
                                       onDuplicate={() => duplicateSubpart(section.id, question.id, subpart.id)}
                                       onAddChoice={!subpart.optionalChoice ? () => addSubpartChoice(section.id, question.id, subpart.id) : undefined}
@@ -2214,15 +2211,15 @@ export function PaperEditor({
                                     )}
                                   </DiagramDropZone>
                                   {subpart.optionalChoice && (
-                                    <div className="mt-2 rounded-md border border-dashed border-blue-200 bg-blue-50/60 p-2">
-                                      <div className="mb-2 flex items-center justify-between text-xs font-black text-blue-700">
+                                    <div className={s.subpartChoiceContainer}>
+                                      <div className={s.subpartChoiceHeader}>
                                         <span>OR for part ({subpart.label})</span>
-                                        <button className="editor-mini-button text-red-600" onClick={() => removeSubpartChoice(section.id, question.id, subpart.id)} type="button">
+                                        <button className={`editor-mini-button ${s.sectionDeleteBtn}`} onClick={() => removeSubpartChoice(section.id, question.id, subpart.id)} type="button">
                                           Remove OR
                                         </button>
                                       </div>
-                                      <div className="grid grid-cols-[1fr_auto] gap-2">
-                                        <div className="min-w-0 space-y-2">
+                                      <div className={s.subpartChoiceLayout}>
+                                        <div className={s.subpartChoiceContent}>
                                           <RichTextEditor
                                             label={`Question ${questionNumber} subpart ${subpart.label} OR`}
                                             minHeight="compact"
@@ -2240,18 +2237,18 @@ export function PaperEditor({
                                             onDelete={(assetId) => removeSubpartChoiceImage(section.id, question.id, subpart.id, assetId)}
                                           />
                                           {subpart.optionalChoice.options && subpart.optionalChoice.options.length > 0 && (
-                                            <div className="space-y-2 rounded-md border border-blue-100 bg-white/80 p-2">
+                                            <div className={s.blueMcqOptions}>
                                               {subpart.optionalChoice.options.map((option, optionIndex) => (
-                                                <div key={option.id ?? `${subpart.id}-choice-option-${optionIndex}`} className="group/subpart-or-option grid grid-cols-[44px_1fr_auto] gap-2">
+                                                <div key={option.id ?? `${subpart.id}-choice-option-${optionIndex}`} className={s.blueOptionRow}>
                                                   <input
                                                     aria-label={`Question ${questionNumber} subpart ${subpart.label} OR option ${optionIndex + 1} label`}
-                                                    className="h-9 rounded-md border border-blue-100 bg-white px-2 text-center text-xs font-black text-slate-700"
+                                                    className={s.blueOptionInput}
                                                     value={option.label ?? String.fromCharCode(65 + optionIndex)}
                                                     onChange={(event) =>
                                                       updateSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex, { label: event.target.value })
                                                     }
                                                   />
-                                                  <div className="min-w-0 space-y-2">
+                                                  <div className={s.subpartChoiceContent}>
                                                     <RichTextEditor
                                                       label={`Question ${questionNumber} part ${subpart.label} OR option ${option.label ?? optionIndex + 1}`}
                                                       minHeight="compact"
@@ -2276,7 +2273,7 @@ export function PaperEditor({
                                                     />
                                                   </div>
                                                   <TextBlockActions
-                                                    className="opacity-100 lg:opacity-0 lg:group-hover/subpart-or-option:opacity-100"
+                                                    className={s.textBlockActionsGrid}
                                                     onDuplicate={() => duplicateSubpartChoiceOption(section.id, question.id, subpart.id, optionIndex)}
                                                     onAddImage={
                                                       onUploadImage
@@ -2287,7 +2284,7 @@ export function PaperEditor({
                                                   />
                                                 </div>
                                               ))}
-                                              <button className="editor-mini-button ml-11" onClick={() => addSubpartChoiceOption(section.id, question.id, subpart.id)} type="button">
+                                              <button className={`editor-mini-button ${s.addOptionBtn}`} onClick={() => addSubpartChoiceOption(section.id, question.id, subpart.id)} type="button">
                                                 <Plus size={14} />
                                                 Add OR option
                                               </button>
@@ -2299,9 +2296,9 @@ export function PaperEditor({
                                               Create MCQ OR
                                             </button>
                                           )}
-                                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-blue-700">
+                                          <div className={s.blueMetaRow}>
                                             <select
-                                              className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                              className={s.blueSelect}
                                               defaultValue=""
                                               title="Move this OR choice to another subpart's OR slot"
                                               onChange={(event) => {
@@ -2319,7 +2316,7 @@ export function PaperEditor({
                                             </select>
                                             <input
                                               aria-label={`Question ${questionNumber} subpart ${subpart.label} OR marks`}
-                                              className="w-14 rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-800"
+                                              className={s.blueMarksInput}
                                               min={0}
                                               type="number"
                                               value={subpart.optionalChoice.marks ?? subpart.marks ?? 0}
@@ -2327,7 +2324,7 @@ export function PaperEditor({
                                             />
                                             <span>Marks</span>
                                             <select
-                                              className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                              className={s.blueSelect}
                                               value={subpart.optionalChoice.type ?? ((subpart.optionalChoice.options?.length ?? 0) > 0 ? "MCQ" : "SA")}
                                               onChange={(event) => {
                                                 const type = event.target.value;
@@ -2342,7 +2339,7 @@ export function PaperEditor({
                                               ))}
                                             </select>
                                             <select
-                                              className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                              className={s.blueSelect}
                                               value={subpart.optionalChoice.difficulty ?? question.difficulty}
                                               onChange={(event) => updateSubpartChoice(section.id, question.id, subpart.id, { difficulty: event.target.value })}
                                             >
@@ -2385,12 +2382,12 @@ export function PaperEditor({
                           )}
 
                           {question.optionalChoice && isActiveQuestion && (
-                            <div className={`choice-row group/choice relative rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-3 ${isChoiceReplacing ? "ai-replacing border-blue-300 bg-blue-100/70" : ""}`}>
-                              <div className="mb-2 flex items-center justify-between">
-                                <span className="text-xs font-black text-blue-700">OR</span>
-                                <div className="flex items-center gap-1">
+                            <div className={`${s.orChoiceRow} ${isChoiceReplacing ? s.orChoiceRowReplacing : ""}`}>
+                              <div className={s.orChoiceInnerHeader}>
+                                <span className={s.orChoiceLabel}>OR</span>
+                                <div className={s.orChoiceActions}>
                                   <button
-                                    className="editor-mini-button text-blue-700"
+                                    className="editor-mini-button"
                                     title="Promote OR choice to standalone question"
                                     onClick={() => promoteChoiceToQuestion(section.id, question.id)}
                                     type="button"
@@ -2399,7 +2396,7 @@ export function PaperEditor({
                                     Move out of OR
                                   </button>
                                   <button
-                                    className="editor-mini-button text-red-600"
+                                    className={`editor-mini-button ${s.sectionDeleteBtn}`}
                                     onClick={() => removeInternalChoice(section.id, question.id)}
                                     type="button"
                                   >
@@ -2408,9 +2405,9 @@ export function PaperEditor({
                                   </button>
                                 </div>
                               </div>
-                              <div className="flex items-start gap-3">
-                                <div className="pt-2 font-display text-sm font-black text-blue-700">Alt</div>
-                                <div className="min-w-0 flex-1 space-y-3">
+                              <div className={s.orChoiceInner}>
+                                <div className={s.orChoiceAltLabel}>Alt</div>
+                                <div className={s.orChoiceBody}>
                                   <RichTextEditor
                                     label={`Question ${questionNumber} internal choice`}
                                     minHeight="compact"
@@ -2434,16 +2431,16 @@ export function PaperEditor({
                                     </button>
                                   )}
                                   {question.optionalChoice.options && question.optionalChoice.options.length > 0 && (
-                                    <div className="space-y-2 rounded-md border border-blue-100 bg-white/80 p-2">
+                                    <div className={s.blueMcqOptions}>
                                       {question.optionalChoice.options.map((option, optionIndex) => (
-                                        <div key={option.id ?? `${question.id}-choice-option-${optionIndex}`} className="group/or-option grid grid-cols-[44px_1fr_auto] gap-2">
+                                        <div key={option.id ?? `${question.id}-choice-option-${optionIndex}`} className={s.blueOptionRow}>
                                           <input
                                             aria-label={`Question ${questionNumber} OR option ${optionIndex + 1} label`}
-                                            className="h-9 rounded-md border border-blue-100 bg-white px-2 text-center text-xs font-black text-slate-700"
+                                            className={s.blueOptionInput}
                                             value={option.label ?? String.fromCharCode(65 + optionIndex)}
                                             onChange={(event) => updateInternalChoiceOption(section.id, question.id, optionIndex, { label: event.target.value })}
                                           />
-                                          <div className="min-w-0 space-y-2">
+                                          <div className={s.orChoiceBody}>
                                             <RichTextEditor
                                               label={`Question ${questionNumber} OR option ${option.label ?? optionIndex + 1}`}
                                               minHeight="compact"
@@ -2462,7 +2459,7 @@ export function PaperEditor({
                                             />
                                           </div>
                                           <TextBlockActions
-                                            className="opacity-100 lg:opacity-0 lg:group-hover/or-option:opacity-100"
+                                            className={s.textBlockActionsGrid}
                                             onDuplicate={() => duplicateInternalChoiceOption(section.id, question.id, optionIndex)}
                                             onAddImage={
                                               onUploadImage ? (file) => void attachInternalChoiceOptionImage(section.id, question.id, optionIndex, file) : undefined
@@ -2471,16 +2468,16 @@ export function PaperEditor({
                                           />
                                         </div>
                                       ))}
-                                      <button className="editor-mini-button ml-11" onClick={() => addInternalChoiceOption(section.id, question.id)} type="button">
+                                      <button className={`editor-mini-button ${s.addOptionBtn}`} onClick={() => addInternalChoiceOption(section.id, question.id)} type="button">
                                         <Plus size={14} />
                                         Add OR option
                                       </button>
                                     </div>
                                   )}
-                                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                                  <div className={s.orMetaRow}>
                                     <input
                                       aria-label={`Question ${questionNumber} OR marks`}
-                                      className="w-16 rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-800"
+                                      className={s.orWideMarksInput}
                                       min={0}
                                       type="number"
                                       value={question.optionalChoice.marks ?? question.marks}
@@ -2488,7 +2485,7 @@ export function PaperEditor({
                                     />
                                     <span>Marks</span>
                                     <select
-                                      className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                      className={s.blueSelect}
                                       value={question.optionalChoice.type ?? question.type}
                                       onChange={(event) => {
                                         const type = event.target.value;
@@ -2503,7 +2500,7 @@ export function PaperEditor({
                                       ))}
                                     </select>
                                     <select
-                                      className="rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                      className={s.blueSelect}
                                       value={question.optionalChoice.difficulty ?? question.difficulty}
                                       onChange={(event) => updateInternalChoice(section.id, question.id, { difficulty: event.target.value })}
                                     >
@@ -2512,12 +2509,12 @@ export function PaperEditor({
                                       ))}
                                     </select>
                                     <input
-                                      className="min-w-28 rounded-md border border-blue-100 bg-white px-2 py-1 text-xs text-slate-700"
+                                      className={s.orTopicInput}
                                       placeholder="Topic"
                                       value={question.optionalChoice.topic ?? question.topic ?? ""}
                                       onChange={(event) => updateInternalChoice(section.id, question.id, { topic: event.target.value })}
                                     />
-                                    <span className="rounded bg-white px-2 py-1 text-blue-700">{question.optionalChoice.source || question.source || "Manual OR"}</span>
+                                    <span className={s.orSourceBadge}>{question.optionalChoice.source || question.source || "Manual OR"}</span>
                                   </div>
                                   {(expandedAnswers[`${question.id}:choice`] ?? false) && (
                                     <RichTextEditor
@@ -2534,7 +2531,7 @@ export function PaperEditor({
                                   )}
                                 </div>
                                 <TextBlockActions
-                                  className="opacity-100 lg:opacity-0 lg:group-hover/choice:opacity-100"
+                                  className={s.textBlockActionsGrid}
                                   isReplacing={isChoiceReplacing}
                                   onReplace={() =>
                                     setReplacePrompt({
@@ -2556,7 +2553,7 @@ export function PaperEditor({
                           )}
 
                           {isActiveQuestion && (
-                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                            <div className={s.questionMetaRow}>
                               <MarksInput
                                 aria-label={`Question ${questionNumber} marks`}
                                 value={question.marks}
@@ -2564,13 +2561,13 @@ export function PaperEditor({
                               />
                               <span>Marks</span>
                               {section.targetMarks && section.questions.length > 0 && question.marks !== Math.round(section.targetMarks / section.questions.length) && (
-                                <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700" title="Marks differ from section average">
+                                <span className={s.marksVaryBadge} title="Marks differ from section average">
                                   <AlertTriangle size={10} />
                                   {question.marks}m vs avg {Math.round(section.targetMarks / section.questions.length)}m
                                 </span>
                               )}
                               <select
-                                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                className={s.questionMoveSelect}
                                 defaultValue=""
                                 title="Move this question into another question's OR slot"
                                 onChange={(event) => {
@@ -2588,12 +2585,12 @@ export function PaperEditor({
                                     </option>
                                   ))}
                               </select>
-                              <span className="rounded bg-blue-50 px-2 py-1 text-blue-700">{question.source || "Manual"}</span>
-                              <details className="rounded-md border border-slate-200 bg-white px-2 py-1">
-                                <summary className="cursor-pointer list-none text-slate-500">Details</summary>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span className={s.questionSourceBadge}>{question.source || "Manual"}</span>
+                              <details className={s.questionDetails}>
+                                <summary className={s.questionDetailsSummary}>Details</summary>
+                                <div className={s.questionDetailsBody}>
                                   <select
-                                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                    className={s.questionTypeSelect}
                                     value={question.type}
                                     onChange={(event) => updateQuestion(section.id, question.id, { type: event.target.value })}
                                   >
@@ -2602,7 +2599,7 @@ export function PaperEditor({
                                     ))}
                                   </select>
                                   <select
-                                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                    className={s.questionTypeSelect}
                                     value={question.difficulty}
                                     onChange={(event) => updateQuestion(section.id, question.id, { difficulty: event.target.value })}
                                   >
@@ -2611,7 +2608,7 @@ export function PaperEditor({
                                     ))}
                                   </select>
                                   <input
-                                    className="min-w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                    className={s.questionTopicInput}
                                     placeholder="Topic"
                                     value={question.topic ?? ""}
                                     onChange={(event) => updateQuestion(section.id, question.id, { topic: event.target.value })}
@@ -2637,7 +2634,7 @@ export function PaperEditor({
                         </div>
 
                         {!isActiveQuestion && (
-                          <div className="shrink-0 pt-0.5 text-right font-mono text-[11px] font-bold text-slate-500 leading-tight">
+                          <div className={s.questionMarksCol}>
                             [{countedQuestionMarks(question)}]
                           </div>
                         )}
@@ -2667,15 +2664,15 @@ export function PaperEditor({
                         )}
                       </div>
                       {isReplacing && (
-                        <div className="pointer-events-none absolute inset-0 rounded-lg border border-blue-300 bg-blue-50/55">
-                          <div className="absolute right-3 top-3 rounded-full bg-white px-3 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-blue-700 shadow-sm">
+                        <div className={s.replacingOverlay}>
+                          <div className={s.replacingBadge}>
                             Replacing with AI
                           </div>
                         </div>
                       )}
                       {/* Insert a new question right after this one */}
                       <button
-                        className="absolute -bottom-2.5 right-3 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white opacity-0 shadow transition hover:bg-blue-700 group-hover:opacity-100"
+                        className={s.addAfterBtn}
                         title="Add a question below"
                         onClick={(event) => { event.stopPropagation(); addBlankQuestionAfter(section.id, question.id); }}
                         type="button"
@@ -2688,7 +2685,7 @@ export function PaperEditor({
               </div>
             </section>
             {sectionIndex < paper.sections.length - 1 && (
-              <div className="pointer-events-none my-4 h-px border-t border-dashed border-slate-200" />
+              <div className={s.sectionDivider} />
             )}
             </Fragment>
           );
@@ -2698,17 +2695,17 @@ export function PaperEditor({
       </div>
 
       {confirmState && (
-        <div className="fixed inset-0 z-1200 flex items-center justify-center bg-[rgba(15,23,42,0.4)] px-4 backdrop-blur-sm" onClick={() => setConfirmState(null)}>
-          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center gap-2 font-display text-lg text-slate-950">
-              <AlertTriangle className="text-amber-500" size={18} />
+        <div className={s.confirmOverlay} onClick={() => setConfirmState(null)}>
+          <div className={s.confirmDialog} onClick={(event) => event.stopPropagation()}>
+            <div className={s.confirmTitle}>
+              <AlertTriangle style={{ color: "#f59e0b" }} size={18} />
               Please confirm
             </div>
-            <p className="mt-2 text-sm text-slate-600">{confirmState.message}</p>
-            <div className="mt-4 flex justify-end gap-2">
+            <p className={s.confirmMessage}>{confirmState.message}</p>
+            <div className={s.confirmActions}>
               <button className="editor-mini-button" onClick={() => setConfirmState(null)} type="button">Cancel</button>
               <button
-                className="editor-mini-button bg-red-600 text-white hover:bg-red-700"
+                className={`editor-mini-button ${s.confirmDangerBtn}`}
                 onClick={() => { confirmState.onConfirm(); setConfirmState(null); }}
                 type="button"
               >
@@ -2720,9 +2717,9 @@ export function PaperEditor({
       )}
 
       {/* Floating zoom controls */}
-      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-1.5 py-1 shadow-lg backdrop-blur">
+      <div className={s.zoomControls}>
         <button
-          className="flex h-7 w-7 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+          className={s.zoomButton}
           title="Zoom out"
           disabled={pageZoom <= 0.5}
           onClick={() => adjustZoom(-0.1)}
@@ -2731,7 +2728,7 @@ export function PaperEditor({
           <ZoomOut size={15} />
         </button>
         <button
-          className="min-w-12 rounded-full px-2 text-center font-mono text-[11px] font-bold text-slate-600 hover:bg-slate-100"
+          className={s.zoomLabel}
           title="Reset zoom"
           onClick={() => setPageZoom(1)}
           type="button"
@@ -2739,7 +2736,7 @@ export function PaperEditor({
           {Math.round(pageZoom * 100)}%
         </button>
         <button
-          className="flex h-7 w-7 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+          className={s.zoomButton}
           title="Zoom in"
           disabled={pageZoom >= 2}
           onClick={() => adjustZoom(0.1)}
@@ -2838,17 +2835,15 @@ function PaperOutline({
   const [menu, setMenu] = useState<{ x: number; y: number; sectionId: string; index: number } | null>(null);
 
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-2 text-xs">
-      <div className="mb-2 px-1 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">
+    <div className={s.outlineTree}>
+      <div className={s.outlineTitle}>
         Sections &amp; questions
       </div>
-      <div className="space-y-0.5" onClick={() => menu && setMenu(null)}>
+      <div className={s.outlineList} onClick={() => menu && setMenu(null)}>
         {sections.map((section, sectionIndex) => (
           <div key={section.id}>
             <div
-              className={`group flex items-center gap-1 rounded px-1.5 py-1 font-bold text-slate-700 transition hover:bg-slate-100 ${
-                draggedSectionId === section.id ? "opacity-40" : ""
-              }`}
+              className={`${s.outlineSectionRow} ${draggedSectionId === section.id ? s.outlineSectionRowDragging : ""}`}
               draggable
               title="Drag to reorder · right-click for options"
               onDragStart={(event) => { event.stopPropagation(); onSectionDragStart(section.id); }}
@@ -2861,14 +2856,14 @@ function PaperOutline({
                 setMenu({ x: event.clientX, y: event.clientY, sectionId: section.id, index: sectionIndex });
               }}
             >
-              <GripVertical className="shrink-0 cursor-grab text-slate-300 group-hover:text-slate-500" size={12} />
-              <button className="min-w-0 flex-1 truncate text-left uppercase tracking-wide" onClick={() => onSelectSection(section.id)} type="button">
+              <GripVertical style={{ flexShrink: 0, cursor: "grab", color: "#cbd5e1" }} size={12} />
+              <button className={s.outlineSectionBtn} onClick={() => onSelectSection(section.id)} type="button">
                 {section.title}
               </button>
-              <span className="shrink-0 font-mono text-[9px] font-bold text-slate-400">{section.questions.length}</span>
+              <span className={s.outlineSectionCount}>{section.questions.length}</span>
             </div>
 
-            <div className="ml-3 border-l border-slate-100 pl-1">
+            <div className={s.outlineQGroup}>
               {section.questions.map((question) => {
                 const questionNumber = questionNumberById[question.id] ?? "?";
                 const isActive = activeQuestionId === question.id;
@@ -2876,37 +2871,35 @@ function PaperOutline({
                 return (
                   <div key={question.id}>
                     <div
-                      className={`flex items-center gap-1 rounded px-1.5 py-0.5 transition ${
-                        isActive ? "bg-amber-100 text-amber-900" : "text-slate-500 hover:bg-slate-100"
-                      } ${draggedQuestionId === question.id ? "opacity-40" : ""}`}
+                      className={`${s.outlineQRow} ${isActive ? s.outlineQRowActive : ""} ${draggedQuestionId === question.id ? s.outlineQRowDragging : ""}`}
                       draggable
                       onDragStart={(event) => { event.stopPropagation(); onQuestionDragStart(section.id, question.id); }}
                       onDragEnd={onQuestionDragEnd}
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={(event) => { event.preventDefault(); event.stopPropagation(); onQuestionDrop(section.id, question.id); }}
                     >
-                      <span className="shrink-0 font-mono text-[9px] font-black">Q{questionNumber}</span>
-                      <button className="min-w-0 flex-1 truncate text-left font-medium" onClick={() => onSelectQuestion(question.id)} type="button">
+                      <span className={s.outlineQNum}>Q{questionNumber}</span>
+                      <button className={s.outlineQBtn} onClick={() => onSelectQuestion(question.id)} type="button">
                         {preview || "Untitled"}
                       </button>
                     </div>
                     {((question.subparts && question.subparts.length > 0) || choiceHasContent(question.optionalChoice)) && (
-                      <div className="ml-3 border-l border-slate-100 pl-1">
+                      <div className={s.outlinePartGroup}>
                         {question.subparts?.map((subpart, partIndex) => {
                           const partLabel = subpart.label || String.fromCharCode(97 + partIndex);
                           const isDraggingThis = draggedPart?.kind === "subpart" && draggedPart.subpartId === subpart.id;
                           return (
                             <div
                               key={subpart.id}
-                              className={`group flex items-center gap-1 rounded px-1.5 py-0.5 text-slate-400 transition hover:bg-slate-100 ${isDraggingThis ? "opacity-40" : ""}`}
+                              className={`${s.outlinePartRow} ${isDraggingThis ? s.outlinePartRowDragging : ""}`}
                               draggable
                               title="Drag onto another question to move this part"
                               onDragStart={(event) => { event.stopPropagation(); onPartDragStart({ kind: "subpart", sectionId: section.id, questionId: question.id, subpartId: subpart.id }); }}
                               onDragEnd={onPartDragEnd}
                             >
-                              <GripVertical className="shrink-0 cursor-grab text-slate-200 group-hover:text-slate-400" size={10} />
-                              <span className="shrink-0 font-mono text-[9px] font-bold">({partLabel})</span>
-                              <button className="min-w-0 flex-1 truncate text-left" onClick={() => onSelectQuestion(question.id)} type="button">
+                              <GripVertical style={{ flexShrink: 0, cursor: "grab" }} size={10} />
+                              <span className={s.outlineQNum}>({partLabel})</span>
+                              <button className={s.outlineQBtn} onClick={() => onSelectQuestion(question.id)} type="button">
                                 {(subpart.text || subpart.richText?.replace(/<[^>]*>/g, "") || "Part").trim()}
                               </button>
                             </div>
@@ -2914,15 +2907,15 @@ function PaperOutline({
                         })}
                         {choiceHasContent(question.optionalChoice) && (
                           <div
-                            className={`group flex items-center gap-1 rounded px-1.5 py-0.5 text-indigo-400 transition hover:bg-indigo-50 ${draggedPart?.kind === "orpart" && draggedPart.questionId === question.id ? "opacity-40" : ""}`}
+                            className={`${s.outlineOrRow} ${draggedPart?.kind === "orpart" && draggedPart.questionId === question.id ? s.outlineOrRowDragging : ""}`}
                             draggable
                             title="OR alternative — drag onto another question to move it"
                             onDragStart={(event) => { event.stopPropagation(); onPartDragStart({ kind: "orpart", sectionId: section.id, questionId: question.id }); }}
                             onDragEnd={onPartDragEnd}
                           >
-                            <GripVertical className="shrink-0 cursor-grab text-indigo-200 group-hover:text-indigo-400" size={10} />
-                            <span className="shrink-0 font-mono text-[9px] font-black">OR</span>
-                            <button className="min-w-0 flex-1 truncate text-left" onClick={() => onSelectQuestion(question.id)} type="button">
+                            <GripVertical style={{ flexShrink: 0, cursor: "grab" }} size={10} />
+                            <span className={s.outlineQNum}>OR</span>
+                            <button className={s.outlineQBtn} onClick={() => onSelectQuestion(question.id)} type="button">
                               {(question.optionalChoice?.text || question.optionalChoice?.richText?.replace(/<[^>]*>/g, "") || "Alternative").trim()}
                             </button>
                           </div>
@@ -2939,13 +2932,13 @@ function PaperOutline({
 
       {menu && (
         <div
-          className="fixed z-1100 flex flex-col rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+          className={s.outlineMenu}
           style={{ top: Math.min(menu.y, window.innerHeight - 160), left: Math.min(menu.x, window.innerWidth - 200) }}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="px-3 py-1 text-[10px] font-black uppercase tracking-wide text-slate-400">Reorder section</div>
+          <div className={s.outlineMenuTitle}>Reorder section</div>
           <button
-            className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            className={s.outlineMenuItem}
             disabled={menu.index === 0}
             onClick={() => { onMoveSection(menu.sectionId, -1); setMenu(null); }}
             type="button"
@@ -2953,7 +2946,7 @@ function PaperOutline({
             ↑ Move up
           </button>
           <button
-            className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            className={s.outlineMenuItem}
             disabled={menu.index >= sections.length - 1}
             onClick={() => { onMoveSection(menu.sectionId, 1); setMenu(null); }}
             type="button"
@@ -2961,7 +2954,7 @@ function PaperOutline({
             ↓ Move down
           </button>
           <button
-            className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            className={s.outlineMenuItem}
             disabled={menu.index === 0}
             onClick={() => { onMoveSection(menu.sectionId, -menu.index); setMenu(null); }}
             type="button"
@@ -2969,7 +2962,7 @@ function PaperOutline({
             ⤒ Move to top
           </button>
           <button
-            className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            className={s.outlineMenuItem}
             disabled={menu.index >= sections.length - 1}
             onClick={() => { onMoveSection(menu.sectionId, sections.length - 1 - menu.index); setMenu(null); }}
             type="button"
@@ -3012,7 +3005,7 @@ function TextBlockActions({
   onDelete,
 }: TextBlockActionsProps) {
   return (
-    <div className={`grid shrink-0 grid-cols-2 gap-1 transition ${className}`}>
+    <div className={`${s.textBlockActionsGrid} ${className}`}>
       {onReplace && (
         <button className="editor-icon-button" disabled={isReplacing} title="Replace with AI" onClick={onReplace} type="button">
           <RefreshCcw className={isReplacing ? "animate-spin" : ""} size={15} />
@@ -3024,23 +3017,23 @@ function TextBlockActions({
         </button>
       )}
       {onAddChoice && !hasChoice && (
-        <button className="editor-icon-button text-blue-600" title="Add OR choice" onClick={onAddChoice} type="button">
+        <button className={`editor-icon-button ${s.iconBtnBlue}`} title="Add OR choice" onClick={onAddChoice} type="button">
           <Split size={15} />
         </button>
       )}
       {onRemoveChoice && hasChoice && (
-        <button className="editor-icon-button text-blue-600" title="Remove OR choice" onClick={onRemoveChoice} type="button">
+        <button className={`editor-icon-button ${s.iconBtnBlue}`} title="Remove OR choice" onClick={onRemoveChoice} type="button">
           <Merge size={15} />
         </button>
       )}
       {onAddSubpart && (
-        <button className="editor-icon-button text-[11px] font-black" title="Add subpart" onClick={onAddSubpart} type="button">
+        <button className={`editor-icon-button ${s.iconBtnCompact}`} title="Add subpart" onClick={onAddSubpart} type="button">
           (a)
         </button>
       )}
       {onAddImage && <ImageUploadButton onUpload={onAddImage} />}
       {onAnswer && (
-        <button className="editor-icon-button text-[12px] font-black" title="Show answer" onClick={onAnswer} type="button">
+        <button className={`editor-icon-button ${s.iconBtnAnswer}`} title="Show answer" onClick={onAnswer} type="button">
           A
         </button>
       )}
@@ -3050,7 +3043,7 @@ function TextBlockActions({
         </button>
       )}
       {onDelete && (
-        <button className="editor-icon-button text-red-600 hover:bg-red-50" title="Delete" onClick={onDelete} type="button">
+        <button className={`editor-icon-button ${s.iconBtnRed}`} title="Delete" onClick={onDelete} type="button">
           <Trash2 size={15} />
         </button>
       )}
@@ -3090,18 +3083,18 @@ function ImageAssetList({
   if (!assets || assets.length === 0) return null;
 
   return (
-    <div className={`grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-2 md:grid-cols-3"}`}>
+    <div className={compact ? s.imageGrid : s.imageGridWide}>
       {assets.map((asset) => (
-        <figure key={asset.id} className="relative rounded-md border border-slate-200 bg-white p-2 shadow-sm">
+        <figure key={asset.id} className={s.imageFigure}>
           <img
             alt={asset.altText || asset.caption || asset.filename || "Question image"}
-            className={`${compact ? "max-h-24" : "max-h-40"} w-full rounded object-contain`}
+            className={`${s.imageThumb} ${compact ? s.imageThumbCompact : s.imageThumbNormal}`}
             src={asset.url}
           />
-          <figcaption className="mt-1 truncate text-[10px] font-bold text-slate-500">{asset.caption || asset.filename || asset.name || "Attached image"}</figcaption>
+          <figcaption className={s.imageCaption}>{asset.caption || asset.filename || asset.name || "Attached image"}</figcaption>
           {!readOnly && (
             <button
-              className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-600 shadow-sm hover:bg-red-50"
+              className={s.imageDeleteBtn}
               onClick={() => onDelete(asset.id)}
               title="Remove image"
               type="button"
@@ -3129,20 +3122,20 @@ function ReplacePromptModal({
   title: string;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
-        <div className="font-display text-2xl italic text-slate-950">{title}</div>
-        <p className="mt-1 text-sm text-slate-500">Tell the AI exactly what should change before replacement starts.</p>
+    <div className={s.modalOverlay}>
+      <div className={s.modalDialog}>
+        <div className={s.modalTitle}>{title}</div>
+        <p className={s.modalSubtitle}>Tell the AI exactly what should change before replacement starts.</p>
         <textarea
-          className="mt-4 min-h-32 w-full resize-y rounded-lg border border-slate-200 p-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          className={s.modalTextarea}
           value={prompt}
           onChange={(event) => onChange(event.target.value)}
         />
-        <div className="mt-4 flex justify-end gap-2">
+        <div className={s.modalActions}>
           <button className="editor-mini-button" onClick={onClose} type="button">
             Cancel
           </button>
-          <button className="editor-mini-button bg-slate-950 text-white hover:bg-slate-800" onClick={onSubmit} type="button">
+          <button className={s.modalSubmitBtn} onClick={onSubmit} type="button">
             Replace
           </button>
         </div>
@@ -3153,9 +3146,9 @@ function ReplacePromptModal({
 
 function SourceMixPill({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border border-amber-200 bg-white/70 px-2 py-2">
-      <div className="font-mono text-[10px] font-black uppercase tracking-[0.08em] text-amber-700">{label}</div>
-      <div className="mt-1 font-display text-xl italic text-amber-950">{value}</div>
+    <div className={s.sourceMixPill}>
+      <div className={s.sourceMixPillLabel}>{label}</div>
+      <div className={s.sourceMixPillValue}>{value}</div>
     </div>
   );
 }
@@ -3180,7 +3173,7 @@ function MarksInput({
   return (
     <input
       aria-label={ariaLabel}
-      className={`w-14 rounded-md border px-2 py-1 text-xs ${isInvalid ? "border-red-400 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}
+      className={`${s.marksInputBase} ${isInvalid ? s.marksInputInvalid : ""}`}
       inputMode="numeric"
       pattern="[0-9.]*"
       title={isInvalid ? "Marks must be 0 or greater" : undefined}
@@ -3243,9 +3236,9 @@ function ContextMenuPanel({
   };
 
   return (
-    <div style={style} className="flex flex-col gap-1.5" onContextMenu={(e) => e.stopPropagation()}>
+    <div style={style} className={s.ctxPanelWrap} onContextMenu={(e) => e.stopPropagation()}>
       {/* Panel 1: mini formatting toolbar */}
-      <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-lg">
+      <div className={s.ctxFormattingBar}>
         {onBold && (
           <button className="editor-icon-button" title="Bold" onClick={() => { onBold(); onClose(); }} type="button">
             <Bold size={14} />
@@ -3262,12 +3255,12 @@ function ContextMenuPanel({
           </button>
         )}
         {onMath && (
-          <button className="editor-icon-button text-blue-600" title="Insert Math" onClick={() => { onMath(); onClose(); }} type="button">
+          <button className={`editor-icon-button ${s.iconBtnBlue}`} title="Insert Math" onClick={() => { onMath(); onClose(); }} type="button">
             <Sigma size={14} />
           </button>
         )}
         {inMathField && latex !== undefined && (
-          <span className="ml-1 rounded bg-blue-50 px-2 py-0.5 font-mono text-[10px] text-blue-700">
+          <span className={s.ctxMathBadge}>
             {latex.slice(0, 20)}{latex.length > 20 ? "…" : ""}
           </span>
         )}
@@ -3275,31 +3268,31 @@ function ContextMenuPanel({
 
       {/* Panel 2: question actions */}
       {questionId && (
-        <div className="flex flex-col rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+        <div className={s.ctxActionsPanel}>
           {onReplace && (
-            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onReplace(); onClose(); }} type="button">
+            <button className={s.ctxMenuItem} onClick={() => { onReplace(); onClose(); }} type="button">
               <RefreshCcw size={12} /> Replace with AI
             </button>
           )}
           {onDuplicate && (
-            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onDuplicate(); onClose(); }} type="button">
+            <button className={s.ctxMenuItem} onClick={() => { onDuplicate(); onClose(); }} type="button">
               <Copy size={12} /> Duplicate
             </button>
           )}
           {onAddOR && (
-            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-blue-600 hover:bg-blue-50" onClick={() => { onAddOR(); onClose(); }} type="button">
+            <button className={s.ctxMenuItemBlue} onClick={() => { onAddOR(); onClose(); }} type="button">
               <Split size={12} /> Add OR choice
             </button>
           )}
           {onAddSubpart && (
-            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onAddSubpart(); onClose(); }} type="button">
+            <button className={s.ctxMenuItem} onClick={() => { onAddSubpart(); onClose(); }} type="button">
               (a) Add subpart
             </button>
           )}
           {onDelete && (
             <>
-              <div className="mx-3 my-1 h-px bg-slate-100" />
-              <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50" onClick={() => { onDelete(); onClose(); }} type="button">
+              <div className={s.ctxMenuDivider} />
+              <button className={s.ctxMenuItemRed} onClick={() => { onDelete(); onClose(); }} type="button">
                 <Trash2 size={12} /> Delete question
               </button>
             </>
@@ -3400,7 +3393,7 @@ function DiagramDropZone({
 }) {
   return (
     <div
-      className="rounded-md border border-dashed border-slate-300 bg-slate-50/70 p-2"
+      className={s.diagramDropZone}
       onDragOver={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -3411,7 +3404,7 @@ function DiagramDropZone({
         onDrop();
       }}
     >
-      {children || <div className="px-2 py-1 text-[11px] font-semibold text-slate-400">{emptyText}</div>}
+      {children || <div className={s.diagramDropZoneEmpty}>{emptyText}</div>}
     </div>
   );
 }
@@ -3428,11 +3421,11 @@ function DiagramBlockList({
   onDragStart: (diagramId: string) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className={s.diagramBlockList}>
       {diagrams.map((diagram) => (
         <div
           key={diagram.id}
-          className="flex cursor-grab items-center justify-between gap-3 rounded-md border border-amber-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm"
+          className={s.diagramBlockItem}
           draggable
           onDragStart={(event) => {
             event.stopPropagation();
@@ -3440,16 +3433,16 @@ function DiagramBlockList({
             onDragStart(diagram.id);
           }}
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <GripVertical className="shrink-0 text-amber-700" size={15} />
-            <div className="min-w-0">
-              <div className="truncate font-black text-slate-800">{diagram.title}</div>
-              <div className="truncate">{diagram.caption || label}</div>
+          <div className={s.diagramBlockLeft}>
+            <GripVertical style={{ flexShrink: 0, color: "#92400e" }} size={15} />
+            <div className={s.diagramBlockInfo}>
+              <div className={s.diagramBlockTitle}>{diagram.title}</div>
+              <div className={s.diagramBlockCaption}>{diagram.caption || label}</div>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="rounded-full bg-amber-50 px-2 py-1 font-bold text-amber-700">Draggable</span>
-            <button className="editor-icon-button text-red-600 hover:bg-red-50" onClick={() => onDelete(diagram.id)} type="button" title="Delete diagram">
+          <div className={s.diagramBlockRight}>
+            <span className={s.diagramDraggableBadge}>Draggable</span>
+            <button className={`editor-icon-button ${s.iconBtnRed}`} onClick={() => onDelete(diagram.id)} type="button" title="Delete diagram">
               <Trash2 size={14} />
             </button>
           </div>

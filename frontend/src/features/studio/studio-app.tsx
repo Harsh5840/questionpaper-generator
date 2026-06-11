@@ -1,5 +1,3 @@
-"use client";
-
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import katex from "katex";
@@ -50,7 +48,7 @@ import {
   saveQuestionToBankViaApi,
   saveVersionViaApi,
   uploadImageAssetViaApi,
-} from "@/lib/api";
+} from "@/api";
 import { defaultRequest, requestFromPrompt } from "@/lib/request-defaults";
 import { normalizePaperStructure, normalizeRawQuestion, richTextFromText } from "@/lib/normalize-paper-structure";
 import { calculateSourceMix, choiceHasContent, countedQuestionMarks, countedSectionMarks, escapeAttribute, escapeHtml, normalizeLatexChars, questionWithComputedMarks, unescapeHtml } from "@/lib/paper-utils";
@@ -76,6 +74,7 @@ import {
   SectionBlueprint,
   SourceAvailability,
 } from "@/lib/types";
+import s from "./studio-app.module.css";
 
 type Mode = "structured" | "prompt";
 type RightPanel = "chat" | "retrieval";
@@ -863,21 +862,17 @@ export function StudioApp() {
   };
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
+    <main className={s.appRoot}>
         {/* Action toasts — UI popups for every action (no browser alerts) */}
-        <div className="pointer-events-none fixed bottom-5 left-1/2 z-2000 flex w-full max-w-md -translate-x-1/2 flex-col items-center gap-2 px-4">
+        <div className={s.toastContainer}>
           {toasts.map((toast) => (
             <div
               key={toast.id}
-              className={`fade-up pointer-events-auto flex w-full items-start gap-2 rounded-[var(--radius-md)] border px-4 py-2.5 text-sm font-semibold shadow-[var(--shadow-lg)] ${
-                toast.tone === "error"
-                  ? "border-[var(--error)] bg-[var(--error-container)] text-[var(--on-error-container)]"
-                  : "border-[var(--border-2)] bg-[var(--surface)] text-[var(--ink)]"
-              }`}
+              className={`fade-up ${s.toastItem} ${toast.tone === "error" ? s.toastItemError : s.toastItemDefault}`}
             >
-              <span className="mt-0.5 shrink-0">{toast.tone === "error" ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}</span>
-              <span className="min-w-0 flex-1">{toast.text}</span>
-              <button className="shrink-0 text-[var(--ink-3)] hover:text-[var(--ink)]" onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))} type="button">
+              <span className={s.toastIcon}>{toast.tone === "error" ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}</span>
+              <span className={s.toastText}>{toast.text}</span>
+              <button className={s.toastClose} onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))} type="button">
                 <X size={14} />
               </button>
             </div>
@@ -915,7 +910,7 @@ export function StudioApp() {
       />
 
       {appView !== "studio" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--bg-deep)] px-6 py-8">
+        <div className={s.workspaceOuter}>
           <WorkspaceView
             dashboard={dashboard}
             view={appView}
@@ -945,7 +940,7 @@ export function StudioApp() {
           }}
         />
       ) : (
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className={s.studioWorkspace}>
           <PaperNavigator
             isGenerating={isGenerating}
             openPapers={openPapers}
@@ -958,11 +953,11 @@ export function StudioApp() {
             onStop={stopGeneration}
           />
 
-          <section className="min-w-0 flex-1 overflow-y-auto bg-[var(--bg-deep)] px-4 py-8">
+          <section className={s.editorSection}>
             {lastError && (
-              <div className="fade-up mx-auto mb-4 max-w-[980px] rounded-[var(--radius-md)] border border-[var(--error)] bg-[var(--error-container)] px-4 py-3 text-sm font-semibold text-[var(--on-error-container)] shadow-[var(--shadow-sm)]">
-                <div className="font-black">Last error</div>
-                <div className="mt-1 whitespace-pre-wrap break-words text-xs font-medium">{lastError}</div>
+              <div className={`fade-up ${s.errorBanner}`}>
+                <div className={s.errorBannerTitle}>Last error</div>
+                <div className={s.errorBannerBody}>{lastError}</div>
               </div>
             )}
 
@@ -1093,25 +1088,25 @@ function PaperLabTopBar({
   const [isExportOpen, setIsExportOpen] = useState(false);
 
   return (
-    <header className="relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-4 shadow-[var(--shadow-sm)]">
-      <div className="flex min-w-0 items-center gap-3">
-        <button className="group flex items-center gap-2" onClick={onHome} type="button">
-          <span className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--ink)] text-[var(--paper-tint)] shadow-[var(--shadow-sm)]">
+    <header className={s.topBar}>
+      <div className={s.topBarLeft}>
+        <button className={s.topBarHomeButton} onClick={onHome} type="button">
+          <span className={s.topBarLogo}>
             <FileText size={16} />
           </span>
-          <span className="hidden leading-none sm:block">
-            <span className="block font-display text-xl italic tracking-tight text-[var(--ink)]">Paper Lab</span>
-            <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--ink-3)]">Question Studio</span>
+          <span className={s.topBarBrand}>
+            <span className={s.brandName}>Paper Lab</span>
+            <span className={s.brandSub}>Question Studio</span>
           </span>
         </button>
 
         {appView === "studio" && (
           <>
-            <div className="mx-1 h-6 w-px bg-[var(--border)]" />
+            <div className={s.topBarDivider} />
             {isEditingTitle ? (
               <input
                 autoFocus
-                className="w-56 rounded-md border border-[var(--border-2)] bg-[var(--surface-2)] px-2 py-1 font-display text-lg italic text-[var(--ink)] outline-none"
+                className={s.titleInput}
                 value={draftTitle}
                 onBlur={() => {
                   setIsEditingTitle(false);
@@ -1127,7 +1122,7 @@ function PaperLabTopBar({
               />
             ) : (
               <button
-                className="max-w-[36vw] truncate rounded-md px-2 py-1 text-left font-display text-lg italic tracking-tight text-[var(--ink)] hover:bg-[var(--surface-2)]"
+                className={s.titleButton}
                 onClick={() => {
                   setDraftTitle(currentTitle);
                   setIsEditingTitle(true);
@@ -1138,25 +1133,25 @@ function PaperLabTopBar({
               </button>
             )}
 
-            <div className="relative">
+            <div className={s.versionWrapper}>
               <button
-                className="flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 font-mono text-[11px] font-bold text-[var(--ink-2)]"
+                className={s.versionBadge}
                 onClick={() => setIsVersionOpen((current) => !current)}
                 type="button"
               >
-                <span className="text-[var(--accent)]">●</span>
+                <span className={s.versionAccentDot}>●</span>
                 v{versions[0]?.versionNumber ?? 1}
               </button>
               {isVersionOpen && (
-                <div className="scale-in absolute left-0 top-[calc(100%+6px)] w-64 rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-2 shadow-[var(--shadow-lg)]">
-                  <div className="px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Versions</div>
+                <div className={`scale-in ${s.versionDropdown}`}>
+                  <div className={s.versionDropdownLabel}>Versions</div>
                   {versions.length === 0 ? (
-                    <div className="px-2 py-3 text-xs text-[var(--ink-3)]">No versions saved yet.</div>
+                    <div className={s.versionEmptyText}>No versions saved yet.</div>
                   ) : (
                     versions.map((version) => (
                       <button
                         key={version.id}
-                        className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-xs text-[var(--ink-2)] hover:bg-[var(--surface)]"
+                        className={s.versionItem}
                         onClick={() => {
                           setIsVersionOpen(false);
                           onRestoreVersion(version);
@@ -1164,14 +1159,14 @@ function PaperLabTopBar({
                         type="button"
                       >
                         <span>
-                          <span className="font-mono font-black text-[var(--accent)]">v{version.versionNumber}</span>
-                          <span className="ml-2">{version.changeSource.replaceAll("_", " ")}</span>
+                          <span className={s.versionNum}>v{version.versionNumber}</span>
+                          <span className={s.versionItemSuffix}>{version.changeSource.replaceAll("_", " ")}</span>
                         </span>
                         {version.marksTotal !== undefined && <span>{version.marksTotal}m</span>}
                       </button>
                     ))
                   )}
-                  <button className="mt-1 w-full rounded-md border border-[var(--border)] px-2 py-2 text-left text-xs font-bold text-[var(--accent-deep)] hover:bg-[var(--accent-soft)] disabled:opacity-50" disabled={isSaving} onClick={onSave} type="button">
+                  <button className={s.versionSaveButton} disabled={isSaving} onClick={onSave} type="button">
                     {isSaving ? "Saving…" : "Save current as new version"}
                   </button>
                 </div>
@@ -1181,7 +1176,7 @@ function PaperLabTopBar({
         )}
       </div>
 
-      <nav className="hidden items-center gap-1 xl:flex" aria-label="Workspace views">
+      <nav className={s.topBarNav} aria-label="Workspace views">
         {appView !== "studio" &&
           ([
             ["studio", "Studio"],
@@ -1189,33 +1184,33 @@ function PaperLabTopBar({
             ["analytics", "Coverage"],
             ["templates", "Templates"],
           ] as const).map(([view, label]) => (
-            <button key={view} className={topNavClass(appView === view)} onClick={() => onOpenView(view)} type="button">
+            <button key={view} className={`${s.topNavButton} ${appView === view ? s.topNavButtonActive : ""}`} onClick={() => onOpenView(view)} type="button">
               {label}
             </button>
           ))}
       </nav>
 
-      <div className="flex items-center gap-2">
+      <div className={s.topBarRight}>
         {appView === "studio" && (
           <>
             <ProgressBadge status={status} />
-            <span className="hidden items-center gap-1 text-xs font-semibold text-[var(--ink-2)] md:inline-flex">
-              <Check size={14} className="text-emerald-700" />
+            <span className={s.savedIndicator}>
+              <Check size={14} className={s.savedCheckIcon} />
               Saved
             </span>
             <button className="icon-button disabled:opacity-50" disabled={isSaving} onClick={onSave} title={isSaving ? "Saving…" : "Save version"} type="button">
               <Save size={16} />
             </button>
-            <div className="relative">
+            <div className={s.exportWrapper}>
               <button className="icon-button" onClick={() => setIsExportOpen((current) => !current)} title="Export" type="button">
                 <Download size={16} />
               </button>
               {isExportOpen && (
-                <div className="scale-in absolute right-0 top-[calc(100%+6px)] w-44 rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-2 shadow-[var(--shadow-lg)]">
+                <div className={`scale-in ${s.exportDropdown}`}>
                   {(["pdf", "docx"] as const).map((format) => (
                     <button
                       key={format}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs font-bold uppercase text-[var(--ink-2)] hover:bg-[var(--surface)]"
+                      className={s.exportItem}
                       onClick={() => {
                         setIsExportOpen(false);
                         onExport(format);
@@ -1232,12 +1227,12 @@ function PaperLabTopBar({
           </>
         )}
         {appView !== "studio" && (
-          <button className="secondary-button !min-h-9 !w-auto px-4" onClick={onRefresh} type="button">
+          <button className={`secondary-button ${s.refreshBtn}`} onClick={onRefresh} type="button">
             <RefreshCcw size={15} />
             Refresh
           </button>
         )}
-        <div className="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-deep)] font-mono text-[11px] font-black text-[var(--paper-tint)]">TP</div>
+        <div className={s.avatarBadge}>TP</div>
       </div>
     </header>
   );
@@ -1779,47 +1774,47 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
     activeSurfaceRef.current = null;
   };
 
-  // shared button style helpers
-  const symBtn = "flex h-9 w-full items-center justify-center rounded-md bg-[#2a2a3e] text-sm font-bold text-white hover:bg-[#3c3c58] transition-colors";
-  const menuItem = "flex w-full items-center gap-2.5 px-4 py-2 text-[13px] text-[#e0e0f0] hover:bg-[#2a2a3e] transition-colors text-left";
+  // shared button style helpers — converted to CSS module references
+  const symBtn = s.symBtn;
+  const menuItem = s.menuItem;
 
   return (
     <div
       ref={menuRef}
-      className="math-context-menu fixed z-[70] w-[260px] overflow-hidden rounded-xl border border-[#35355a] bg-[#16162a] shadow-2xl"
+      className={`math-context-menu ${s.mathContextMenuWrap}`}
       style={{ left: position.x, top: position.y }}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#2a2a3e] px-4 py-2">
-        <span className="font-mono text-[9px] font-black uppercase tracking-[0.2em] text-[#7878a0]">
+      <div className={s.mathMenuHeader}>
+        <span className={s.mathMenuHeaderLabel}>
           {activeSmartTemplate ? "Smart insert" : isMathBoxMode ? "LaTeX insert" : "Right-click on text"}
         </span>
-        <button className="text-[10px] font-black text-[#7878a0] hover:text-white" onClick={() => setPosition(null)} type="button">ESC</button>
+        <button className={s.mathMenuEscBtn} onClick={() => setPosition(null)} type="button">ESC</button>
       </div>
 
       {activeSmartTemplate ? (
-        <div className="p-3 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <button className="text-xs font-bold text-[#aaaadd] hover:text-white" onClick={() => { setActiveSmartId(null); setSmartValues({}); }} type="button">← Back</button>
+        <div className={s.smartInsertPanel}>
+          <div className={s.smartInsertTopRow}>
+            <button className={s.mathMenuBackBtn} onClick={() => { setActiveSmartId(null); setSmartValues({}); }} type="button">← Back</button>
             <button
-              className="rounded-full bg-[#5555aa] px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white hover:bg-[#7777cc]"
+              className={s.smartInsertNowBtn}
               onClick={applySmartInsert}
               onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applySmartInsert(); }}
               type="button"
             >Insert now</button>
           </div>
           <div>
-            <div className="text-base italic text-white">{activeSmartTemplate?.label}</div>
-            <p className="mt-1 text-xs text-[#9999bb]">{activeSmartTemplate?.description}</p>
+            <div className={s.smartInsertTitle}>{activeSmartTemplate?.label}</div>
+            <p className={s.smartInsertDesc}>{activeSmartTemplate?.description}</p>
           </div>
-          <div className="grid gap-2">
+          <div className={s.smartInsertGrid}>
             {activeSmartTemplate?.fields.map((field) => (
-              <label key={field.key} className="grid gap-1 text-xs font-bold text-[#9999bb]">
+              <label key={field.key} className={s.smartInsertLabel}>
                 <span>{field.label}</span>
                 <input
-                  className="h-8 rounded-md border border-[#35355a] bg-[#2a2a3e] px-2 font-mono text-xs text-white outline-none focus:border-[#7777cc]"
+                  className={s.smartInsertInput}
                   placeholder={field.placeholder}
                   value={smartValues[field.key] ?? ""}
                   onChange={(e) => setSmartValues((c) => ({ ...c, [field.key]: e.target.value }))}
@@ -1828,12 +1823,12 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
               </label>
             ))}
           </div>
-          <div className="rounded-md border border-[#35355a] bg-[#0d0d1a] px-3 py-2">
-            <div className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[#7878a0]">LaTeX preview</div>
-            <code className="mt-1 block break-words font-mono text-[11px] text-[#aaaadd]">{previewValue}</code>
+          <div className={s.smartInsertPreview}>
+            <div className={s.smartInsertPreviewLabel}>LaTeX preview</div>
+            <code className={s.smartInsertPreviewCode}>{previewValue}</code>
           </div>
           <button
-            className="w-full rounded-md bg-[#5555aa] px-3 py-2 text-xs font-black text-white hover:bg-[#7777cc]"
+            className={s.smartInsertSubmit}
             onClick={applySmartInsert}
             onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applySmartInsert(); }}
             type="button"
@@ -1843,11 +1838,11 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
         <>
           {/* ── 12 Math symbols, 2 × 6 grid ────────────────────────── */}
           {isMathBoxMode && (
-            <div className="mx-3 mt-2 rounded-md border border-[#4a4a7a] bg-[#2a2a3e] px-3 py-1.5 text-[10px] font-bold text-[#aaaadd]">
+            <div className={s.mathMenuMathBoxNote}>
               Inserting into LaTeX formula editor
             </div>
           )}
-          <div className="grid grid-cols-6 gap-1 p-3 pb-2">
+          <div className={s.mathMenuSymGrid}>
             {/* 1 · x² superscript */}
             <button className={symBtn} title="Superscript (x²)" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "x^{2}" }); }} type="button">x²</button>
             {/* 2 · x₂ subscript */}
@@ -1857,17 +1852,17 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
             {/* 4 · π */}
             <button className={symBtn} title="Pi" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "\\pi" }); }} type="button">π</button>
             {/* 5 · α with dropdown */}
-            <div className="relative">
+            <div className={s.symDropdownAnchor}>
               <button
-                className={`${symBtn} gap-0.5 ${openDropdown === "alpha" ? "bg-[#4a4a7a]" : ""}`}
+                className={`${symBtn} ${openDropdown === "alpha" ? "bg-[#4a4a7a]" : ""}`}
                 title="Greek letters"
                 onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDropdown(openDropdown === "alpha" ? null : "alpha"); }}
                 type="button"
-              >α<span className="text-[7px] text-[#8888aa]">▾</span></button>
+              >α<span className={s.symDropdownIndicator}>▾</span></button>
               {openDropdown === "alpha" && (
-                <div className="absolute right-0 top-full z-20 mt-1 w-max grid grid-cols-4 gap-1 rounded-lg border border-[#35355a] bg-[#16162a] p-2 shadow-2xl">
+                <div className={s.mathMenuSymDropdown}>
                   {["β","γ","ρ","σ","δ","ε","θ","λ","μ","φ","ω","Ω"].map((ch) => (
-                    <button key={ch} className="flex h-7 w-7 items-center justify-center rounded bg-[#2a2a3e] text-sm font-bold text-white hover:bg-[#5555aa]" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }} type="button">{ch}</button>
+                    <button key={ch} className={s.mathMenuSymDropdownBtn} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }} type="button">{ch}</button>
                   ))}
                 </div>
               )}
@@ -1879,17 +1874,17 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
             {/* 8 · lim */}
             <button className={`${symBtn} text-xs`} title="Limit" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "math", value: "\\lim_{x \\to \\infty}" }); }} type="button">lim</button>
             {/* 9 · ± with dropdown */}
-            <div className="relative">
+            <div className={s.symDropdownAnchor}>
               <button
-                className={`${symBtn} gap-0.5 ${openDropdown === "pm" ? "bg-[#4a4a7a]" : ""}`}
+                className={`${symBtn} ${openDropdown === "pm" ? "bg-[#4a4a7a]" : ""}`}
                 title="Comparison operators"
                 onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDropdown(openDropdown === "pm" ? null : "pm"); }}
                 type="button"
-              >±<span className="text-[7px] text-[#8888aa]">▾</span></button>
+              >±<span className={s.symDropdownIndicator}>▾</span></button>
               {openDropdown === "pm" && (
-                <div className="absolute left-0 top-full z-20 mt-1 w-max grid grid-cols-4 gap-1 rounded-lg border border-[#35355a] bg-[#16162a] p-2 shadow-2xl">
+                <div className={s.mathMenuSymDropdownLeft}>
                   {["≤","≥","≠","≈","→","⇒","∝","≡"].map((ch) => (
-                    <button key={ch} className="flex h-7 w-7 items-center justify-center rounded bg-[#2a2a3e] text-sm font-bold text-white hover:bg-[#5555aa]" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }} type="button">{ch}</button>
+                    <button key={ch} className={s.mathMenuSymDropdownBtn} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert({ type: "text", value: ch }); }} type="button">{ch}</button>
                   ))}
                 </div>
               )}
@@ -1900,7 +1895,7 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
             <button className={`${symBtn} text-xs`} title="Fraction (smart)" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); startSmartInsert(smartInsertTemplates.fraction); }} type="button">a/b</button>
             {/* 12 · □ LaTeX box */}
             <button
-              className="flex h-9 w-full items-center justify-center rounded-md border-2 border-[#6666aa] bg-transparent text-sm font-bold text-[#aaaadd] hover:border-white hover:text-white transition-colors"
+              className={s.mathMenuLaTeXBox}
               title="Insert LaTeX box"
               onPointerDown={(e) => {
                 e.preventDefault(); e.stopPropagation();
@@ -1911,59 +1906,59 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
             >□</button>
           </div>
 
-          <div className="mx-3 h-px bg-[#2a2a3e]" />
+          <div className={s.mathMenuDivider} />
 
           {/* ── Text options ─────────────────────────────────────────── */}
           {!isMathBoxMode && (
             <>
               {/* Paste options row */}
-              <div className="px-4 py-2">
-                <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-[#7878a0]">Paste options:</span>
-                <div className="mt-2 flex gap-1.5">
-                  <button className="flex h-8 w-10 items-center justify-center rounded-md border border-[#35355a] bg-[#2a2a3e] text-base text-white hover:bg-[#3c3c58]" title="Paste"
+              <div className={s.mathMenuPasteRow}>
+                <span className={s.pasteOptionsLabel}>Paste options:</span>
+                <div className={s.mathMenuPasteButtons}>
+                  <button className={s.mathMenuPasteBtn} title="Paste"
                     onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={async () => { try { const t = await navigator.clipboard.readText(); applyStaticInsert({ type: "text", value: t }); } catch { document.execCommand("paste"); setPosition(null); } }}
                     type="button">📋</button>
-                  <button className="flex h-8 w-10 items-center justify-center rounded-md border border-[#35355a] bg-[#2a2a3e] text-sm font-black text-white hover:bg-[#3c3c58]" title="Paste as plain text"
+                  <button className={s.mathMenuPasteBtn} title="Paste as plain text"
                     onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={async () => { try { const t = await navigator.clipboard.readText(); applyStaticInsert({ type: "text", value: t.replace(/<[^>]*>/g, "") }); } catch { setPosition(null); } }}
                     type="button">A</button>
                 </div>
               </div>
-              <div className="h-px bg-[#2a2a3e]" />
+              <div className={s.mathMenuDividerFull} />
               {/* Cut */}
-              <button className="flex w-full items-center justify-between px-4 py-2 text-[13px] text-[#e0e0f0] hover:bg-[#2a2a3e] transition-colors"
+              <button className={s.mathMenuCutCopy}
                 onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onClick={() => { activateRichTextEditorFromElement(activeSurfaceRef.current); document.execCommand("cut"); setPosition(null); }}
                 type="button">
-                <span className="flex items-center gap-2.5">✂ Cut</span>
-                <span className="text-[11px] text-[#7878a0]">Ctrl X</span>
+                <span className={s.menuItemContent}>✂ Cut</span>
+                <span className={s.menuItemShortcut}>Ctrl X</span>
               </button>
               {/* Copy */}
-              <button className="flex w-full items-center justify-between px-4 py-2 text-[13px] text-[#e0e0f0] hover:bg-[#2a2a3e] transition-colors"
+              <button className={s.mathMenuCutCopy}
                 onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onClick={() => { activateRichTextEditorFromElement(activeSurfaceRef.current); document.execCommand("copy"); setPosition(null); }}
                 type="button">
-                <span className="flex items-center gap-2.5">⎘ Copy</span>
-                <span className="text-[11px] text-[#7878a0]">Ctrl C</span>
+                <span className={s.menuItemContent}>⎘ Copy</span>
+                <span className={s.menuItemShortcut}>Ctrl C</span>
               </button>
-              <div className="h-px bg-[#2a2a3e]" />
+              <div className={s.mathMenuDividerFull} />
               {/* Insert LaTeX box */}
               <button className={menuItem}
                 onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onClick={() => { activateRichTextEditorFromElement(activeSurfaceRef.current); openMathLiveEditorForActiveRichTextEditor(); setPosition(null); }}
                 type="button">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[#8888aa] text-[9px] font-black text-[#aaaadd]">f</span>
+                <span className={s.menuMathBadge}>f</span>
                 Insert LaTeX box
               </button>
               {/* Maths formula (collapsible) */}
               <button className={`${menuItem} justify-between`} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => setFormulasOpen((v) => !v)} type="button">
-                <span className="flex items-center gap-2.5">⊞ Maths formula</span>
-                <span className="text-[#7878a0]">{formulasOpen ? "▼" : "▶"}</span>
+                <span className={s.menuItemContent}>⊞ Maths formula</span>
+                <span className={s.menuItemExpander}>{formulasOpen ? "▼" : "▶"}</span>
               </button>
               {formulasOpen && (
-                <div className="border-t border-[#2a2a3e] px-4 py-2">
-                  <div className="flex flex-wrap gap-1">
+                <div className={s.mathMenuFormulaWrap}>
+                  <div className={s.mathMenuFormulaChips}>
                     {[
                       { label: "a/b", insert: { type: "math" as const, value: "\\frac{a}{b}" } },
                       { label: "xⁿ", insert: { type: "math" as const, value: "x^{n}" } },
@@ -1972,7 +1967,7 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
                       { label: "log", insert: { type: "math" as const, value: "\\log_{a}(b)" } },
                       { label: "ⁿ√x", insert: { type: "math" as const, value: "\\sqrt[n]{x}" } },
                     ].map((item) => (
-                      <button key={item.label} className="rounded border border-[#35355a] bg-[#2a2a3e] px-2 py-1 text-xs font-bold text-white hover:bg-[#5555aa]"
+                      <button key={item.label} className={s.mathMenuFormulaChip}
                         onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }} type="button">{item.label}</button>
                     ))}
                   </div>
@@ -1980,12 +1975,12 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
               )}
               {/* Science formula (collapsible) */}
               <button className={`${menuItem} justify-between`} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => setScienceOpen((v) => !v)} type="button">
-                <span className="flex items-center gap-2.5">⊗ Science formula</span>
-                <span className="text-[#7878a0]">{scienceOpen ? "▼" : "▶"}</span>
+                <span className={s.menuItemContent}>⊗ Science formula</span>
+                <span className={s.menuItemExpander}>{scienceOpen ? "▼" : "▶"}</span>
               </button>
               {scienceOpen && (
-                <div className="border-t border-[#2a2a3e] px-4 py-2">
-                  <div className="flex flex-wrap gap-1">
+                <div className={s.mathMenuFormulaWrap}>
+                  <div className={s.mathMenuFormulaChips}>
                     {[
                       { label: "H₂O", insert: { type: "text" as const, value: "H₂O" } },
                       { label: "CO₂", insert: { type: "text" as const, value: "CO₂" } },
@@ -1994,7 +1989,7 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
                       { label: "→", insert: { type: "text" as const, value: " → " } },
                       { label: "⇌", insert: { type: "text" as const, value: " ⇌ " } },
                     ].map((item) => (
-                      <button key={item.label} className="rounded border border-[#35355a] bg-[#2a2a3e] px-2 py-1 text-xs font-bold text-white hover:bg-[#5555aa]"
+                      <button key={item.label} className={s.mathMenuFormulaChip}
                         onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }} type="button">{item.label}</button>
                     ))}
                   </div>
@@ -2005,9 +2000,9 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
                 applyStaticInsert({ type: "html", value: '<span>Ω</span>' });
               }}
               type="button">
-                <span className="flex items-center gap-2.5">Ω Special character</span>
+                <span className={s.menuItemContent}>Ω Special character</span>
               </button>
-              <div className="h-px bg-[#2a2a3e]" />
+              <div className={s.mathMenuDividerFull} />
               {/* Insert table */}
               <button className={menuItem}
                 onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -2018,13 +2013,13 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
                 onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onClick={() => { applyStaticInsert({ type: "math", value: "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}" }); }}
                 type="button">⊡ Insert matrix</button>
-              <div className="h-px bg-[#2a2a3e]" />
+              <div className={s.mathMenuDividerFull} />
               {/* Text color */}
-              <div className="flex items-center justify-between px-4 py-2">
-                <span className="flex items-center gap-2.5 text-[13px] text-[#e0e0f0]">
-                  <span className="font-black">A</span> Text color
+              <div className={s.mathMenuColorRow}>
+                <span className={s.menuTextColorLabel}>
+                  <span className={s.menuBoldText}>A</span> Text color
                 </span>
-                <input type="color" className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                <input type="color" className={s.mathMenuColorInput}
                   value={textColor}
                   onPointerDown={(e) => e.stopPropagation()}
                   onChange={(e) => { setTextColor(e.target.value); activateRichTextEditorFromElement(activeSurfaceRef.current); commandActiveRichTextEditor((ed) => ed.chain().focus().setColor(e.target.value).run()); }}
@@ -2040,13 +2035,13 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
 
           {/* Math box mode extras */}
           {isMathBoxMode && (
-            <div className="px-4 py-3">
-              <div className="flex flex-wrap gap-1">
+            <div className={s.mathMenuMathBoxExtras}>
+              <div className={s.mathMenuMathBoxChips}>
                 {[
                   { label: "a/b", insert: { type: "math" as const, value: "\\frac{a}{b}" } },
                   { label: "Matrix", insert: { type: "math" as const, value: "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}" } },
                 ].map((item) => (
-                  <button key={item.label} className="rounded border border-[#35355a] bg-[#2a2a3e] px-2 py-1 text-xs font-bold text-white hover:bg-[#5555aa]"
+                  <button key={item.label} className={s.mathMenuFormulaChip}
                     onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); applyStaticInsert(item.insert); }} type="button">{item.label}</button>
                 ))}
               </div>
@@ -2134,20 +2129,20 @@ function NewPaperChooserModal({
   onParameters: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(36,20,11,0.32)] px-4 backdrop-blur-sm">
-      <div className="scale-in w-full max-w-4xl overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--surface)] shadow-[var(--shadow-xl)]">
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-7 py-6">
+    <div className={s.modalOverlay}>
+      <div className={`scale-in ${s.modalCard}`}>
+        <header className={s.modalHeader}>
           <div>
-            <div className="font-mono text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">New Paper</div>
-            <h2 className="mt-1 font-display text-3xl italic leading-none text-[var(--ink)]">How do you want to begin?</h2>
-            <p className="mt-2 text-sm text-[var(--ink-2)]">Create a blank draft, use guided parameters, or describe the paper in plain English.</p>
+            <div className={s.modalEyebrow}>New Paper</div>
+            <h2 className={s.modalHeading}>How do you want to begin?</h2>
+            <p className={s.modalSubtitleText}>Create a blank draft, use guided parameters, or describe the paper in plain English.</p>
           </div>
-          <button className="icon-button bg-[var(--paper)]" onClick={onClose} title="Close" type="button">
+          <button className={`icon-button ${s.closeModalBtn}`} onClick={onClose} title="Close" type="button">
             <X size={17} />
           </button>
         </header>
 
-        <div className="grid gap-4 px-7 py-7 md:grid-cols-3">
+        <div className={s.modalGrid3}>
           <CreatePathCard
             desc="Start with an empty structured paper and import or write questions manually."
             icon={<FileText size={20} />}
@@ -2171,9 +2166,9 @@ function NewPaperChooserModal({
           />
         </div>
 
-        <footer className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--paper-tint)] px-7 py-4 text-xs text-[var(--ink-3)]">
-          <span className="font-mono uppercase tracking-[0.14em]">CBSE-first · structured editor · saved in open papers</span>
-          <button className="secondary-button w-auto px-4" onClick={onClose} type="button">
+        <footer className={s.modalFooter}>
+          <span className={s.modalFooterLabel}>CBSE-first · structured editor · saved in open papers</span>
+          <button className={`secondary-button ${s.cancelBtn}`} onClick={onClose} type="button">
             Cancel
           </button>
         </footer>
@@ -2197,17 +2192,17 @@ function CreatePathCard({
 }) {
   return (
     <button
-      className="group min-h-48 rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] p-5 text-left shadow-[var(--shadow-sm)] transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:shadow-[var(--shadow-md)]"
+      className={s.createPathCard}
       onClick={onClick}
       type="button"
     >
-      <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-deep)] transition group-hover:bg-[var(--accent)] group-hover:text-[var(--paper-tint)]">
+      <span className={s.createPathIcon}>
         {icon}
       </span>
-      <span className="mt-5 block font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">{label}</span>
-      <span className="mt-1 block font-display text-2xl italic leading-tight text-[var(--ink)]">{title}</span>
-      <span className="mt-3 block text-sm leading-6 text-[var(--ink-2)]">{desc}</span>
-      <span className="mt-5 inline-flex items-center gap-2 text-xs font-black text-[var(--accent-deep)]">
+      <span className={s.createPathLabel}>{label}</span>
+      <span className={s.createPathCardTitle}>{title}</span>
+      <span className={s.createPathCardDesc}>{desc}</span>
+      <span className={s.createPathContinue}>
         Continue <ArrowRight size={15} />
       </span>
     </button>
@@ -2248,8 +2243,8 @@ function GuidedSetupModal({
   const selectedChapterCount = request.chapterScope === "full_syllabus" ? availableChapters.length || request.chapters.length : request.chapters.length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[rgba(34,23,16,0.34)] p-0 backdrop-blur-sm">
-      <div className="scale-in mx-auto flex h-full max-h-[min(720px,100vh)] w-full max-w-[1036px] flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--bg)] shadow-[var(--shadow-xl)]">
+    <div className={s.modalOverlayDark}>
+      <div className={`scale-in ${s.modalCardFull}`}>
         <CreateFlowHeader
           eyebrow="New paper · Guided setup"
           onClose={onClose}
@@ -2259,7 +2254,7 @@ function GuidedSetupModal({
           totalSteps={4}
         />
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-16 py-8">
+        <div className={s.guidedSetupBody}>
           {step === 0 && <StepBoardClass dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 1 && <StepSubject availableChapters={availableChapters} availableSubjects={availableSubjects} dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 2 && <StepChapters availableChapters={availableChapters} onUpdateRequest={onUpdateRequest} request={request} />}
@@ -2281,22 +2276,22 @@ function GuidedSetupModal({
 
 function CreateFlowHeader({ eyebrow, onClose, step, subtitle, title, totalSteps }: { eyebrow: string; onClose: () => void; step?: number; subtitle: string; title: string; totalSteps?: number }) {
   return (
-    <header className="flex items-start justify-between border-b border-[var(--border)] bg-[var(--paper-tint)] px-8 py-5">
+    <header className={s.createFlowHeader}>
       <div>
-        <div className="font-mono text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">{eyebrow}</div>
-        <h2 className="mt-1 font-display text-3xl italic leading-none text-[var(--ink)]">{title}</h2>
-        <p className="mt-3 text-sm text-[var(--ink-2)]">{subtitle}</p>
+        <div className={s.modalEyebrow}>{eyebrow}</div>
+        <h2 className={s.modalHeading}>{title}</h2>
+        <p className={s.modalSubtitleTextLg}>{subtitle}</p>
       </div>
-      <div className="flex items-center gap-4">
+      <div className={s.createFlowHeaderRight}>
         {step !== undefined && totalSteps !== undefined && (
-          <div className="flex items-center gap-2">
+          <div className={s.createFlowStepDots}>
             {Array.from({ length: totalSteps }).map((_, index) => (
-              <span key={index} className={`h-2 rounded-full ${index === step ? "w-5 bg-[var(--accent)]" : index < step ? "w-2 bg-[var(--accent)]" : "w-2 bg-[var(--border-2)]"}`} />
+              <span key={index} className={`${s.stepDot} ${index === step ? s.stepDotCurrent : index < step ? s.stepDotPast : s.stepDotFuture}`} />
             ))}
-            <span className="ml-1 font-mono text-xs text-[var(--ink-2)]">{step + 1} / {totalSteps}</span>
+            <span className={s.flowStepCounter}>{step + 1} / {totalSteps}</span>
           </div>
         )}
-        <button className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--paper)] text-[var(--ink)] shadow-[var(--shadow-sm)]" onClick={onClose} type="button">
+        <button className={s.createFlowCloseBtn} onClick={onClose} type="button">
           <X size={17} />
         </button>
       </div>
@@ -2306,16 +2301,16 @@ function CreateFlowHeader({ eyebrow, onClose, step, subtitle, title, totalSteps 
 
 function CreateFlowFooter({ leftText, onBack, onNext, primaryLabel, showBack, sparkles }: { leftText: string; onBack: () => void; onNext: () => void; primaryLabel: string; showBack: boolean; sparkles?: boolean }) {
   return (
-    <footer className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--paper-tint)] px-8 py-4">
-      <div className="flex items-center gap-3 font-mono text-xs text-[var(--accent-deep)]">
+    <footer className={s.createFlowFooter}>
+      <div className={s.createFlowFooterLeft}>
         <Bookmark size={14} fill="currentColor" />
         <span>{leftText}</span>
       </div>
-      <div className="flex items-center gap-5">
-        <button className="text-sm font-semibold text-[var(--ink-2)] hover:text-[var(--ink)]" onClick={onBack} type="button">
+      <div className={s.createFlowFooterRight}>
+        <button className={s.flowBackBtn} onClick={onBack} type="button">
           {showBack ? "Back" : "Cancel"}
         </button>
-        <button className="flex min-h-11 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--ink)] px-5 text-sm font-black text-[var(--paper-tint)] shadow-[var(--shadow-md)] hover:bg-[var(--accent-deep)]" onClick={onNext} type="button">
+        <button className={s.createFlowPrimary} onClick={onNext} type="button">
           {primaryLabel}
           {sparkles ? <Sparkles size={17} /> : <ArrowRight size={17} />}
         </button>
@@ -2364,24 +2359,24 @@ function StepBoardClass({
   };
 
   return (
-    <div className="mx-auto grid max-w-[840px] gap-9 md:grid-cols-2">
+    <div className={s.stepBoardGrid}>
       <div>
         <FlowLabel>Board</FlowLabel>
-        <div className="space-y-2.5">
+        <div className={s.boardOptionStack}>
           {boardOptions.map((board) => (
             <button
               key={board.value}
-              className={`flex w-full items-center gap-4 rounded-[var(--radius-md)] border px-4 py-3 text-left transition ${request.board === board.value ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--paper)]"} ${board.disabled ? "cursor-not-allowed opacity-50" : "hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"}`}
+              className={`${s.boardOption} ${request.board === board.value ? s.boardOptionSelected : s.boardOptionDefault} ${board.disabled ? "cursor-not-allowed opacity-50" : ""}`}
               disabled={board.disabled}
               onClick={() => selectBoard(board.value)}
               type="button"
             >
-              <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${request.board === board.value ? "border-[var(--accent)] bg-[var(--accent)]" : "border-[var(--border-2)] bg-[var(--paper)]"}`}>
-                {request.board === board.value && <span className="h-2 w-2 rounded-full bg-[var(--paper-tint)]" />}
+              <span className={`${s.radioCircle} ${request.board === board.value ? s.radioCircleSelected : s.radioCircleDefault}`}>
+                {request.board === board.value && <span className={s.radioInner} />}
               </span>
               <span>
-                <span className="block text-base text-[var(--ink)]">{board.label}</span>
-                <span className="block text-xs text-[var(--ink-3)]">{board.detail}</span>
+                <span className={s.optionLabelLg}>{board.label}</span>
+                <span className={s.optionLabelSm}>{board.detail}</span>
               </span>
             </button>
           ))}
@@ -2390,13 +2385,13 @@ function StepBoardClass({
 
       <div>
         <FlowLabel>Class</FlowLabel>
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className={s.classGrid}>
           {classOptions.map((classLevel) => {
             const disabled = request.board === "ICSE" && classLevel !== "10";
             return (
               <button
                 key={classLevel}
-                className={`h-11 rounded-[var(--radius-md)] border text-sm transition ${request.classLevel === classLevel ? "border-[var(--accent)] bg-[var(--accent-soft)] font-black text-[var(--ink)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"} ${disabled ? "cursor-not-allowed opacity-45 hover:border-[var(--border)] hover:bg-[var(--paper)]" : ""}`}
+                className={`${s.classOption} ${request.classLevel === classLevel ? s.classOptionSelected : s.classOptionDefault} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
                 disabled={disabled}
                 onClick={() => onUpdateRequest("classLevel", classLevel as PaperRequest["classLevel"])}
                 type="button"
@@ -2450,9 +2445,9 @@ function StepSubject({
   };
 
   return (
-    <div className="mx-auto max-w-[800px]">
+    <div className={s.stepSubjectGrid}>
       <FlowLabel>Subject</FlowLabel>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className={s.subjectCardGrid}>
         {subjects.map((subject) => {
           const selected = sameSubjectValue(request.subject, subject.value);
           const countLabel = selected && currentSubjectCount > 0 ? indexedDetail : `${subject.chapterCount} chapters · ${subject.bookCount} books`;
@@ -2460,15 +2455,15 @@ function StepSubject({
           return (
           <button
             key={subject.value}
-            className={`min-h-32 rounded-[var(--radius-md)] border p-5 text-left transition ${selected ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--paper)]"} ${subject.disabled ? "cursor-not-allowed opacity-45" : "hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"}`}
+            className={`${s.subjectCard} ${selected ? s.subjectCardSelected : s.subjectCardDefault} ${subject.disabled ? "cursor-not-allowed opacity-45" : ""}`}
             disabled={subject.disabled}
             onClick={() => selectSubject(subject)}
             type="button"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-2)] text-lg font-black text-[var(--accent-deep)]">{subjectIcon(subject.value)}</span>
-            <span className="mt-4 block font-display text-xl text-[var(--ink)]">{subject.label}</span>
-            <span className="mt-1 block text-xs text-[var(--ink-3)]">{countLabel}</span>
-            {selected && dashboard?.counts.textbooks ? <span className="mt-1 block text-[11px] text-[var(--ink-3)]">{formatCount(dashboard.counts.textbooks)} total source books</span> : null}
+            <span className={s.subjectIcon}>{subjectIcon(subject.value)}</span>
+            <span className={s.subjectCardTitle}>{subject.label}</span>
+            <span className={s.optionLabelSm}>{countLabel}</span>
+            {selected && dashboard?.counts.textbooks ? <span className={s.optionLabelXs}>{formatCount(dashboard.counts.textbooks)} total source books</span> : null}
           </button>
           );
         })}
@@ -2509,38 +2504,38 @@ function StepChapters({ availableChapters, onUpdateRequest, request }: { availab
   };
 
   return (
-    <div className="mx-auto max-w-[820px]">
-      <div className="mb-4 flex items-center justify-between">
+    <div className={s.stepChaptersGrid}>
+      <div className={s.stepChaptersHeader}>
         <FlowLabel>Chapters to include</FlowLabel>
-        <span className="text-sm text-[var(--ink-3)]">{request.chapters.length} selected</span>
+        <span className={s.chaptersSelectedCount}>{request.chapters.length} selected</span>
       </div>
-      <div className="mb-4 grid gap-2 rounded-[var(--radius-md)] bg-[var(--surface-2)] p-1 text-sm md:grid-cols-3">
+      <div className={s.scopeTabGrid}>
         {([
           ["single", "One chapter"],
           ["multiple", "Multiple chapters"],
           ["full_syllabus", "Full syllabus"],
         ] as const).map(([scope, label]) => (
-          <button key={scope} className={tabClass(request.chapterScope === scope)} onClick={() => updateScope(scope)} type="button">
+          <button key={scope} className={`${s.tabButton} ${request.chapterScope === scope ? s.tabButtonActive : ""}`} onClick={() => updateScope(scope)} type="button">
             {label}
           </button>
         ))}
       </div>
-      <div className="grid gap-2.5 md:grid-cols-2">
+      <div className={s.chapterGrid}>
         {chapters.map((chapter) => {
           const active = request.chapters.includes(chapter);
           return (
             <button
               key={chapter}
-              className={`flex items-center gap-3 rounded-[var(--radius-md)] border px-4 py-3 text-left transition ${active ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--paper)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]"}`}
+              className={`${s.chapterOption} ${active ? s.chapterOptionSelected : s.chapterOptionDefault}`}
               onClick={() => toggleChapter(chapter)}
               type="button"
             >
-              <span className={`flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] border ${active ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--paper-tint)]" : "border-[var(--border-2)] bg-[var(--paper)]"}`}>
+              <span className={`${s.checkBox} ${active ? s.checkBoxSelected : s.checkBoxDefault}`}>
                 {active && <Check size={14} />}
               </span>
               <span>
-                <span className="block text-base text-[var(--ink)]">{chapter}</span>
-                <span className="block text-xs text-[var(--ink-3)]">Available in selected dump catalog</span>
+                <span className={s.optionLabelLg}>{chapter}</span>
+                <span className={s.optionLabelSm}>Available in selected dump catalog</span>
               </span>
             </button>
           );
@@ -2622,38 +2617,39 @@ function StepFineTune({
   };
 
   return (
-    <div className="mx-auto max-w-[880px] space-y-6">
-      <div className="grid gap-5 md:grid-cols-2">
+    <div className={s.fineTuneContainer}>
+      <div className={s.fineTuneTopGrid}>
         <NumberStepper label="Total marks" value={request.totalMarks} onChange={(value) => onUpdateRequest("totalMarks", value)} />
         <NumberStepper label="Sets" value={request.variantCount} onChange={(value) => onUpdateRequest("variantCount", Math.max(1, Math.min(5, value)))} suffix="A / B / C..." />
       </div>
 
       {multipleChapters && (
-        <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
-          <div className="mb-3 flex items-center justify-between">
+        <div className={s.chapterCoverage}>
+          <div className={s.chapterCoverageHeader}>
             <FlowLabel>Chapter coverage</FlowLabel>
-            <div className="flex items-center gap-2">
+            <div className={s.sliderFlexRow}>
               <button
-                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--accent-deep)] hover:bg-[var(--accent-soft)]"
+                className={s.equalSplitBtn}
                 onClick={equalizeChapterWeights}
                 type="button"
               >
                 Equal split
               </button>
-              <span className={`font-mono text-[10px] font-black uppercase tracking-[0.12em] ${totalChapterWeight === 100 ? "text-emerald-700" : "text-[var(--ink-3)]"}`}>
+              <span className={`${s.sourceTotal} ${totalChapterWeight === 100 ? s.savedCheckIcon : ""}`}>
                 Total {totalChapterWeight}%
               </span>
             </div>
           </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(request.chapters.length, 3)}, 1fr)` }}>
+          <div className={s.chapterCoverageGrid} style={{ gridTemplateColumns: `repeat(${Math.min(request.chapters.length, 3)}, 1fr)` }}>
             {request.chapters.map((chapter) => (
-              <label key={chapter} className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-                <span className="flex justify-between">
-                  <span className="max-w-[75%] truncate">{chapter}</span>
+              <label key={chapter} className={s.chapterSliderLabel}>
+                <span className={s.sliderJustifyRow}>
+                  <span style={{ maxWidth: "75%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chapter}</span>
                   <span>{effectiveChapterWeights[chapter] ?? 0}%</span>
                 </span>
                 <input
-                  className="mt-2 w-full accent-[var(--accent)]"
+                  className={s.sliderInputRange}
+                  style={{ marginTop: "0.5rem", width: "100%" }}
                   max={100}
                   min={0}
                   type="range"
@@ -2668,23 +2664,23 @@ function StepFineTune({
 
       <div>
         <FlowLabel>Source</FlowLabel>
-        <div className="flex flex-wrap gap-2">
+        <div className={s.sourceOptions}>
           {sourceOptions.map(({ value, label, count, disabled }) => (
             <button
               key={value}
-              className={`rounded-full border px-4 py-2 text-sm ${request.source === value ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)]"} ${disabled ? "cursor-not-allowed opacity-45" : "hover:bg-[var(--accent-soft-2)]"}`}
+              className={`${s.sourceOption} ${request.source === value ? s.sourceOptionSelected : s.sourceOptionDefault} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
               disabled={disabled}
               onClick={() => updateSource(value)}
               type="button"
               title={disabled ? "No matching source rows in the dump for the selected chapter." : `${count} available source item(s)`}
             >
               {label}
-              {availability ? <span className="ml-2 font-mono text-[10px] opacity-70">{count}</span> : null}
+              {availability ? <span className={s.availabilityCount}>{count}</span> : null}
             </button>
           ))}
         </div>
         {availability ? (
-          <div className="mt-2 text-xs text-[var(--ink-3)]">
+          <div className={s.sliderNote}>
             Available now: {availability.totals.ncert} textbook item(s), {availability.totals.pyq} PYQ item(s), {availability.totals.questionBank} saved bank item(s).
           </div>
         ) : null}
@@ -2707,9 +2703,9 @@ function StepFineTune({
 
       <div>
         <FlowLabel>AI provider</FlowLabel>
-        <div className="inline-grid grid-cols-2 rounded-[var(--radius-md)] bg-[var(--surface-2)] p-1">
+        <div className={s.providerGrid}>
           {(["gemini", "groq"] as const).map((provider) => (
-            <button key={provider} className={tabClass((request.provider ?? "gemini") === provider)} onClick={() => onUpdateRequest("provider", provider)} type="button">
+            <button key={provider} className={`${s.tabButton} ${(request.provider ?? "gemini") === provider ? s.tabButtonActive : ""}`} onClick={() => onUpdateRequest("provider", provider)} type="button">
               {provider.toUpperCase()}
             </button>
           ))}
@@ -2723,17 +2719,17 @@ function StepFineTune({
         targetTotal={request.totalMarks}
       />
 
-      <div className="flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
-        <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-soft)] text-[var(--accent-deep)]">
+      <div className={s.fineTuneSummaryCard}>
+        <span className={s.fineTuneSummaryIcon}>
           <Sparkles size={19} />
         </span>
         <div>
-          <div className="font-bold text-[var(--ink)]">
+          <div className={s.summaryTitle}>
             You will generate a {request.totalMarks}-mark, {request.difficulty.toLowerCase()} paper across {request.chapterScope === "full_syllabus" ? "the full syllabus" : `${request.chapters.length} chapter${request.chapters.length === 1 ? "" : "s"}`}.
           </div>
-          <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}. {request.sectionBlueprint && request.sectionBlueprint.length > 0 ? `${request.sectionBlueprint.length} section${request.sectionBlueprint.length === 1 ? "" : "s"} configured` : `${request.questionTypes.length} question type${request.questionTypes.length === 1 ? "" : "s"}`}. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
-          <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Difficulty mix: {mix.easy}% easy · {mix.medium}% medium · {mix.hard}% hard.</div>
-          <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Source mix target: {sourceMix.ncertDirect}% NCERT direct · {sourceMix.pyqDirect}% PYQ direct · {sourceMix.questionBank}% bank · {sourceMix.aiGenerated}% AI from dump. Provider: {(request.provider ?? "gemini").toUpperCase()}.</div>
+          <div className={s.summaryDetail}>Drawing from {request.source}. {request.sectionBlueprint && request.sectionBlueprint.length > 0 ? `${request.sectionBlueprint.length} section${request.sectionBlueprint.length === 1 ? "" : "s"} configured` : `${request.questionTypes.length} question type${request.questionTypes.length === 1 ? "" : "s"}`}. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
+          <div className={s.summaryAccent}>Difficulty mix: {mix.easy}% easy · {mix.medium}% medium · {mix.hard}% hard.</div>
+          <div className={s.summaryAccent}>Source mix target: {sourceMix.ncertDirect}% NCERT direct · {sourceMix.pyqDirect}% PYQ direct · {sourceMix.questionBank}% bank · {sourceMix.aiGenerated}% AI from dump. Provider: {(request.provider ?? "gemini").toUpperCase()}.</div>
         </div>
       </div>
     </div>
@@ -2759,20 +2755,21 @@ function DifficultyMixSliders({ mix, onChange }: { mix: NonNullable<PaperRequest
   };
 
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
-      <div className="mb-3 flex items-center justify-between">
+    <div className={s.difficultyMixSliders}>
+      <div className={s.difficultyMixHeader}>
         <FlowLabel>Difficulty percentage</FlowLabel>
-        <span className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--ink-3)]">Total 100%</span>
+        <span className={s.sourceTotal}>Total 100%</span>
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className={s.difficultyGridMd3}>
         {(["easy", "medium", "hard"] as const).map((key) => (
-          <label key={key} className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-            <span className="flex justify-between">
+          <label key={key} className={s.chapterSliderLabel}>
+            <span className={s.sliderJustifyRow}>
               <span>{key}</span>
               <span>{mix[key]}%</span>
             </span>
             <input
-              className="mt-2 w-full accent-[var(--accent)]"
+              className={s.sliderInputRange}
+              style={{ marginTop: "0.5rem", width: "100%" }}
               max={100}
               min={0}
               type="range"
@@ -2813,33 +2810,34 @@ function SourceMixSliders({
   };
 
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
-      <div className="mb-3 flex items-center justify-between">
+    <div className={s.sourceMixSliders}>
+      <div className={s.sourceMixHeader}>
         <FlowLabel>Source mix target</FlowLabel>
-        <div className="flex items-center gap-2">
+        <div className={s.normalizeBtnArea}>
           <button
-            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--accent-deep)] hover:bg-[var(--accent-soft)]"
+            className={s.normalizeBtn}
             onClick={normalize}
             type="button"
           >
             Normalize to 100%
           </button>
-          <span className={`font-mono text-[10px] font-black uppercase tracking-[0.12em] ${total === 100 ? "text-emerald-700" : "text-[var(--ink-3)]"}`}>
+          <span className={`${s.sourceTotal} ${total === 100 ? s.savedCheckIcon : ""}`}>
             Total {total}% {isNormalized || total === 100 ? "normalized" : "free"}
           </span>
         </div>
       </div>
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className={s.sourceMixGridMd4}>
         {keys.map((key) => {
           const disabled = Boolean(disabledSources[key as keyof typeof disabledSources]);
           return (
-            <label key={key} className={`text-xs font-bold uppercase tracking-[0.08em] ${disabled ? "text-[var(--ink-3)] opacity-50" : "text-[var(--ink-3)]"}`}>
-              <span className="flex justify-between">
+            <label key={key} className={s.chapterSliderLabel} style={{ opacity: disabled ? 0.5 : 1 }}>
+              <span className={s.sliderJustifyRow}>
                 <span>{sourceMixLabel(key)}</span>
                 <span>{normalized[key]}%</span>
               </span>
               <input
-                className="mt-2 w-full accent-[var(--accent)] disabled:opacity-50"
+                className={s.sliderInputRange}
+                style={{ marginTop: "0.5rem", width: "100%" }}
                 disabled={disabled}
                 max={100}
                 min={0}
@@ -2851,7 +2849,7 @@ function SourceMixSliders({
           );
         })}
       </div>
-      <div className="mt-3 text-[11px] leading-5 text-[var(--ink-3)]">
+      <div className={s.sourceMixNote}>
         Sliders are free while you explore. Click Normalize, or submit generation, to scale the available sources to exactly 100%.
       </div>
     </div>
@@ -2952,10 +2950,10 @@ function SectionBlueprintEditor({
     }]);
   };
 
-  const removeSection = (id: string) => onChange(blueprint.filter((s) => s.id !== id));
+  const removeSection = (id: string) => onChange(blueprint.filter((sec) => sec.id !== id));
 
   const updateSection = (id: string, patch: Partial<SectionBlueprint>) =>
-    onChange(blueprint.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    onChange(blueprint.map((sec) => (sec.id === id ? { ...sec, ...patch } : sec)));
 
   const toggleType = (id: string, type: string) => {
     const section = blueprint.find((s) => s.id === id);
@@ -2969,12 +2967,12 @@ function SectionBlueprintEditor({
   const totalMarks = blueprint.reduce((sum, s) => sum + s.questionCount * s.marksEach, 0);
 
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-4">
-      <div className="mb-2 flex items-center justify-between">
+    <div className={s.blueprintContainer}>
+      <div className={s.blueprintHeader}>
         <FlowLabel>Section question types</FlowLabel>
         {isActive ? (
           <button
-            className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--ink-3)] hover:bg-[var(--surface)]"
+            className={s.blueprintResetBtn}
             onClick={() => onChange([])}
             type="button"
           >
@@ -2982,7 +2980,7 @@ function SectionBlueprintEditor({
           </button>
         ) : (
           <button
-            className="rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--accent-deep)] hover:bg-[var(--accent-soft-2)]"
+            className={s.blueprintCustomizeBtn}
             onClick={activate}
             type="button"
           >
@@ -2992,58 +2990,58 @@ function SectionBlueprintEditor({
       </div>
 
       {!isActive && (
-        <p className="text-xs text-[var(--ink-3)]">
-          AI distributes question types automatically. Click <span className="font-semibold text-[var(--accent-deep)]">Customize</span> to control which types go in each section.
+        <p className={s.blueprintTypeNote}>
+          AI distributes question types automatically. Click <span className={s.blueprintTypeNoteAccent}>Customize</span> to control which types go in each section.
         </p>
       )}
 
       {isActive && (
-        <div className="space-y-2.5">
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
           {blueprint.map((section) => (
-            <div key={section.id} className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] p-3">
+            <div key={section.id} className={s.blueprintSectionCard}>
               {/* Header row: title + count + marks + remove */}
-              <div className="mb-2.5 flex items-center gap-2">
+              <div className={s.blueprintSectionHeader}>
                 <input
-                  className="w-28 shrink-0 rounded border border-[var(--border-2)] bg-transparent px-2 py-0.5 text-sm font-bold text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  className={s.blueprintSectionTitleInput}
                   value={section.title}
                   onChange={(e) => updateSection(section.id, { title: e.target.value })}
                 />
                 {/* Question count stepper */}
-                <div className="flex items-center gap-0.5 text-[11px] text-[var(--ink-3)]">
+                <div className={s.blueprintStepperGroup}>
                   <button
-                    className="flex h-5 w-5 items-center justify-center rounded border border-[var(--border-2)] bg-[var(--surface-2)] font-bold hover:bg-[var(--surface)]"
+                    className={s.blueprintStepperBtn}
                     onClick={() => updateSection(section.id, { questionCount: Math.max(1, section.questionCount - 1) })}
                     type="button"
                   >−</button>
-                  <span className="w-6 text-center font-bold text-[var(--ink)]">{section.questionCount}</span>
+                  <span className={s.blueprintCountBadge}>{section.questionCount}</span>
                   <button
-                    className="flex h-5 w-5 items-center justify-center rounded border border-[var(--border-2)] bg-[var(--surface-2)] font-bold hover:bg-[var(--surface)]"
+                    className={s.blueprintStepperBtn}
                     onClick={() => updateSection(section.id, { questionCount: section.questionCount + 1 })}
                     type="button"
                   >+</button>
-                  <span className="ml-1">Qs</span>
+                  <span className={s.blueprintStepperSuffix}>Qs</span>
                 </div>
                 {/* Marks per question stepper */}
-                <div className="flex items-center gap-0.5 text-[11px] text-[var(--ink-3)]">
+                <div className={s.blueprintStepperGroup}>
                   <button
-                    className="flex h-5 w-5 items-center justify-center rounded border border-[var(--border-2)] bg-[var(--surface-2)] font-bold hover:bg-[var(--surface)]"
+                    className={s.blueprintStepperBtn}
                     onClick={() => updateSection(section.id, { marksEach: Math.max(1, section.marksEach - 1) })}
                     type="button"
                   >−</button>
-                  <span className="w-5 text-center font-bold text-[var(--ink)]">{section.marksEach}</span>
+                  <span className={s.blueprintMarksBadge}>{section.marksEach}</span>
                   <button
-                    className="flex h-5 w-5 items-center justify-center rounded border border-[var(--border-2)] bg-[var(--surface-2)] font-bold hover:bg-[var(--surface)]"
+                    className={s.blueprintStepperBtn}
                     onClick={() => updateSection(section.id, { marksEach: section.marksEach + 1 })}
                     type="button"
                   >+</button>
-                  <span className="ml-1">m ea.</span>
+                  <span className={s.blueprintStepperSuffix}>m ea.</span>
                 </div>
-                <span className="ml-auto text-[11px] font-bold text-[var(--ink-3)]">
+                <span className={s.blueprintSectionNote}>
                   {section.questionCount * section.marksEach}m
                 </span>
                 {blueprint.length > 1 && (
                   <button
-                    className="flex h-5 w-5 items-center justify-center rounded text-[var(--ink-3)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+                    className={s.blueprintRemoveBtn}
                     onClick={() => removeSection(section.id)}
                     type="button"
                   >
@@ -3052,17 +3050,13 @@ function SectionBlueprintEditor({
                 )}
               </div>
               {/* Question type chip row */}
-              <div className="flex flex-wrap gap-1">
+              <div className={s.blueprintTypeChips}>
                 {availableTypes.map((type) => {
                   const selected = section.questionTypes.includes(type);
                   return (
                     <button
                       key={type}
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${
-                        selected
-                          ? "bg-[var(--accent)] text-[var(--paper-tint)]"
-                          : "border border-[var(--border-2)] bg-[var(--surface-2)] text-[var(--ink-2)] hover:border-[var(--accent)] hover:text-[var(--accent-deep)]"
-                      }`}
+                      className={`${s.blueprintTypeChip} ${selected ? s.blueprintTypeChipSelected : s.blueprintTypeChipDefault}`}
                       onClick={() => toggleType(section.id, type)}
                       type="button"
                     >
@@ -3076,7 +3070,7 @@ function SectionBlueprintEditor({
 
           {blueprint.length < 6 && (
             <button
-              className="flex w-full items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-dashed border-[var(--border-2)] py-2 text-xs font-semibold text-[var(--ink-3)] hover:border-[var(--accent)] hover:text-[var(--accent-deep)]"
+              className={s.blueprintAddSection}
               onClick={addSection}
               type="button"
             >
@@ -3084,19 +3078,19 @@ function SectionBlueprintEditor({
             </button>
           )}
 
-          <div className="text-right text-[11px] text-[var(--ink-3)]">
-            {blueprint.map((s) => `${s.title}: ${s.questionCount * s.marksEach}m`).join(" · ")}{" "}
-            — <span className="font-bold text-[var(--ink)]">{totalMarks} total marks</span>
+          <div className={s.blueprintTotalNote}>
+            {blueprint.map((sec) => `${sec.title}: ${sec.questionCount * sec.marksEach}m`).join(" · ")}{" "}
+            — <span className={s.blueprintTotalBold}>{totalMarks} total marks</span>
           </div>
 
           {typeof targetTotal === "number" && totalMarks !== targetTotal && (
-            <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
-              <span className="flex items-center gap-1">
+            <div className={s.blueprintMismatchAlert}>
+              <span className={s.blueprintFabRow}>
                 <AlertTriangle size={12} />
                 Section marks ({totalMarks}) don&apos;t match the paper total ({targetTotal}).
               </span>
               <button
-                className="shrink-0 rounded-full border border-amber-400 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-amber-800 hover:bg-amber-100"
+                className={s.blueprintAutoBalance}
                 title="Scale the last section's question count to balance the total"
                 onClick={() => {
                   const diff = targetTotal - totalMarks;
@@ -3113,7 +3107,7 @@ function SectionBlueprintEditor({
             </div>
           )}
           {typeof targetTotal === "number" && totalMarks === targetTotal && (
-            <div className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800">
+            <div className={s.blueprintMatchAlert}>
               <Check size={12} />
               Section marks match the {targetTotal}-mark paper total.
             </div>
@@ -3198,22 +3192,22 @@ function FreePromptModal({
   if (detectedChapters.length === 0 && request.chapterScope !== "full_syllabus") missingInfo.push("Which chapter(s) or topic should I pull questions from — or say \"full syllabus\"?");
   // question types are now configured per-section in the blueprint; no global check needed
 
-  // Segment colors for chapter ratio bar
-  const CHAPTER_COLORS = ["bg-blue-400", "bg-violet-400", "bg-pink-400", "bg-teal-400", "bg-orange-400", "bg-cyan-400"];
-  const CHAPTER_TEXT_COLORS = ["text-blue-600", "text-violet-600", "text-pink-600", "text-teal-600", "text-orange-600", "text-cyan-600"];
+  // Segment colors for chapter ratio bar — CSS module classes
+  const CHAPTER_COLORS = [s.chapterColor0, s.chapterColor1, s.chapterColor2, s.chapterColor3, s.chapterColor4, s.chapterColor5];
+  const CHAPTER_TEXT_COLORS = [s.chapterTextColor0, s.chapterTextColor1, s.chapterTextColor2, s.chapterTextColor3, s.chapterTextColor4, s.chapterTextColor5];
 
   return (
-    <div className="fixed inset-0 z-50 bg-[rgba(34,23,16,0.34)] p-0 backdrop-blur-sm">
-      <div className="scale-in mx-auto flex h-full max-h-[min(720px,100vh)] w-full max-w-[1080px] flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--bg)] shadow-[var(--shadow-xl)]">
+    <div className={s.modalOverlayDark}>
+      <div className={`scale-in ${s.modalCardFreePrompt}`}>
         <CreateFlowHeader eyebrow="New paper · Free prompt" onClose={onClose} subtitle="Plain English. We will fill in the blanks and ask only if needed." title="Describe the paper" />
 
-        <div className="grid min-h-0 flex-1 gap-7 overflow-y-auto px-10 py-7 md:grid-cols-[1.3fr_0.85fr]">
+        <div className={s.freePromptBody}>
           {/* Left: prompt textarea + samples */}
-          <div className="flex flex-col gap-5">
+          <div className={s.freePromptLeft}>
             <div>
               <FlowLabel>Your prompt</FlowLabel>
               <textarea
-                className="min-h-44 w-full resize-y rounded-[var(--radius-md)] border border-[var(--border-2)] bg-[var(--paper)] p-5 font-display text-xl leading-8 text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)] focus:border-[var(--accent)]"
+                className={s.promptTextarea}
                 onChange={(event) => onPromptChange(event.target.value)}
                 placeholder="e.g. CBSE Class 10 Maths, 50 marks unit test on Quadratic Equations, mix of MCQ and long answer..."
                 value={prompt}
@@ -3226,7 +3220,7 @@ function FreePromptModal({
                 "Class 12 Physics, mixed difficulty, 80 marks, full syllabus, 3 sets",
                 "A practice sheet on Real Numbers for CBSE Class 10. Easy. NCERT-style.",
               ].map((sample) => (
-                <button key={sample} className="mt-2 w-full rounded-[var(--radius-sm)] border border-dashed border-[var(--border-2)] bg-[var(--paper-tint)] px-4 py-3 text-left font-display text-base italic text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]" onClick={() => onPromptChange(sample)} type="button">
+                <button key={sample} className={s.promptSample} onClick={() => onPromptChange(sample)} type="button">
                   &quot;{sample}&quot;
                 </button>
               ))}
@@ -3234,15 +3228,15 @@ function FreePromptModal({
           </div>
 
           {/* Right: extracted params + difficulty bar */}
-          <div className="flex flex-col gap-4">
-            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-5">
+          <div className={s.freePromptRight}>
+            <div className={s.extractedPanel}>
               <FlowLabel>What I&apos;m picking up</FlowLabel>
-              <div className="mt-3 space-y-2">
+              <div className={s.extractedGrid}>
                 {/* Board dropdown */}
-                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
-                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Board</span>
+                <div className={s.extractedRow}>
+                  <span className={s.monoAccentLabel}>Board</span>
                   <select
-                    className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    className={s.extractedSelect}
                     value={request.board}
                     onChange={(e) => onUpdateRequest("board", e.target.value as PaperRequest["board"])}
                   >
@@ -3251,10 +3245,10 @@ function FreePromptModal({
                   </select>
                 </div>
                 {/* Class dropdown */}
-                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
-                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Class</span>
+                <div className={s.extractedRow}>
+                  <span className={s.monoAccentLabel}>Class</span>
                   <select
-                    className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    className={s.extractedSelect}
                     value={request.classLevel}
                     onChange={(e) => onUpdateRequest("classLevel", e.target.value as PaperRequest["classLevel"])}
                   >
@@ -3262,46 +3256,46 @@ function FreePromptModal({
                   </select>
                 </div>
                 {/* Subject — text display only (dynamic) */}
-                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
-                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Subject</span>
-                  <span className={extracted.subject ? "text-sm text-[var(--ink)]" : "text-sm italic text-[var(--ink-3)]"}>{extracted.subject || "not specified"}</span>
+                <div className={s.extractedRow}>
+                  <span className={s.monoAccentLabel}>Subject</span>
+                  <span className={extracted.subject ? s.extractedValue : s.extractedValueEmpty}>{extracted.subject || "not specified"}</span>
                 </div>
                 {/* Marks display */}
-                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
-                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Marks</span>
-                  <span className={extracted.totalMarks ? "text-sm text-[var(--ink)]" : "text-sm italic text-[var(--ink-3)]"}>{extracted.totalMarks || "not specified"}</span>
+                <div className={s.extractedRow}>
+                  <span className={s.monoAccentLabel}>Marks</span>
+                  <span className={extracted.totalMarks ? s.extractedValue : s.extractedValueEmpty}>{extracted.totalMarks || "not specified"}</span>
                 </div>
                 {/* Chapters row */}
-                <div className="grid grid-cols-[88px_1fr] items-start gap-2">
-                  <span className="pt-0.5 font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Chapters</span>
+                <div className={s.extractedRowTop}>
+                  <span className={s.monoAccentLabel}>Chapters</span>
                   {detectedChapters.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
+                    <div className={s.chipsWrap}>
                       {detectedChapters.map((ch) => (
-                        <span key={ch} className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                        <span key={ch} className={s.detectedChapter}>
                           {ch}
                         </span>
                       ))}
                     </div>
                   ) : (
-                    <span className="text-sm italic text-[var(--ink-3)]">not detected</span>
+                    <span className={s.extractedValueEmpty}>not detected</span>
                   )}
                 </div>
                 {/* Source dropdown */}
-                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
-                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Source</span>
+                <div className={s.extractedRow}>
+                  <span className={s.monoAccentLabel}>Source</span>
                   <select
-                    className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    className={s.extractedSelect}
                     value={request.source}
                     onChange={(e) => onUpdateRequest("source", e.target.value as PaperRequest["source"])}
                   >
-                    {(["NCERT", "PYQ", "NCERT + PYQ"] as const).map((s) => <option key={s} value={s}>{s}</option>)}
+                    {(["NCERT", "PYQ", "NCERT + PYQ"] as const).map((sv) => <option key={sv} value={sv}>{sv}</option>)}
                   </select>
                 </div>
                 {/* Difficulty dropdown */}
-                <div className="grid grid-cols-[88px_1fr] items-center gap-2">
-                  <span className="font-mono text-[11px] font-black uppercase tracking-[0.12em] text-[var(--accent)]">Difficulty</span>
+                <div className={s.extractedRow}>
+                  <span className={s.monoAccentLabel}>Difficulty</span>
                   <select
-                    className="rounded-[var(--radius-sm)] border border-[var(--border-2)] bg-[var(--paper)] px-2 py-1 text-sm text-[var(--ink)] focus:border-[var(--accent)] focus:outline-none"
+                    className={s.extractedSelect}
                     value={request.difficulty ?? extracted.difficulty ?? "Medium"}
                     onChange={(e) => {
                       const d = e.target.value as keyof typeof difficultyPresets;
@@ -3317,10 +3311,10 @@ function FreePromptModal({
 
             {/* Chapter ratio panel — only when 2+ chapters detected */}
             {detectedChapters.length >= 1 && (
-              <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-4">
+              <div className={s.chapterRatioPanel}>
                 <FlowLabel>Chapter ratio</FlowLabel>
                 {/* Segmented bar */}
-                <div className="mt-2 flex h-4 w-full overflow-hidden rounded-full">
+                <div className={s.chapterRatioBar}>
                   {detectedChapters.map((ch, i) => (
                     <div
                       key={ch}
@@ -3331,36 +3325,36 @@ function FreePromptModal({
                   ))}
                 </div>
                 {/* Legend */}
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                <div className={s.chapterRatioLegend}>
                   {detectedChapters.map((ch, i) => (
-                    <span key={ch} className={`flex items-center gap-1 text-[11px] ${CHAPTER_TEXT_COLORS[i % CHAPTER_TEXT_COLORS.length]}`}>
-                      <span className={`inline-block h-2 w-2 rounded-full ${CHAPTER_COLORS[i % CHAPTER_COLORS.length]}`} />
-                      <span className="max-w-[120px] truncate font-medium" title={ch}>{ch}</span>
-                      <span className="font-bold">{chapterWeights[ch] ?? 0}%</span>
+                    <span key={ch} className={`${s.chapterRatioLegendItem} ${CHAPTER_TEXT_COLORS[i % CHAPTER_TEXT_COLORS.length]}`}>
+                      <span className={`${s.legendColorDot} ${CHAPTER_COLORS[i % CHAPTER_COLORS.length]}`} />
+                      <span className={s.legendItemName} title={ch}>{ch}</span>
+                      <span className={s.inlinePercentBold}>{chapterWeights[ch] ?? 0}%</span>
                     </span>
                   ))}
                 </div>
                 {/* Per-chapter sliders (only when 2+) */}
                 {detectedChapters.length >= 2 && (
-                  <div className="mt-3 grid gap-2">
+                  <div className={s.chapterWeightGrid}>
                     {detectedChapters.map((ch, i) => (
-                      <label key={ch} className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${CHAPTER_COLORS[i % CHAPTER_COLORS.length]}`} />
-                        <span className="w-20 truncate" title={ch}>{ch}</span>
+                      <label key={ch} className={s.chapterWeightRow}>
+                        <span className={`${s.legendColorDot} ${CHAPTER_COLORS[i % CHAPTER_COLORS.length]}`} />
+                        <span className={s.chapterWeightName} title={ch}>{ch}</span>
                         <input
-                          className="flex-1 accent-[var(--accent)]"
+                          className={s.sliderFlex}
                           type="range" min={0} max={100}
                           value={chapterWeights[ch] ?? 0}
                           onChange={(e) => updateChapterWeight(ch, Number(e.target.value))}
                         />
-                        <span className="w-8 text-right font-bold">{chapterWeights[ch] ?? 0}%</span>
+                        <span className={s.chapterWeightValue}>{chapterWeights[ch] ?? 0}%</span>
                       </label>
                     ))}
                   </div>
                 )}
                 {/* Available chapters hint */}
                 {availableChapters.length > 0 && detectedChapters.length < availableChapters.length && (
-                  <p className="mt-2 text-[11px] italic text-[var(--ink-3)]">
+                  <p className={s.sliderNoteItalic}>
                     {availableChapters.length} chapters available in syllabus — mention more in your prompt to include them.
                   </p>
                 )}
@@ -3368,30 +3362,30 @@ function FreePromptModal({
             )}
 
             {/* Weightage bar */}
-            <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-4">
+            <div className={s.difficultyWeightagePanel}>
               <FlowLabel>Difficulty weightage</FlowLabel>
               {/* Segmented bar */}
-              <div className="mt-2 flex h-4 w-full overflow-hidden rounded-full">
-                <div className="h-full bg-emerald-400 transition-all" style={{ width: `${(diffMix.easy / diffTotal) * 100}%` }} title={`Easy ${diffMix.easy}%`} />
-                <div className="h-full bg-amber-400 transition-all" style={{ width: `${(diffMix.medium / diffTotal) * 100}%` }} title={`Medium ${diffMix.medium}%`} />
-                <div className="h-full bg-rose-500 transition-all" style={{ width: `${(diffMix.hard / diffTotal) * 100}%` }} title={`Hard ${diffMix.hard}%`} />
+              <div className={s.difficultyBar}>
+                <div className={s.difficultyBarEasy} style={{ width: `${(diffMix.easy / diffTotal) * 100}%` }} title={`Easy ${diffMix.easy}%`} />
+                <div className={s.difficultyBarMedium} style={{ width: `${(diffMix.medium / diffTotal) * 100}%` }} title={`Medium ${diffMix.medium}%`} />
+                <div className={s.difficultyBarHard} style={{ width: `${(diffMix.hard / diffTotal) * 100}%` }} title={`Hard ${diffMix.hard}%`} />
               </div>
               {/* Legend */}
-              <div className="mt-2 flex justify-between">
-                {[["Easy", "bg-emerald-400", diffMix.easy], ["Medium", "bg-amber-400", diffMix.medium], ["Hard", "bg-rose-500", diffMix.hard]].map(([label, color, pct]) => (
-                  <span key={String(label)} className="flex items-center gap-1 text-[11px] text-[var(--ink-2)]">
-                    <span className={`inline-block h-2 w-2 rounded-full ${String(color)}`} />
-                    {label} <span className="font-bold">{pct}%</span>
+              <div className={s.difficultyLegend}>
+                {[["Easy", s.difficultyDotEasy, diffMix.easy], ["Medium", s.difficultyDotMedium, diffMix.medium], ["Hard", s.difficultyDotHard, diffMix.hard]].map(([label, dotClass, pct]) => (
+                  <span key={String(label)} className={s.difficultyLegendItem}>
+                    <span className={`${s.difficultyDot} ${String(dotClass)}`} />
+                    {label} <span className={s.inlinePercentBold}>{pct}%</span>
                   </span>
                 ))}
               </div>
               {/* Sliders */}
-              <div className="mt-3 grid gap-2">
+              <div className={s.difficultySliders}>
                 {(["easy", "medium", "hard"] as const).map((key) => (
-                  <label key={key} className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
-                    <span className="w-12 capitalize">{key}</span>
+                  <label key={key} className={s.difficultySliderRow}>
+                    <span className={s.diffSliderName}>{key}</span>
                     <input
-                      className="flex-1 accent-[var(--accent)]"
+                      className={s.sliderFlex}
                       type="range" min={0} max={100}
                       value={diffMix[key]}
                       onChange={(e) => {
@@ -3404,7 +3398,7 @@ function FreePromptModal({
                         onUpdateRequest("difficultyMix", next);
                       }}
                     />
-                    <span className="w-8 text-right font-bold">{diffMix[key]}%</span>
+                    <span className={s.chapterWeightValue}>{diffMix[key]}%</span>
                   </label>
                 ))}
               </div>
@@ -3412,22 +3406,22 @@ function FreePromptModal({
 
             {/* Required-info chat prompts */}
             {prompt.trim() && missingInfo.length > 0 && (
-              <div className="space-y-2 rounded-[var(--radius-md)] border border-amber-300 bg-amber-50 p-4">
-                <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-amber-700">
+              <div className={s.missingInfoPanel}>
+                <div className={s.missingInfoHeader}>
                   <Bot size={14} />
                   A few things before I generate
                 </div>
                 {missingInfo.map((message) => (
-                  <div key={message} className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-200 text-amber-800">
+                  <div key={message} className={s.missingInfoItem}>
+                    <span className={s.missingInfoIcon}>
                       <Bot size={11} />
                     </span>
-                    <p className="rounded-[var(--radius-sm)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--ink-2)] shadow-sm">
+                    <p className={s.missingInfoBubble}>
                       {message}
                     </p>
                   </div>
                 ))}
-                <p className="text-[11px] text-amber-700">
+                <p className={s.amberNote}>
                   Add these to your prompt above, or set them in the fields on the right.
                 </p>
               </div>
@@ -3450,7 +3444,7 @@ function FreePromptModal({
 }
 
 function FlowLabel({ children }: { children: React.ReactNode }) {
-  return <div className="mb-3 font-mono text-[11px] font-black uppercase tracking-[0.18em] text-[var(--ink-3)]">{children}</div>;
+  return <div className={s.flowLabel}>{children}</div>;
 }
 
 function NumberStepper({ label, onChange, suffix, value }: { label: string; onChange: (value: number) => void; suffix?: string; value: number }) {
@@ -3460,13 +3454,13 @@ function NumberStepper({ label, onChange, suffix, value }: { label: string; onCh
   return (
     <div>
       <FlowLabel>{label}</FlowLabel>
-      <div className="grid h-11 grid-cols-[44px_1fr_44px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)]">
-        <button className="flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--surface-2)]" onClick={() => onChange(value - 1)} type="button">
+      <div className={s.numberStepper}>
+        <button className={s.numberStepperBtn} onClick={() => onChange(value - 1)} type="button">
           <Minus size={16} />
         </button>
-        <div className="flex items-center justify-center gap-1">
+        <div className={s.numberStepperMiddle}>
           <input
-            className="w-full bg-transparent text-center text-lg font-semibold text-[var(--ink)] outline-none"
+            className={s.numberStepperInput}
             inputMode="numeric"
             value={localValue}
             onChange={(e) => {
@@ -3481,9 +3475,9 @@ function NumberStepper({ label, onChange, suffix, value }: { label: string; onCh
             }}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           />
-          {suffix && <span className="shrink-0 font-mono text-[10px] font-normal text-[var(--ink-3)]">{suffix}</span>}
+          {suffix && <span className={s.numberStepperSuffix}>{suffix}</span>}
         </div>
-        <button className="flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--surface-2)]" onClick={() => onChange(value + 1)} type="button">
+        <button className={s.numberStepperBtn} onClick={() => onChange(value + 1)} type="button">
           <Plus size={16} />
         </button>
       </div>
@@ -3515,36 +3509,36 @@ function LandingScreen({
   const builtInTemplates = templates.length > 0 ? templates : fallbackDashboardTemplates();
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,var(--accent-soft-2),transparent_34%),var(--bg)] px-8 py-10">
-      <div className="mx-auto max-w-7xl">
-        <section className="fade-up grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+    <div className={s.landingRoot}>
+      <div className={s.landingInner}>
+        <section className={`fade-up ${s.landingHeroSection}`}>
           <div>
-            <div className="font-mono text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Question Studio</div>
-            <h1 className="mt-3 max-w-3xl font-display text-6xl italic leading-[0.95] tracking-tight text-[var(--ink)]">
+            <div className={s.landingEyebrow}>Question Studio</div>
+            <h1 className={s.landingH1}>
               Build the paper like an editor, generate it like an AI lab.
             </h1>
-            <p className="mt-5 max-w-2xl text-sm leading-7 text-[var(--ink-2)]">
+            <p className={s.landingSubtitle}>
               Start with parameters, a free prompt, or a blank canvas. Generated papers stay structured so every question, option, OR choice, source, and mark can be edited.
             </p>
           </div>
-          <div className="rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--paper)] p-5 shadow-[var(--shadow-lg)]">
-            <div className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--ink-3)]">Current default</div>
-            <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--paper-tint)] p-5 font-serif shadow-inner">
-              <div className="text-center font-display text-2xl italic text-[var(--ink)]">{request.subject} Assessment</div>
-              <div className="mt-2 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ink-3)]">
+          <div className={s.landingPreviewCard}>
+            <div className={s.landingDefaultLabel}>Current default</div>
+            <div className={s.landingPreviewInner}>
+              <div className={s.landingCurrentPaperTitle}>{request.subject} Assessment</div>
+              <div className={s.landingCurrentPaperMeta}>
                 CBSE · Class {request.classLevel} · {request.totalMarks} marks
               </div>
-              <div className="mt-5 space-y-3 text-sm text-[var(--ink-2)]">
-                <div className="h-2 w-3/4 rounded-full bg-[var(--surface-2)]" />
-                <div className="h-2 w-full rounded-full bg-[var(--surface-2)]" />
-                <div className="h-2 w-2/3 rounded-full bg-[var(--surface-2)]" />
-                <div className="grid grid-cols-2 gap-2 pt-2">
-                  <div className="h-9 rounded border border-[var(--border)]" />
-                  <div className="h-9 rounded border border-[var(--border)]" />
+              <div className={s.landingPreviewLines}>
+                <div className={s.landingPreviewLine75} />
+                <div className={s.landingPreviewLineFull} />
+                <div className={s.landingPreviewLine66} />
+                <div className={s.landingPreviewChoices}>
+                  <div className={s.landingPreviewChoice} />
+                  <div className={s.landingPreviewChoice} />
                 </div>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+            <div className={s.landingPreviewStats}>
               <MiniStat label="Font" value={documentStyle.fontSize} />
               <MiniStat label="Spacing" value={documentStyle.lineHeight} />
               <MiniStat label="Sets" value={request.variantCount} />
@@ -3552,25 +3546,25 @@ function LandingScreen({
           </div>
         </section>
 
-        <section className="mt-10 grid gap-4 md:grid-cols-3">
+        <section className={s.landingStartSection}>
           <StartCard desc="Guided setup with board, class, subject, chapter, sources, question mix, and section blueprint." icon={LayoutDashboard} label="Parameters" onClick={onOpenStructured} title="Create from parameters" />
           <StartCard desc="Write a natural-language request and let the backend normalize it into the same PaperRequest shape." icon={Sparkles} label="Prompt" onClick={onOpenPrompt} title="Create from free prompt" />
           <StartCard desc="Open the structured editor immediately and add/import questions manually." icon={FileText} label="Blank" onClick={onCreateBlank} title="Start with blank paper" />
         </section>
 
-        <section className="mt-10 grid gap-6 xl:grid-cols-[1fr_1.3fr]">
+        <section className={s.landingPanelSection}>
           <LandingPanel eyebrow="Recent" title="Saved papers">
             {(dashboard?.recentPapers ?? []).length === 0 ? (
               <EmptyWorkspaceState title="No saved papers yet" description="Saved versions will appear here once you generate or import a paper." />
             ) : (
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className={s.recentPaperGrid}>
                 {(dashboard?.recentPapers ?? []).slice(0, 4).map((paper) => (
-                  <button key={paper.id} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-4 text-left hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]" onClick={() => onOpenPaper(paper.id)} type="button">
-                    <div className="font-display text-xl italic text-[var(--ink)]">{paper.title}</div>
-                    <div className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--ink-3)]">
+                  <button key={paper.id} className={s.recentPaperCard} onClick={() => onOpenPaper(paper.id)} type="button">
+                    <div className={s.recentPaperTitle}>{paper.title}</div>
+                    <div className={s.recentPaperMeta}>
                       {paper.board} · Class {paper.classLevel} · {paper.subject}
                     </div>
-                    <div className="mt-4 flex gap-2 text-[11px] font-bold text-[var(--ink-2)]">
+                    <div className={s.recentPaperStats}>
                       <span>{paper.marksTotal} marks</span>
                       <span>·</span>
                       <span>{paper.versionCount} versions</span>
@@ -3582,14 +3576,14 @@ function LandingScreen({
           </LandingPanel>
 
           <LandingPanel eyebrow="Templates" title="Choose a format">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className={s.templateGrid}>
               {builtInTemplates.map((template) => (
-                <button key={template.id} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-4 text-left hover:border-[var(--accent)] hover:bg-[var(--accent-soft-2)]" onClick={() => onUseTemplate(template)} type="button">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--accent-soft)] text-[var(--accent-deep)]">
+                <button key={template.id} className={s.templateCard} onClick={() => onUseTemplate(template)} type="button">
+                  <div className={s.templateIcon}>
                     <FileText size={17} />
                   </div>
-                  <div className="mt-3 font-display text-lg italic text-[var(--ink)]">{template.name}</div>
-                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-[var(--ink-2)]">{template.description || "Reusable paper template with formatting and request hints."}</p>
+                  <div className={s.templateCardTitle}>{template.name}</div>
+                  <p className={s.templateCardDesc}>{template.description || "Reusable paper template with formatting and request hints."}</p>
                 </button>
               ))}
             </div>
@@ -3602,25 +3596,25 @@ function LandingScreen({
 
 function StartCard({ desc, icon: IconComponent, label, onClick, title }: { desc: string; icon: React.ComponentType<{ size?: number | string; className?: string }>; label: string; onClick: () => void; title: string }) {
   return (
-    <button className="group rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--paper)] p-5 text-left shadow-[var(--shadow-md)] transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:shadow-[var(--shadow-lg)]" onClick={onClick} type="button">
-      <div className="flex items-start justify-between gap-4">
-        <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] bg-[var(--ink)] text-[var(--paper-tint)]">
+    <button className={s.startCard} onClick={onClick} type="button">
+      <div className={s.startCardTop}>
+        <span className={s.startCardIcon}>
           <IconComponent size={20} />
         </span>
-        <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--accent-deep)]">{label}</span>
+        <span className={s.startCardLabel}>{label}</span>
       </div>
-      <div className="mt-5 font-display text-2xl italic leading-tight text-[var(--ink)]">{title}</div>
-      <p className="mt-2 text-sm leading-6 text-[var(--ink-2)]">{desc}</p>
+      <div className={s.startCardTitle}>{title}</div>
+      <p className={s.startCardDesc}>{desc}</p>
     </button>
   );
 }
 
 function LandingPanel({ children, eyebrow, title }: { children: React.ReactNode; eyebrow: string; title: string }) {
   return (
-    <section className="rounded-[var(--radius-xl)] border border-[var(--border-2)] bg-[var(--paper)] p-5 shadow-[var(--shadow-md)]">
-      <div className="mb-4">
-        <div className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--accent)]">{eyebrow}</div>
-        <h2 className="mt-1 font-display text-2xl italic text-[var(--ink)]">{title}</h2>
+    <section className={s.landingPanel}>
+      <div className={s.landingPanelHeader}>
+        <div className={s.panelSectionEyebrow}>{eyebrow}</div>
+        <h2 className={s.panelSectionTitle}>{title}</h2>
       </div>
       {children}
     </section>
@@ -3651,47 +3645,50 @@ function PaperNavigator({
   const totalMarks = selectedPaper?.summary.totalMarks ?? requestPreview.totalMarks;
 
   return (
-    <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] lg:flex">
-      <div className="border-b border-[var(--border)] p-4">
-        <div className="flex items-center justify-between">
-          <div className="font-mono text-[10px] font-black uppercase tracking-[0.16em] text-[var(--ink-3)]">Open papers</div>
-          <span className="font-mono text-[10px] font-black text-[var(--accent)]">{openPapers.length}</span>
+    <aside className={s.navigator}>
+      <div className={s.navigatorTop}>
+        <div className={s.navigatorTopRow}>
+          <div className={s.navigatorSectionLabel}>Open papers</div>
+          <span className={s.navigatorCount}>{openPapers.length}</span>
         </div>
         {openPapers.length > 0 && (
-          <div className="mt-3 space-y-1">
-            {openPapers.map((paper, index) => (
-              <button
-                key={`${paper.id}-${paper.paperId ?? "draft"}`}
-                className={`flex w-full items-center gap-2 rounded-[var(--radius-sm)] border px-3 py-2 text-left text-xs transition ${selectedPaper && (selectedPaper.id === paper.id || (selectedPaper.paperId && selectedPaper.paperId === paper.paperId)) ? "border-[var(--accent)] bg-[var(--paper)] font-black text-[var(--ink)] shadow-[var(--shadow-sm)]" : "border-transparent text-[var(--ink-2)] hover:bg-[var(--surface-2)]"}`}
-                onClick={() => onSelectOpenPaper(paper)}
-                type="button"
-              >
-                <FileText className="shrink-0 text-[var(--accent)]" size={15} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{paper.title || `Untitled paper ${index + 1}`}</span>
-                  <span className="block truncate font-mono text-[10px] font-medium text-[var(--ink-3)]">
-                    {paper.summary.totalMarks}m · {paper.summary.questionCount}q
+          <div className={s.openPaperList}>
+            {openPapers.map((paper, index) => {
+              const isActive = selectedPaper && (selectedPaper.id === paper.id || (selectedPaper.paperId && selectedPaper.paperId === paper.paperId));
+              return (
+                <button
+                  key={`${paper.id}-${paper.paperId ?? "draft"}`}
+                  className={`${s.openPaperBtn} ${isActive ? s.openPaperBtnActive : s.openPaperBtnDefault}`}
+                  onClick={() => onSelectOpenPaper(paper)}
+                  type="button"
+                >
+                  <FileText className={s.navigatorFileIcon} size={15} />
+                  <span className={s.openPaperMeta}>
+                    <span className={s.truncateBlock}>{paper.title || `Untitled paper ${index + 1}`}</span>
+                    <span className={s.navigatorPaperTitle}>
+                      {paper.summary.totalMarks}m · {paper.summary.questionCount}q
+                    </span>
                   </span>
-                </span>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
-        <button className="mt-3 flex w-full items-center gap-2 rounded-[var(--radius-md)] border border-dashed border-[var(--border-2)] px-3 py-2 text-left text-xs font-bold text-[var(--ink-2)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]" onClick={onAddBlank} type="button">
+        <button className={s.newPaperBtn} onClick={onAddBlank} type="button">
           <FileText size={15} />
           New paper
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className={s.navigatorMiddle}>
         {variantPapers.length > 0 && openPapers.length === 0 && (
-          <div className="mb-4">
-            <div className="px-2 pb-2 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Generated sets</div>
-            <div className="space-y-1">
+          <div className={s.variantSetsSection}>
+            <div className={s.variantSetsLabel}>Generated sets</div>
+            <div className={s.variantSetList}>
               {variantPapers.map((paper, index) => (
-                <button key={paper.id} className={`w-full rounded-[var(--radius-sm)] border px-3 py-2 text-left text-xs ${selectedPaper?.id === paper.id ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-transparent text-[var(--ink-2)] hover:bg-[var(--surface-2)]"}`} onClick={() => onSelectVariant(paper)} type="button">
-                  <span className="font-mono font-black">Set {String.fromCharCode(65 + index)}</span>
-                  <span className="block truncate">{paper.summary.totalMarks} marks · {paper.summary.questionCount} questions</span>
+                <button key={paper.id} className={`${s.variantBtn} ${selectedPaper?.id === paper.id ? s.variantBtnActive : s.variantBtnDefault}`} onClick={() => onSelectVariant(paper)} type="button">
+                  <span className={s.navigatorVariantLabel}>Set {String.fromCharCode(65 + index)}</span>
+                  <span className={s.truncateBlock}>{paper.summary.totalMarks} marks · {paper.summary.questionCount} questions</span>
                 </button>
               ))}
             </div>
@@ -3699,7 +3696,7 @@ function PaperNavigator({
         )}
 
         {isGenerating && (
-          <button className="secondary-button mb-4" onClick={onStop} type="button">
+          <button className={`secondary-button ${s.stopGenerateBtn}`} onClick={onStop} type="button">
             <Square size={15} />
             Stop generation
           </button>
@@ -3709,10 +3706,10 @@ function PaperNavigator({
         <div id="paper-outline-slot" />
       </div>
 
-      <div className="border-t border-[var(--border)] bg-[var(--surface-2)] p-4">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--ink-3)]">Total marks</span>
-          <span className="font-display text-2xl italic text-[var(--ink)]">{totalMarks}</span>
+      <div className={s.navigatorBottom}>
+        <div className={s.navigatorBottomRow}>
+          <span className={s.navigatorSectionLabel}>Total marks</span>
+          <span className={s.generationMetricValue}>{totalMarks}</span>
         </div>
       </div>
     </aside>
@@ -3723,14 +3720,14 @@ function GenerationCanvasState({ isGenerating, status }: { isGenerating: boolean
   if (!isGenerating) return null;
 
   return (
-    <div className="fade-up mx-auto mb-5 max-w-[980px] rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] p-5 text-center shadow-[var(--shadow-md)]">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent-deep)]">
+    <div className={`fade-up ${s.generationCanvas}`}>
+      <div className={s.generationSpinnerWrap}>
         <LoaderCircle className="animate-spin" size={22} />
       </div>
-      <div className="mt-3 font-display text-2xl italic text-[var(--ink)]">Generating question paper</div>
-      <div className="mt-1 text-sm text-[var(--ink-2)]">{status.message}</div>
-      <div className="mx-auto mt-4 h-1.5 max-w-md overflow-hidden rounded-full bg-[var(--surface-2)]">
-        <div className="h-full rounded-full bg-[var(--accent)] transition-all" style={{ width: `${Math.max(8, Math.min(100, status.progress))}%` }} />
+      <div className={s.generationTitle}>Generating question paper</div>
+      <div className={s.generationMessage}>{status.message}</div>
+      <div className={s.generationProgressBar}>
+        <div className={s.generationProgressFill} style={{ width: `${Math.max(8, Math.min(100, status.progress))}%` }} />
       </div>
     </div>
   );
@@ -3780,84 +3777,84 @@ function AssistantPanel({
   if (!isOpen) {
     return (
       <button
-        className="fade-up fixed bottom-5 right-5 z-30 flex items-center gap-3 rounded-full bg-[var(--ink)] px-4 py-3 text-sm font-black text-[var(--paper-tint)] shadow-[var(--shadow-xl)] hover:-translate-y-0.5 hover:bg-[var(--accent-deep)]"
+        className={`fade-up ${s.assistantFab}`}
         onClick={onToggleOpen}
         type="button"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[rgba(244,213,168,0.18)] text-[var(--highlight)]">
+        <span className={s.assistantFabIcon}>
           <Sparkles size={15} />
         </span>
         Ask assistant
-        <span className="rounded bg-[rgba(255,255,255,0.12)] px-1.5 py-0.5 font-mono text-[10px]">⌘K</span>
+        <span className={s.assistantFabKbd}>⌘K</span>
       </button>
     );
   }
 
   return (
-    <aside className="scale-in fixed bottom-5 right-5 z-30 flex h-[min(620px,calc(100vh-96px))] w-[390px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border-2)] bg-[var(--paper)] shadow-[var(--shadow-xl)]">
-      <div className="border-b border-[var(--border)] bg-[var(--surface)] p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] bg-gradient-to-br from-[var(--accent)] to-[var(--accent-deep)] text-[var(--paper-tint)]">
+    <aside className={`scale-in ${s.assistantPanel}`}>
+      <div className={s.assistantHeader}>
+        <div className={s.assistantHeaderTop}>
+          <div className={s.assistantHeaderLeft}>
+            <span className={s.assistantBotIcon}>
               <Bot size={16} />
             </span>
             <div>
-              <div className="text-sm font-bold text-[var(--ink)]">Assistant</div>
-              <div className="text-[11px] text-[var(--ink-3)]">Refine, retrieve, restore</div>
+              <div className={s.assistantTitle}>Assistant</div>
+              <div className={s.assistantSubtitle}>Refine, retrieve, restore</div>
             </div>
           </div>
           <button className="icon-button" onClick={onClose} title="Close assistant" type="button">
             <X size={16} />
           </button>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-[var(--radius-sm)] bg-[var(--surface-2)] p-1">
+        <div className={s.assistantTabRow}>
           {(["chat", "retrieval"] as RightPanel[]).map((panel) => (
-            <button key={panel} className={tabClass(rightPanel === panel)} onClick={() => onSetPanel(panel)} type="button">
+            <button key={panel} className={`${s.tabButton} ${rightPanel === panel ? s.tabButtonActive : ""}`} onClick={() => onSetPanel(panel)} type="button">
               {panel === "retrieval" ? "Sources" : panel}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className={s.assistantBody}>
         {rightPanel === "chat" && (
-          <div className="space-y-3">
+          <div className={s.chatSection}>
             {usage && (
-              <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--ink-2)]">
-                <div className="font-bold text-[var(--ink)]">API usage</div>
-                <div className="mt-1">{usage.totalTokens} tokens · ${usage.totalLatencyMs ? `${Math.round(usage.totalLatencyMs / 1000)}s · ` : ""}${usage.estimatedCostUsd.toFixed(6)}</div>
+              <div className={s.usageCard}>
+                <div className={s.usageCardTitle}>API usage</div>
+                <div className={s.usageCardTokens}>{usage.totalTokens} tokens · ${usage.totalLatencyMs ? `${Math.round(usage.totalLatencyMs / 1000)}s · ` : ""}${usage.estimatedCostUsd.toFixed(6)}</div>
                 {usage.events[0] && (
-                  <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
+                  <div className={s.usageCardModel}>
                     {usage.events[0].provider ?? "ai"} · {usage.events[0].model}
                   </div>
                 )}
               </div>
             )}
-            <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--border)] bg-[var(--paper-tint)] p-2">
-              <div className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-[var(--accent)]">Local tool router</div>
-              <div className="mt-2 flex flex-wrap gap-1">
+            <div className={s.toolRouterCard}>
+              <div className={s.toolRouterLabel}>Local tool router</div>
+              <div className={s.toolRouterChips}>
                 {CHAT_TOOL_CATALOG.map((tool) => (
-                  <span key={tool.name} className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[10px] font-bold text-[var(--ink-2)]" title={tool.description}>
+                  <span key={tool.name} className={s.toolChip} title={tool.description}>
                     {tool.name}
                   </span>
                 ))}
               </div>
             </div>
             {chatMessages.map((message) => (
-              <div key={message.id} className={message.role === "user" ? "ml-10 rounded-xl rounded-tr-sm bg-[var(--ink)] px-3 py-2 text-xs font-medium text-[var(--paper-tint)]" : "mr-8 rounded-xl rounded-tl-sm border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs leading-5 text-[var(--ink)]"}>
+              <div key={message.id} className={message.role === "user" ? s.chatMessageUser : s.chatMessageAssistant}>
                 {message.text}
               </div>
             ))}
             {isBusy && (
-              <div className="mr-8 flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--ink-2)]">
+              <div className={s.chatBusy}>
                 <LoaderCircle className="animate-spin" size={14} />
                 Working on the paper...
               </div>
             )}
             {!isBusy && canUndoAiEdit && (
-              <div className="flex justify-start">
+              <div className={s.undoRow}>
                 <button
-                  className="flex items-center gap-1.5 rounded-full border border-[var(--accent-soft)] bg-[var(--accent-soft)] px-3 py-1.5 text-[11px] font-bold text-[var(--accent-deep)] hover:bg-[var(--accent)] hover:text-[var(--paper-tint)]"
+                  className={s.chatUndoBtn}
                   onClick={onUndoAiEdit}
                   type="button"
                 >
@@ -3867,11 +3864,11 @@ function AssistantPanel({
               </div>
             )}
             {!isBusy && chatMessages.length > 0 && chatMessages[chatMessages.length - 1]?.role === "assistant" && (chatMessages[chatMessages.length - 1]?.text ?? "").toLowerCase().includes("failed") && (
-              <div className="mr-8 rounded-xl border border-[var(--error)] bg-[var(--error-container)] px-3 py-2 text-xs">
-                <div className="font-bold text-[var(--on-error-container)]">The assistant ran into an issue.</div>
-                <div className="mt-1 text-[var(--on-error-container)] opacity-80">Try rephrasing your request, or use the question controls directly for targeted edits.</div>
+              <div className={s.errorCard}>
+                <div className={s.errorCardTitle}>The assistant ran into an issue.</div>
+                <div className={s.errorCardBody}>Try rephrasing your request, or use the question controls directly for targeted edits.</div>
                 <button
-                  className="mt-2 rounded border border-[var(--error)] px-2 py-1 text-[10px] font-bold text-[var(--on-error-container)] hover:bg-[var(--error)] hover:text-white"
+                  className={s.errorRetryBtn}
                   onClick={onAsk}
                   type="button"
                 >
@@ -3883,12 +3880,12 @@ function AssistantPanel({
         )}
 
         {rightPanel === "retrieval" && (
-          <div className="space-y-4">
+          <div className={s.retrievalSection}>
             <RetrievalPanel preview={preview} onImport={onImportSource} onRefresh={onRefreshRetrieval} />
-            <div className="border-t border-[var(--border)] pt-3">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--accent)]">Question bank</div>
-                <button className="text-[11px] font-bold text-[var(--ink-3)] hover:text-[var(--accent)]" onClick={onRefreshBank} type="button">
+            <div className={s.bankSection}>
+              <div className={s.bankSectionHeader}>
+                <div className={s.bankSectionLabel}>Question bank</div>
+                <button className={s.bankRefreshBtn} onClick={onRefreshBank} type="button">
                   Refresh
                 </button>
               </div>
@@ -3898,10 +3895,10 @@ function AssistantPanel({
         )}
       </div>
 
-      <div className="border-t border-[var(--border)] bg-[var(--surface)] p-3">
-        <div className="relative">
+      <div className={s.assistantInputFooter}>
+        <div className={s.assistantInputWrap}>
           <input
-            className="input rounded-full pr-11"
+            className={s.assistantInput}
             placeholder="Replace Q5, rebalance, format..."
             value={chatInput}
             onChange={(event) => onChatInputChange(event.target.value)}
@@ -3909,7 +3906,7 @@ function AssistantPanel({
               if (event.key === "Enter") onAsk();
             }}
           />
-          <button className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--paper-tint)]" onClick={onAsk} type="button">
+          <button className={s.assistantSendBtn} onClick={onAsk} type="button">
             <Send size={14} />
           </button>
         </div>
@@ -3954,11 +3951,11 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
         <Database size={15} />
         Refresh retrieval
       </button>
-      <div className="grid grid-cols-4 gap-1 rounded-lg bg-[var(--surface-container-low)] p-1">
+      <div className={s.retrievalTabGrid}>
         {(["all", "ncert", "pyq", "bank"] as const).map((tab) => (
           <button
             key={tab}
-            className={`rounded-md px-2 py-1.5 text-[11px] font-black uppercase transition ${sourceTab === tab ? "bg-[var(--surface-container-lowest)] text-[var(--primary)] shadow-sm" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-high)]"}`}
+            className={`${s.retrievalTab} ${sourceTab === tab ? s.retrievalTabActive : s.retrievalTabDefault}`}
             onClick={() => setSourceTab(tab)}
             type="button"
           >
@@ -3967,34 +3964,34 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
         ))}
       </div>
       {preview?.warnings.map((warning) => (
-        <div key={warning} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+        <div key={warning} className={s.retrievalWarning}>
           {warning}
         </div>
       ))}
       {sourceTab === "all" && hasSectionSources ? (
-        <div className="space-y-4">
+        <div className={s.retrievalChapterList}>
           {sectionChapters.map((chapter) => (
-            <div key={chapter.name} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
-              <div className="flex items-start justify-between gap-3">
+            <div key={chapter.name} className={s.chapterCard}>
+              <div className={s.chapterCardHeader}>
                 <div>
-                  <div className="text-xs font-black uppercase tracking-wide text-[var(--on-surface)]">{chapter.name}</div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-[var(--on-surface-variant)]">Dump-backed textbook questions, exercises, chunks, and matching PYQs</div>
+                  <div className={s.chapterCardName}>{chapter.name}</div>
+                  <div className={s.chapterCardDesc}>Dump-backed textbook questions, exercises, chunks, and matching PYQs</div>
                 </div>
-                {chapter.position !== undefined && <span className="rounded-full bg-[var(--surface-container-lowest)] px-2 py-1 text-[10px] font-black text-[var(--on-surface-variant)]">Ch {chapter.position}</span>}
+                {chapter.position !== undefined && <span className={s.chapterPositionBadge}>Ch {chapter.position}</span>}
               </div>
 
-              <div className="mt-3 space-y-2">
+              <div className={s.chapterSectionList}>
                 {chapter.sections
                   .filter((section) => section.ncert.length > 0 || section.pyq.length > 0)
                   .map((section) => (
-                    <details key={`${chapter.name}-${section.name}`} className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)]" open={section.sectionType === "exercise"}>
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-bold text-[var(--on-surface)]">
+                    <details key={`${chapter.name}-${section.name}`} className={s.chapterSectionDetails} open={section.sectionType === "exercise"}>
+                      <summary className={s.chapterSectionSummary}>
                         <span>{section.name}</span>
-                        <span className="rounded-full bg-[var(--surface-container-high)] px-2 py-0.5 text-[10px] font-black uppercase text-[var(--on-surface-variant)]">
+                        <span className={s.chapterSectionCount}>
                           {section.ncert.length + section.pyq.length}
                         </span>
                       </summary>
-                      <div className="space-y-2 border-t border-[var(--outline-variant)] p-2">
+                      <div className={s.chapterSectionItems}>
                         {section.ncert.map((result) => (
                           <SourceResultButton key={`section-ncert-${result.id}`} result={result} onImport={onImport} />
                         ))}
@@ -4009,7 +4006,7 @@ function RetrievalPanel({ preview, onImport, onRefresh }: { preview: RetrievalPr
           ))}
         </div>
       ) : tabResults.length === 0 ? (
-        <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No retrieval results yet. Add NCERT/PYQ data or generate a preview.</div>
+        <div className={s.emptyRetrievalMsg}>No retrieval results yet. Add NCERT/PYQ data or generate a preview.</div>
       ) : (
         tabResults.map((result) => <SourceResultButton key={`${result.sourceType}-${result.id}`} result={result} onImport={onImport} />)
       )}
@@ -4032,19 +4029,19 @@ function SourceResultButton({ result, onImport }: { result: RetrievalResult; onI
   const taxonomy = [...(result.skills ?? []), ...(result.formulas ?? [])].slice(0, 4);
 
   return (
-    <button className="w-full rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-3 text-left text-xs hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onImport(result)} type="button">
-      <span className="flex items-center justify-between gap-2">
-        <span className="font-bold text-[var(--on-surface)]">{sourceLabel}</span>
-        <span className="rounded-full bg-[var(--primary-fixed)] px-2 py-0.5 text-[10px] font-black text-[var(--primary)]">Import</span>
+    <button className={s.sourceResultBtn} onClick={() => onImport(result)} type="button">
+      <span className={s.sourceResultHeader}>
+        <span className={s.sourceResultLabel}>{sourceLabel}</span>
+        <span className={s.sourceResultImportBadge}>Import</span>
       </span>
-      {bookLine && <span className="mt-1 block text-[11px] font-black uppercase tracking-[0.08em] text-[var(--accent)]">{bookLine}</span>}
-      <span className="mt-1 block font-semibold text-[var(--on-surface)]">{result.title}</span>
-      <span className="mt-1 line-clamp-4 block text-[var(--on-surface-variant)]">{result.excerpt}</span>
-      {metaLine && <span className="mt-2 block text-[11px] font-bold text-[var(--primary)]">{metaLine}</span>}
+      {bookLine && <span className={s.sourceResultBook}>{bookLine}</span>}
+      <span className={s.sourceResultTitle}>{result.title}</span>
+      <span className={s.sourceResultExcerpt}>{result.excerpt}</span>
+      {metaLine && <span className={s.sourceResultMeta}>{metaLine}</span>}
       {taxonomy.length > 0 && (
-        <span className="mt-2 flex flex-wrap gap-1">
+        <span className={s.sourceResultTaxonomy}>
           {taxonomy.map((item) => (
-            <span key={item} className="rounded-full border border-[var(--outline-variant)] px-2 py-0.5 text-[10px] font-bold text-[var(--on-surface-variant)]">
+            <span key={item} className={s.sourceResultTaxTag}>
               {item}
             </span>
           ))}
@@ -4056,7 +4053,7 @@ function SourceResultButton({ result, onImport }: { result: RetrievalResult; onI
 
 function QuestionBankPanel({ compact = false, items, onImport, onRefresh }: { compact?: boolean; items: QuestionBankItem[]; onImport: (item: QuestionBankItem) => void; onRefresh: () => void }) {
   return (
-    <div className="space-y-3">
+    <div className={s.bankPanelList}>
       {!compact && (
         <button className="secondary-button" onClick={onRefresh} type="button">
           <RefreshCcw size={15} />
@@ -4064,14 +4061,14 @@ function QuestionBankPanel({ compact = false, items, onImport, onRefresh }: { co
         </button>
       )}
       {items.length === 0 ? (
-        <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3 text-xs text-[var(--on-surface-variant)]">No saved questions yet. Use the save icon on any question card.</div>
+        <div className={s.emptyRetrievalMsg}>No saved questions yet. Use the save icon on any question card.</div>
       ) : (
-        <div className={compact ? "grid grid-cols-2 gap-2" : "space-y-3"}>
+        <div className={compact ? s.bankCompactGrid : s.bankPanelList}>
           {items.map((item) => (
-            <button key={item.id} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-2 text-left text-xs hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onImport(item)} type="button">
-              <span className="font-bold text-[var(--on-surface)]">{item.questionType ?? "Q"} · {item.marks ?? "?"} m</span>
-              <span className={`mt-1 block text-[var(--on-surface-variant)] ${compact ? "line-clamp-2" : "line-clamp-4"}`}>{item.text}</span>
-              {!compact && <span className="mt-2 block text-[11px] font-bold text-[var(--on-surface-variant)]">{item.chapter ?? "No chapter"} · {item.difficulty ?? "Mixed"}</span>}
+            <button key={item.id} className={s.bankItemBtn} onClick={() => onImport(item)} type="button">
+              <span className={s.bankItemTitle}>{item.questionType ?? "Q"} · {item.marks ?? "?"} m</span>
+              <span className={`mt-1 block text-[var(--on-surface-variant)] ${compact ? s.bankItemTextCompact : s.bankItemTextFull}`}>{item.text}</span>
+              {!compact && <span className={s.bankItemChapter}>{item.chapter ?? "No chapter"} · {item.difficulty ?? "Mixed"}</span>}
             </button>
           ))}
         </div>
@@ -4093,11 +4090,11 @@ function WorkspaceView({
 }) {
   if (!dashboard) {
     return (
-      <div className="mx-auto grid max-w-[980px] gap-4">
-        <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-8 text-center">
-          <LoaderCircle className="mx-auto animate-spin text-[var(--primary)]" size={24} />
-          <div className="mt-3 text-sm font-bold text-[var(--on-surface)]">Loading workspace data</div>
-          <p className="mt-1 text-xs text-[var(--on-surface-variant)]">Phoenix dashboard data will appear here once the API responds.</p>
+      <div className={s.workspaceLoadingWrap}>
+        <div className={s.workspaceLoadingCard}>
+          <LoaderCircle className={`animate-spin ${s.workspaceLoadingSpinner}`} size={24} />
+          <div className={s.workspaceLoadingTitle}>Loading workspace data</div>
+          <p className={s.workspaceLoadingDesc}>Phoenix dashboard data will appear here once the API responds.</p>
         </div>
       </div>
     );
@@ -4105,25 +4102,25 @@ function WorkspaceView({
 
   if (view === "library") {
     return (
-      <div className="mx-auto grid max-w-[1100px] gap-5">
+      <div className={s.workspaceContent}>
         <DashboardMetricGrid dashboard={dashboard} />
         <WorkspacePanel title="Recent papers" eyebrow="Saved work">
           {dashboard.recentPapers.length === 0 ? (
             <EmptyWorkspaceState title="No saved papers yet" description="Generated or imported papers will appear here after a version is saved." />
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className={s.workspaceTemplateGrid}>
               {dashboard.recentPapers.map((paper) => (
-                <button key={paper.id} className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-4 text-left hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onSelectPaper(paper)} type="button">
-                  <div className="flex items-start justify-between gap-3">
+                <button key={paper.id} className={s.libraryPaperCard} onClick={() => onSelectPaper(paper)} type="button">
+                  <div className={s.libraryPaperCardTop}>
                     <div>
-                      <div className="font-display text-lg font-semibold text-[var(--on-surface)]">{paper.title}</div>
-                      <div className="mt-1 font-mono text-[11px] text-[var(--on-surface-variant)]">
+                      <div className={s.libraryPaperTitle}>{paper.title}</div>
+                      <div className={s.libraryPaperMeta}>
                         {paper.board} Class {paper.classLevel} · {paper.subject}
                       </div>
                     </div>
-                    <span className="rounded-full bg-[var(--surface-container-lowest)] px-2 py-1 text-[10px] font-black uppercase text-[var(--primary)]">{paper.status || "saved"}</span>
+                    <span className={s.libraryPaperStatusBadge}>{paper.status || "saved"}</span>
                   </div>
-                  <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+                  <div className={s.libraryPaperStats}>
                     <MiniStat label="Marks" value={paper.marksTotal} />
                     <MiniStat label="Versions" value={paper.versionCount} />
                     <MiniStat label="Updated" value={formatShortDate(paper.updatedAt)} />
@@ -4142,24 +4139,24 @@ function WorkspaceView({
 
   if (view === "analytics") {
     return (
-      <div className="mx-auto grid max-w-[1100px] gap-5">
+      <div className={s.workspaceContent}>
         <DashboardMetricGrid dashboard={dashboard} />
-        <div className="grid gap-5 xl:grid-cols-[1.4fr_0.9fr]">
+        <div className={s.workspaceAnalyticsGrid}>
           <WorkspacePanel title="Syllabus coverage" eyebrow="Corpus readiness">
             {dashboard.chapterCoverage.length === 0 ? (
               <EmptyWorkspaceState title="No chapters indexed" description="Ingest NCERT/PYQ files to build the chapter coverage map." />
             ) : (
-              <div className="space-y-3">
+              <div className={s.coverageList}>
                 {dashboard.chapterCoverage.map((chapter) => (
-                  <div key={chapter.id} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-bold text-[var(--on-surface)]">{chapter.name}</div>
-                        <div className="mt-0.5 font-mono text-[11px] text-[var(--on-surface-variant)]">
+                  <div key={chapter.id} className={s.coverageRow}>
+                    <div className={s.coverageRowTop}>
+                      <div className={s.coverageRowLeft}>
+                        <div className={s.coverageRowName}>{chapter.name}</div>
+                        <div className={s.coverageRowMeta}>
                           NCERT {chapter.ncertCount} · PYQ {chapter.pyqCount} · Bank {chapter.bankCount}
                         </div>
                       </div>
-                      <span className="font-mono text-xs font-black text-[var(--primary)]">{chapter.coverageScore}%</span>
+                      <span className={s.coverageRowScore}>{chapter.coverageScore}%</span>
                     </div>
                     <ProgressLine value={chapter.coverageScore} />
                   </div>
@@ -4167,7 +4164,7 @@ function WorkspaceView({
               </div>
             )}
           </WorkspacePanel>
-          <div className="grid gap-5">
+          <div className={s.workspaceAnalyticsSidebar}>
             <WorkspacePanel title="Difficulty tags" eyebrow="Question quality">
               <DistributionRows rows={dashboard.difficultyDistribution.map((row) => ({ label: row.difficulty, value: row.count }))} />
             </WorkspacePanel>
@@ -4182,19 +4179,19 @@ function WorkspaceView({
 
   if (view === "templates") {
     return (
-      <div className="mx-auto grid max-w-[1100px] gap-5">
+      <div className={s.workspaceContent}>
         <WorkspacePanel title="Template suite" eyebrow="Formatting presets">
           {dashboard.templates.length === 0 ? (
             <EmptyWorkspaceState title="No templates saved" description="Upload templates from the Studio panel to reuse formatting and missing-parameter hints." />
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className={s.workspaceTemplateGrid}>
               {dashboard.templates.map((template) => (
-                <button key={template.id} className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-4 text-left hover:border-[var(--primary-container)] hover:bg-[var(--primary-fixed)]" onClick={() => onUseTemplate(template)} type="button">
-                  <div className="font-display text-lg font-semibold text-[var(--on-surface)]">{template.name}</div>
-                  <p className="mt-2 line-clamp-3 text-xs text-[var(--on-surface-variant)]">{template.description || "Reusable paper template with formatting and request hints."}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
+                <button key={template.id} className={s.workspaceTemplateCard} onClick={() => onUseTemplate(template)} type="button">
+                  <div className={s.workspaceTemplateCardTitle}>{template.name}</div>
+                  <p className={s.workspaceTemplateCardDesc}>{template.description || "Reusable paper template with formatting and request hints."}</p>
+                  <div className={s.workspaceTemplateCardTags}>
                     {Object.keys(template.formatting).slice(0, 4).map((key) => (
-                      <span key={key} className="rounded-full bg-[var(--surface-container-lowest)] px-2 py-1 text-[10px] font-black uppercase text-[var(--primary)]">{key}</span>
+                      <span key={key} className={s.workspaceTemplateTag}>{key}</span>
                     ))}
                   </div>
                 </button>
@@ -4211,7 +4208,7 @@ function WorkspaceView({
 
 function DashboardMetricGrid({ dashboard }: { dashboard: DashboardSummary }) {
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className={s.metricGrid}>
       <MetricCard label="Saved papers" value={dashboard.counts.papers} detail={`${dashboard.counts.completedRuns}/${dashboard.counts.generationRuns} runs completed`} />
       <MetricCard label="Indexed chapters" value={dashboard.counts.chapters} detail={`${dashboard.counts.ncertQuestions} NCERT items`} />
       <MetricCard label="PYQ questions" value={dashboard.counts.pyqQuestions} detail="Tagged by marks, type, difficulty" />
@@ -4222,31 +4219,31 @@ function DashboardMetricGrid({ dashboard }: { dashboard: DashboardSummary }) {
 
 function WorkspacePanel({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)]">
-      <div className="border-b border-[var(--outline-variant)] px-5 py-4">
-        <div className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--primary)]">{eyebrow}</div>
-        <h2 className="mt-1 font-display text-xl font-semibold text-[var(--on-surface)]">{title}</h2>
+    <section className={s.workspacePanelRoot}>
+      <div className={s.workspacePanelHeader}>
+        <div className={s.workspacePanelEyebrow}>{eyebrow}</div>
+        <h2 className={s.workspacePanelTitle}>{title}</h2>
       </div>
-      <div className="p-5">{children}</div>
+      <div className={s.workspacePanelBody}>{children}</div>
     </section>
   );
 }
 
 function MetricCard({ label, value, detail }: { label: string; value: number | string; detail: string }) {
   return (
-    <div className="rounded-lg border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] p-4">
-      <div className="font-mono text-[10px] font-black uppercase tracking-[0.12em] text-[var(--on-surface-variant)]">{label}</div>
-      <div className="mt-2 text-3xl font-black text-[var(--primary)]">{value}</div>
-      <div className="mt-1 text-xs text-[var(--on-surface-variant)]">{detail}</div>
+    <div className={s.metricCard}>
+      <div className={s.metricCardLabel}>{label}</div>
+      <div className={s.metricCardValue}>{value}</div>
+      <div className={s.metricCardDetail}>{detail}</div>
     </div>
   );
 }
 
 function MiniStat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-lowest)] px-3 py-2">
-      <div className="font-mono text-[10px] font-black uppercase text-[var(--on-surface-variant)]">{label}</div>
-      <div className="mt-1 text-sm font-black text-[var(--on-surface)]">{value}</div>
+    <div className={s.miniStatRoot}>
+      <div className={s.miniStatLabel}>{label}</div>
+      <div className={s.miniStatValue}>{value}</div>
     </div>
   );
 }
@@ -4257,12 +4254,12 @@ function DistributionRows({ rows }: { rows: { label: string; value: number }[] }
   if (rows.length === 0) return <EmptyWorkspaceState title="No tags yet" description="Tagged imported questions will appear here." />;
 
   return (
-    <div className="space-y-3">
+    <div className={s.distRows}>
       {rows.map((row) => (
         <div key={row.label}>
-          <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="font-bold text-[var(--on-surface)]">{row.label}</span>
-            <span className="font-mono font-black text-[var(--primary)]">{row.value}</span>
+          <div className={s.distRowHeader}>
+            <span className={s.distRowLabel}>{row.label}</span>
+            <span className={s.distRowValue}>{row.value}</span>
           </div>
           <ProgressLine value={(row.value / max) * 100} />
         </div>
@@ -4273,8 +4270,8 @@ function DistributionRows({ rows }: { rows: { label: string; value: number }[] }
 
 function ProgressLine({ value }: { value: number }) {
   return (
-    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--surface-container-high)]">
-      <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    <div className={s.progressLineTrack}>
+      <div className={s.progressLineFill} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   );
 }
@@ -4283,19 +4280,19 @@ function RunList({ runs }: { runs: DashboardSummary["recentRuns"] }) {
   if (runs.length === 0) return <EmptyWorkspaceState title="No runs yet" description="Generation attempts will appear here with their current status." />;
 
   return (
-    <div className="space-y-2">
+    <div className={s.runList}>
       {runs.map((run) => {
         const request = run.request;
         const subject = String(request.subject ?? "Unknown subject");
         const marks = String(request.total_marks ?? request.totalMarks ?? "?");
 
         return (
-          <div key={run.id} className="rounded border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-mono text-[11px] font-black uppercase text-[var(--primary)]">{run.status}</span>
-              <span className="font-mono text-[10px] text-[var(--on-surface-variant)]">{formatShortDate(run.insertedAt)}</span>
+          <div key={run.id} className={s.runRow}>
+            <div className={s.runRowTop}>
+              <span className={s.runStatus}>{run.status}</span>
+              <span className={s.runDate}>{formatShortDate(run.insertedAt)}</span>
             </div>
-            <div className="mt-1 text-xs font-semibold text-[var(--on-surface)]">
+            <div className={s.runDesc}>
               {subject} · {marks} marks
             </div>
           </div>
@@ -4307,9 +4304,9 @@ function RunList({ runs }: { runs: DashboardSummary["recentRuns"] }) {
 
 function EmptyWorkspaceState({ title, description }: { title: string; description: string }) {
   return (
-    <div className="rounded border border-dashed border-[var(--outline-variant)] bg-[var(--surface-container-low)] p-5 text-center">
-      <div className="text-sm font-black text-[var(--on-surface)]">{title}</div>
-      <p className="mx-auto mt-1 max-w-md text-xs text-[var(--on-surface-variant)]">{description}</p>
+    <div className={s.emptyState}>
+      <div className={s.emptyStateTitle}>{title}</div>
+      <p className={s.emptyStateDesc}>{description}</p>
     </div>
   );
 }
@@ -4318,21 +4315,11 @@ function ProgressBadge({ status }: { status: GenerationStatus }) {
   const done = status.status === "completed";
   const failed = status.status === "failed";
   return (
-    <div className="hidden min-w-36 items-center gap-2 rounded-full border border-[var(--outline-variant)] bg-[var(--surface-container-low)] px-3 py-1.5 text-xs font-semibold text-[var(--on-surface-variant)] sm:flex">
+    <div className={s.progressBadge}>
       {done ? <CheckCircle2 className="text-emerald-600" size={14} /> : failed ? <RefreshCcw className="text-red-600" size={14} /> : <LoaderCircle className={status.status === "running" || status.status === "queued" ? "animate-spin text-[var(--primary)]" : "text-[var(--outline)]"} size={14} />}
       <span>{Math.round(status.progress)}%</span>
     </div>
   );
-}
-
-function tabClass(active: boolean) {
-  return `rounded-md px-2 py-2 text-[11px] font-bold capitalize ${active ? "bg-[var(--surface-container-lowest)] text-[var(--primary)] " : "text-[var(--on-surface-variant)] hover:text-[var(--on-surface)]"}`;
-}
-
-function topNavClass(active: boolean) {
-  return `h-9 rounded-md px-3 text-xs font-black uppercase tracking-[0.05em] ${
-    active ? "bg-[var(--primary-fixed)] text-[var(--primary)]" : "text-[var(--on-surface-variant)] hover:bg-[var(--surface-container-low)] hover:text-[var(--on-surface)]"
-  }`;
 }
 
 function describeRequest(request: PaperRequest) {

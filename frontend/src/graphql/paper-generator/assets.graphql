@@ -1,0 +1,9 @@
+mutation UploadImage($input: ImageUploadInput!) {
+  uploadImage(input: $input)
+    @rest(type: "ImageAsset", path: "/assets/images", method: "POST") {
+    id
+    url
+    width
+    height
+  }
+}

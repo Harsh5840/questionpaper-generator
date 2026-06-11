@@ -1,0 +1,25 @@
+query GetRetrievalPreview($board: String!, $classLevel: String!, $subject: String!, $chapter: String) {
+  retrievalPreview(board: $board, classLevel: $classLevel, subject: $subject, chapter: $chapter)
+    @rest(
+      type: "RetrievalPreview"
+      path: "/retrieval/preview?board={args.board}&class_level={args.classLevel}&subject={args.subject}&chapter={args.chapter}"
+    ) {
+    ncert
+    pyq
+    questionBank
+  }
+}
+
+mutation ImportQuestionFromSource($input: ImportSourceInput!) {
+  importQuestionFromSource(input: $input)
+    @rest(type: "ImportedQuestion", path: "/questions/import-from-source", method: "POST") {
+    question
+  }
+}
+
+mutation ImportQuestionFromImage($input: ImportImageInput!) {
+  importQuestionFromImage(input: $input)
+    @rest(type: "ImportedQuestion", path: "/questions/import-from-image", method: "POST") {
+    question
+  }
+}
