@@ -8,8 +8,9 @@ defmodule QpgWeb.RefinementController do
   def create(conn, %{"id" => id, "instruction" => instruction} = params) do
     Logging.info("api.refinements.create.received", %{paper_id: id, instruction: instruction})
 
-    assignment = Assignments.get_assignment!(id)
-    paper_payload = params["paper"] || Assignments.rebuild_payload(assignment)
+    opts = [prefix: QpgWeb.Tenancy.prefix(conn)]
+    assignment = Assignments.get_assignment!(id, opts)
+    paper_payload = params["paper"] || Assignments.rebuild_payload(assignment, opts)
     Process.put(:qpg_paper_id, assignment.id)
     Process.put(:qpg_ai_operation, "refinement")
 

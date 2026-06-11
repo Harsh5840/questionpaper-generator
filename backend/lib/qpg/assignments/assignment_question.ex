@@ -22,6 +22,8 @@ defmodule Qpg.Assignments.AssignmentQuestion do
     field(:difficulty, :string)
     field(:short_prompt, :string)
     field(:source_type, :string)
+    # Link back to the corpus question this was pulled from (null for AI/manual).
+    field(:content_question_id, Ecto.UUID)
     field(:body_store, :map, default: %{})
 
     belongs_to(:assignment, Qpg.Assignments.Assignment)
@@ -47,6 +49,7 @@ defmodule Qpg.Assignments.AssignmentQuestion do
       :difficulty,
       :short_prompt,
       :source_type,
+      :content_question_id,
       :body_store
     ])
     |> validate_required([:assignment_id, :question_type, :sort_order])

@@ -1142,6 +1142,8 @@ defmodule Qpg.Sources.DumpCorpus do
 
     %{
       "id" => Ecto.UUID.generate(),
+      # Keep the link back to the source corpus question (-> content_question_id).
+      "contentQuestionId" => id,
       "text" => text,
       "richText" => "",
       "options" => option_blocks(options),

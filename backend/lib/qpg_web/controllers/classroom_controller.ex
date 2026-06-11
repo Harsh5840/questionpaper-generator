@@ -12,7 +12,7 @@ defmodule QpgWeb.ClassroomController do
       has_attachment: params["attachment_url"] not in [nil, ""]
     })
 
-    assignment = Assignments.get_assignment!(id)
+    assignment = Assignments.get_assignment!(id, prefix: QpgWeb.Tenancy.prefix(conn))
 
     attrs =
       params

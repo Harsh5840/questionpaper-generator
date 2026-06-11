@@ -10,9 +10,10 @@ defmodule QpgWeb.ExportController do
       format: params["format"] || "pdf"
     })
 
-    assignment = Assignments.get_assignment!(id)
+    opts = [prefix: QpgWeb.Tenancy.prefix(conn)]
+    assignment = Assignments.get_assignment!(id, opts)
 
-    case Assignments.create_export(assignment, params) do
+    case Assignments.create_export(assignment, params, opts) do
       {:ok, export} ->
         Logging.info("api.exports.create.completed", %{
           paper_id: id,

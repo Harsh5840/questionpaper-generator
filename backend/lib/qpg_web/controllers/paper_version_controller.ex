@@ -15,9 +15,10 @@ defmodule QpgWeb.PaperVersionController do
       has_document_html: is_binary(payload["document_html"])
     })
 
-    assignment = Assignments.get_assignment!(id)
+    opts = [prefix: QpgWeb.Tenancy.prefix(conn)]
+    assignment = Assignments.get_assignment!(id, opts)
 
-    case Assignments.save_payload(assignment, payload, params["change_source"] || "manual_edit") do
+    case Assignments.save_payload(assignment, payload, params["change_source"] || "manual_edit", opts) do
       {:ok, saved} ->
         Logging.info("api.paper_versions.create.completed", %{paper_id: id})
 
@@ -25,7 +26,7 @@ defmodule QpgWeb.PaperVersionController do
           id: saved.id,
           version_number: 1,
           marks_total: saved.total_marks,
-          payload: Assignments.rebuild_payload(saved)
+          payload: Assignments.rebuild_payload(saved, opts)
         })
 
       {:error, reason} ->

@@ -5,21 +5,23 @@ defmodule QpgWeb.PaperController do
   alias Qpg.Logging
 
   def index(conn, _params) do
-    papers = Enum.map(Assignments.list(), &serialize_summary/1)
+    papers = Enum.map(Assignments.list(prefix: QpgWeb.Tenancy.prefix(conn)), &serialize_summary/1)
     Logging.info("api.papers.index.completed", %{count: length(papers)})
     json(conn, %{papers: papers})
   end
 
   def show(conn, %{"id" => id}) do
-    assignment = Assignments.get_assignment!(id)
-    payload = Assignments.rebuild_payload(assignment)
+    opts = [prefix: QpgWeb.Tenancy.prefix(conn)]
+    assignment = Assignments.get_assignment!(id, opts)
+    payload = Assignments.rebuild_payload(assignment, opts)
 
     Logging.info("api.papers.show.completed", %{paper_id: id})
     json(conn, serialize(assignment, payload))
   end
 
   def structured(conn, %{"id" => id}) do
-    %{assignment: assignment, payload: payload} = Assignments.structured(id) || not_found!(id)
+    %{assignment: assignment, payload: payload} =
+      Assignments.structured(id, prefix: QpgWeb.Tenancy.prefix(conn)) || not_found!(id)
 
     Logging.info("api.papers.structured.completed", %{
       paper_id: id,
@@ -35,8 +37,9 @@ defmodule QpgWeb.PaperController do
   end
 
   def delete(conn, %{"id" => id}) do
-    assignment = Assignments.get_assignment!(id)
-    {:ok, _} = Assignments.delete_assignment(assignment)
+    opts = [prefix: QpgWeb.Tenancy.prefix(conn)]
+    assignment = Assignments.get_assignment!(id, opts)
+    {:ok, _} = Assignments.delete_assignment(assignment, opts)
     Logging.warning("api.papers.delete.completed", %{paper_id: id})
     send_resp(conn, :no_content, "")
   end

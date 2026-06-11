@@ -10,11 +10,15 @@ defmodule Qpg.Assignments.Assignment do
   @foreign_key_type :binary_id
 
   schema "assignments" do
-    field(:tenant_id, :string)
+    field(:created_by, Ecto.UUID)
     field(:title, :string)
     field(:board_code, :string)
     field(:class_level, :string)
     field(:subject, :string)
+    # Real FKs to the main app's class/subject records. The `class_level`/
+    # `subject` text columns stay for our own display + rebuild.
+    field(:class_id, Ecto.UUID)
+    field(:subject_id, Ecto.UUID)
     field(:instructions, :string)
     field(:input_mode, :string)
     field(:status, :string, default: "draft")
@@ -30,11 +34,13 @@ defmodule Qpg.Assignments.Assignment do
   def changeset(assignment, attrs) do
     assignment
     |> cast(attrs, [
-      :tenant_id,
+      :created_by,
       :title,
       :board_code,
       :class_level,
       :subject,
+      :class_id,
+      :subject_id,
       :instructions,
       :input_mode,
       :status,
@@ -42,6 +48,6 @@ defmodule Qpg.Assignments.Assignment do
       :due_date,
       :source_paper_id
     ])
-    |> validate_required([:title, :status])
+    |> validate_required([:created_by, :title, :status])
   end
 end
