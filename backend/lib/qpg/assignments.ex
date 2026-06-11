@@ -318,7 +318,7 @@ defmodule Qpg.Assignments do
       insert_row!(assignment, %{
         parent_id: section_row.id,
         question_type: map_type(q),
-        question_number: Integer.to_string(qnum),
+        question_number: qnum,
         section_label: section_label,
         part_label: nil,
         marks_possible: float_marks(q),
@@ -346,7 +346,7 @@ defmodule Qpg.Assignments do
           insert_row!(assignment, %{
             parent_id: row.id,
             question_type: map_type(sp),
-            question_number: Integer.to_string(qnum),
+            question_number: qnum,
             section_label: section_label,
             part_label: part_label,
             marks_possible: float_marks(sp),
@@ -389,7 +389,7 @@ defmodule Qpg.Assignments do
     insert_row!(assignment, %{
       parent_id: parent_id,
       question_type: map_type(choice),
-      question_number: Integer.to_string(qnum),
+      question_number: qnum,
       section_label: section_label,
       part_label: part_label,
       marks_possible: float_marks(choice),
@@ -413,10 +413,9 @@ defmodule Qpg.Assignments do
 
   defp content_body(q, section_label) do
     %{
+      # Single source of truth: question_text carries `$...$` math (no rich_text).
       "question_text" => val(q, ["text"], ""),
-      "rich_text" => val(q, ["richText", "rich_text"], ""),
       "expected_answer" => val(q, ["answer"], ""),
-      "answer_rich_text" => val(q, ["answerRichText", "answer_rich_text"], ""),
       "question_type" => map_type(q),
       "ui_type" => val(q, ["type", "question_type"], nil),
       "section" => section_label,
@@ -440,7 +439,6 @@ defmodule Qpg.Assignments do
       %{
         "id" => val(opt, ["label", "id"], <<64 + idx::utf8>>),
         "text" => val(opt, ["text", "value"], ""),
-        "rich_text" => val(opt, ["richText", "rich_text"], ""),
         "is_correct" => Map.get(opt, "isCorrect") || Map.get(opt, "is_correct") || false,
         "has_visual" => Map.get(opt, "hasVisual") || Map.get(opt, "has_visual") || false
       }

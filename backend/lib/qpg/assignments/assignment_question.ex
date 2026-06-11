@@ -12,7 +12,7 @@ defmodule Qpg.Assignments.AssignmentQuestion do
 
   schema "assignment_questions" do
     field(:question_type, :string)
-    field(:question_number, :string)
+    field(:question_number, :integer)
     field(:section_label, :string)
     field(:part_label, :string)
     field(:marks_possible, :float)
