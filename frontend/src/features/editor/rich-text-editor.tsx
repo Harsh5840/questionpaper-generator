@@ -371,6 +371,7 @@ export function RichTextEditor({
     extensions: [
       StarterKit.configure({
         heading: false,
+        underline: false,
       }),
       TextStyle,
       Color,

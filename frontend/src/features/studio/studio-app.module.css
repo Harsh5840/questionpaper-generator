@@ -2309,9 +2309,9 @@
 /* ── AssistantPanel ───────────────────────────────────────── */
 .assistantFab {
   position: fixed;
-  bottom: 1.25rem;
+  bottom: 4.5rem;
   right: 1.25rem;
-  z-index: 30;
+  z-index: 50;
   display: flex;
   align-items: center;
   gap: 0.75rem;
