@@ -89,6 +89,8 @@ export type DocumentStyle = {
     text: string;
     opacity: number;
     position: "center" | "diagonal";
+    /** Optional image (data URL or hosted URL) used as a background watermark. */
+    imageUrl?: string;
   };
 };
 

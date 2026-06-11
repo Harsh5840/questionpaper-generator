@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowUpFromLine,
@@ -12,23 +13,25 @@ import {
   Image as ImageIcon,
   ImagePlus,
   Italic,
-  LogIn,
-  LogOut,
+  Merge,
   Plus,
   RefreshCcw,
   RotateCcw,
   Save,
-  Shapes,
   Sigma,
+  Split,
   Trash2,
   Underline as UnderlineIcon,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import katex from "katex";
 import { DocumentStyle, Paper, PaperImageAsset, PaperQuestion, PaperQuestionOption, PaperSection, PaperSubpart } from "@/lib/types";
 import { normalizePaperStructure } from "@/lib/normalize-paper-structure";
 import { calculateSourceMix, choiceHasContent, countedQuestionMarks, countedSectionMarks, escapeHtml, isEmptyRichText, normalizeLatexChars, questionWithComputedMarks, unescapeHtml } from "@/lib/paper-utils";
 import { RichTextEditor } from "./rich-text-editor";
+import { renderLatex } from "@/lib/latex-render";
 
 interface PaperEditorProps {
   paper: Paper | null;
@@ -56,6 +59,13 @@ interface DraggedDiagram {
   subpartId?: string;
 }
 
+interface DraggedPart {
+  kind: "subpart" | "orpart";
+  sectionId: string;
+  questionId: string;
+  subpartId?: string;
+}
+
 export function PaperEditor({
   paper,
   documentStyle,
@@ -72,6 +82,15 @@ export function PaperEditor({
   const [draggedQuestion, setDraggedQuestion] = useState<DraggedQuestion | null>(null);
   const [draggedDiagram, setDraggedDiagram] = useState<DraggedDiagram | null>(null);
   const [draggedSection, setDraggedSection] = useState<string | null>(null);
+  const [draggedPart, setDraggedPart] = useState<DraggedPart | null>(null);
+  // The outline tree is portaled into the left navigator (below "New paper").
+  // The slot lives in a sibling component, so we can only resolve it after the
+  // first commit — a one-shot setState in an effect is the correct pattern here.
+  const [outlineSlot, setOutlineSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOutlineSlot(document.getElementById("paper-outline-slot"));
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -100,7 +119,9 @@ export function PaperEditor({
     inMathField?: boolean; latex?: string;
   } | null>(null);
   const pageContentRef = useRef<HTMLDivElement>(null);
-  const [pageBreakOffsets, setPageBreakOffsets] = useState<number[]>([]);
+  const [pageZoom, setPageZoom] = useState(1);
+  const adjustZoom = (delta: number) => setPageZoom((current) => Math.min(2, Math.max(0.5, Math.round((current + delta) * 100) / 100)));
+  const [confirmState, setConfirmState] = useState<{ message: string; confirmLabel?: string; onConfirm: () => void } | null>(null);
 
   const stats = useMemo(() => (paper ? calculateStats(paper) : null), [paper]);
   const sourceMix = useMemo(() => {
@@ -116,6 +137,11 @@ export function PaperEditor({
       if (!(target instanceof Element)) return;
       if (target.closest(".question-row")) return;
       if (target.closest(".math-live-panel")) return;
+      // The right-click math menu is rendered outside the question row (at the app
+      // root). Clicking it must NOT deactivate the question, or the editor unmounts
+      // before the symbol is inserted. (stopPropagation on the menu does not block
+      // this document-level native listener under React 19 event delegation.)
+      if (target.closest(".math-context-menu")) return;
 
       setActiveQuestionId(null);
     };
@@ -141,34 +167,11 @@ export function PaperEditor({
   }, []);
 
   // Compute page break positions from actual rendered height, scaled to match A4 print dimensions.
-  // Print: A4 with @page margin → content height = (297 - 2*marginMm) mm in px at 96dpi.
-  // Editor: max-w-[900px] with padding=margin px → content is wider than print → text wraps less → shorter per page.
-  // Scale the A4 content height by (printWidth / editorWidth) to get the editor-equivalent page height.
-  useEffect(() => {
-    const el = pageContentRef.current;
-    if (!el) return;
-
-    const recompute = () => {
-      const marginMm = Math.max(10, Math.round(documentStyle.margin * 0.264583));
-      const printPageH = (297 - 2 * marginMm) / 25.4 * 96;
-      const printPageW = (210 - 2 * marginMm) / 25.4 * 96;
-      const editorContentW = Math.max(400, el.clientWidth - 2 * documentStyle.margin);
-      const pageH = Math.round(printPageH * (printPageW / editorContentW));
-      const topPad = documentStyle.margin;
-      const breaks: number[] = [];
-      let n = 1;
-      while (n * pageH < el.scrollHeight - 2 * topPad) {
-        breaks.push(topPad + n * pageH);
-        n++;
-      }
-      setPageBreakOffsets(breaks);
-    };
-
-    recompute();
-    const ro = new ResizeObserver(recompute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [documentStyle.margin]);
+  const triggerMarksWarning = useCallback((message: string) => {
+    setMarksWarning(message);
+    if (marksWarningTimer.current) clearTimeout(marksWarningTimer.current);
+    marksWarningTimer.current = setTimeout(() => setMarksWarning(null), 3500);
+  }, []);
 
   if (!paper) {
     return (
@@ -191,12 +194,6 @@ export function PaperEditor({
     onPaperChange(recalculatePaper(normalizePaperStructure(updater(paper))));
   };
 
-  const triggerMarksWarning = useCallback((message: string) => {
-    setMarksWarning(message);
-    if (marksWarningTimer.current) clearTimeout(marksWarningTimer.current);
-    marksWarningTimer.current = setTimeout(() => setMarksWarning(null), 3500);
-  }, []);
-
   const updateDocumentStyle = (patch: Partial<DocumentStyle>) => {
     onDocumentStyleChange?.({ ...documentStyle, ...patch });
   };
@@ -208,6 +205,10 @@ export function PaperEditor({
     }));
   };
 
+  const performDeleteSection = (sectionId: string) => {
+    updatePaper((current) => ({ ...current, sections: current.sections.filter((s) => s.id !== sectionId) }));
+  };
+
   const deleteSection = (sectionId: string) => {
     if (paper.sections.length <= 1) {
       triggerMarksWarning("A paper must have at least one section.");
@@ -215,15 +216,15 @@ export function PaperEditor({
     }
     const section = paper.sections.find((s) => s.id === sectionId);
     if (!section) return;
-    if (
-      section.questions.length > 0 &&
-      !window.confirm(
-        `Delete "${section.title}" and all ${section.questions.length} question${section.questions.length !== 1 ? "s" : ""}?`,
-      )
-    ) {
+    if (section.questions.length > 0) {
+      setConfirmState({
+        message: `Delete "${section.title}" and all ${section.questions.length} question${section.questions.length !== 1 ? "s" : ""}?`,
+        confirmLabel: "Delete section",
+        onConfirm: () => performDeleteSection(sectionId),
+      });
       return;
     }
-    updatePaper((current) => ({ ...current, sections: current.sections.filter((s) => s.id !== sectionId) }));
+    performDeleteSection(sectionId);
   };
 
   const updateQuestion = (sectionId: string, questionId: string, patch: Partial<PaperQuestion>) => {
@@ -396,6 +397,30 @@ export function PaperEditor({
     }));
   };
 
+  const addBlankQuestionAfter = (sectionId: string, questionId: string) => {
+    updatePaper((current) => ({
+      ...current,
+      sections: current.sections.map((section) => {
+        if (section.id !== sectionId) return section;
+        const index = section.questions.findIndex((q) => q.id === questionId);
+        const newQuestion: PaperQuestion = {
+          id: crypto.randomUUID(),
+          text: "",
+          richText: "",
+          marks: 1,
+          type: "SA",
+          difficulty: section.difficulty || current.summary.difficulty || "Medium",
+          source: "Manual",
+          topic: current.metadata.topic,
+          answer: "",
+        };
+        const questions = [...section.questions];
+        questions.splice(index < 0 ? questions.length : index + 1, 0, newQuestion);
+        return { ...section, questions };
+      }),
+    }));
+  };
+
   const addMcqQuestion = (sectionId: string) => {
     updatePaper((current) => ({
       ...current,
@@ -464,37 +489,27 @@ export function PaperEditor({
     updateSection(sectionId, { attemptRule: { required: next.required, offered: next.offered } });
   };
 
-  const addDiagramPlaceholder = (sectionId: string, questionId: string) => {
-    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
-    updateQuestion(sectionId, questionId, {
-      diagramBlocks: [
-        ...(question?.diagramBlocks ?? []),
-        {
-          id: crypto.randomUUID(),
-          title: "Diagram placeholder",
-          caption: "Upload or generate a diagram later.",
-          status: "placeholder",
-        },
-      ],
-    });
-  };
-
-  const addSubpartDiagramPlaceholder = (sectionId: string, questionId: string, subpartId: string) => {
-    const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
-    const subpart = question?.subparts?.find((item) => item.id === subpartId);
-
-    updateSubpart(sectionId, questionId, subpartId, {
-      diagramBlocks: [
-        ...(subpart?.diagramBlocks ?? []),
-        {
-          id: crypto.randomUUID(),
-          title: `Diagram for part (${subpart?.label ?? ""})`,
-          caption: "Upload or generate a diagram later.",
-          status: "placeholder",
-        },
-      ],
-    });
-  };
+  // Diagram insertor disabled per request — kept here (commented) for future re-enable.
+  // const addDiagramPlaceholder = (sectionId: string, questionId: string) => {
+  //   const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+  //   updateQuestion(sectionId, questionId, {
+  //     diagramBlocks: [
+  //       ...(question?.diagramBlocks ?? []),
+  //       { id: crypto.randomUUID(), title: "Diagram placeholder", caption: "Upload or generate a diagram later.", status: "placeholder" },
+  //     ],
+  //   });
+  // };
+  //
+  // const addSubpartDiagramPlaceholder = (sectionId: string, questionId: string, subpartId: string) => {
+  //   const question = paper.sections.find((section) => section.id === sectionId)?.questions.find((item) => item.id === questionId);
+  //   const subpart = question?.subparts?.find((item) => item.id === subpartId);
+  //   updateSubpart(sectionId, questionId, subpartId, {
+  //     diagramBlocks: [
+  //       ...(subpart?.diagramBlocks ?? []),
+  //       { id: crypto.randomUUID(), title: `Diagram for part (${subpart?.label ?? ""})`, caption: "Upload or generate a diagram later.", status: "placeholder" },
+  //     ],
+  //   });
+  // };
 
   const moveDraggedDiagramToQuestion = (targetSectionId: string, targetQuestionId: string) => {
     if (!draggedDiagram) return;
@@ -1373,6 +1388,94 @@ export function PaperEditor({
     setDraggedSection(null);
   };
 
+  const moveSectionByOffset = (sectionId: string, offset: number) => {
+    updatePaper((current) => {
+      const index = current.sections.findIndex((s) => s.id === sectionId);
+      const target = index + offset;
+      if (index < 0 || target < 0 || target >= current.sections.length) return current;
+      const sections = [...current.sections];
+      const [removed] = sections.splice(index, 1);
+      sections.splice(target, 0, removed);
+      return { ...current, sections };
+    });
+  };
+
+  // Relocate a subpart or OR-part (optionalChoice) onto another question via the outline drag.
+  const moveDraggedPartToQuestion = (targetSectionId: string, targetQuestionId: string) => {
+    if (!draggedPart) return;
+    const part = draggedPart;
+    if (part.questionId === targetQuestionId) {
+      setDraggedPart(null);
+      return;
+    }
+
+    updatePaper((current) => {
+      let movedSubpart: PaperSubpart | null = null;
+      let movedChoice: NonNullable<PaperQuestion["optionalChoice"]> | null = null;
+
+      // First pass — detach the part from its source question.
+      const detached = current.sections.map((section) => {
+        if (section.id !== part.sectionId) return section;
+        return {
+          ...section,
+          questions: section.questions.map((question) => {
+            if (question.id !== part.questionId) return question;
+            if (part.kind === "subpart") {
+              const found = question.subparts?.find((sp) => sp.id === part.subpartId);
+              if (found) movedSubpart = found;
+              return { ...question, subparts: question.subparts?.filter((sp) => sp.id !== part.subpartId) };
+            }
+            if (question.optionalChoice) movedChoice = question.optionalChoice;
+            return { ...question, optionalChoice: undefined };
+          }),
+        };
+      });
+
+      if (!movedSubpart && !movedChoice) return current;
+
+      // Second pass — attach to the target question.
+      return {
+        ...current,
+        sections: detached.map((section) => {
+          if (section.id !== targetSectionId) return section;
+          return {
+            ...section,
+            questions: section.questions.map((question) => {
+              if (question.id !== targetQuestionId) return question;
+
+              if (part.kind === "orpart" && movedChoice) {
+                // Prefer slotting into the target's empty OR slot; otherwise convert to a subpart.
+                if (!choiceHasContent(question.optionalChoice)) {
+                  return { ...question, optionalChoice: { ...movedChoice, id: crypto.randomUUID() } };
+                }
+                const choice = movedChoice as NonNullable<PaperQuestion["optionalChoice"]>;
+                const asSubpart: PaperSubpart = {
+                  id: crypto.randomUUID(),
+                  text: choice.text ?? "",
+                  richText: choice.richText,
+                  options: choice.options?.map((option) => ({ ...option, id: crypto.randomUUID() })),
+                  imageAssets: choice.imageAssets?.map((asset) => ({ ...asset })),
+                  marks: choice.marks,
+                  answer: choice.answer,
+                  answerRichText: choice.answerRichText,
+                };
+                return { ...question, subparts: [...(question.subparts ?? []), asSubpart] };
+              }
+
+              if (movedSubpart) {
+                return { ...question, subparts: [...(question.subparts ?? []), { ...(movedSubpart as PaperSubpart), id: crypto.randomUUID() }] };
+              }
+              return question;
+            }),
+          };
+        }),
+      };
+    });
+
+    setActiveQuestionId(targetQuestionId);
+    setDraggedPart(null);
+  };
+
   const promoteChoiceToQuestion = (sectionId: string, questionId: string) => {
     updatePaper((current) => ({
       ...current,
@@ -1430,25 +1533,54 @@ export function PaperEditor({
         hasChoice: choiceHasContent(question.optionalChoice),
       })),
     );
-  const pageCount = Math.max(1, pageBreakOffsets.length + 1);
   // Minimum height: one A4 content page so the editor always looks like a full sheet.
   const printPageMinH = (() => {
     const mm = Math.max(10, Math.round(documentStyle.margin * 0.264583));
     return Math.round((297 - 2 * mm) / 25.4 * 96);
   })();
 
-  return (
-    <div
-      className="mx-auto flex w-full max-w-[980px] flex-col gap-8"
-      onContextMenu={(e) => {
-        // Rich-text surfaces have their own Insert Symbol panel — don't also open the question menu
-        if ((e.target as Element).closest(".rich-text-surface, .math-live-host")) return;
-        e.preventDefault();
-        const questionRow = (e.target as Element).closest<HTMLElement>(".question-row");
-        setContextMenu({ x: e.clientX, y: e.clientY, questionId: questionRow?.id?.replace("question-", "") });
+  const outlineTree = (
+    <PaperOutline
+      sections={paper.sections}
+      questionNumberById={stats?.questionNumberById ?? {}}
+      activeQuestionId={activeQuestionId}
+      draggedSectionId={draggedSection}
+      draggedQuestionId={draggedQuestion?.questionId ?? null}
+      onSelectSection={(id) => document.getElementById(`section-${id}`)?.scrollIntoView({ block: "start", behavior: "smooth" })}
+      onSelectQuestion={(id) => {
+        setActiveQuestionId(id);
+        document.getElementById(`question-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
       }}
-      onClick={() => contextMenu && setContextMenu(null)}
-    >
+      onSectionDragStart={setDraggedSection}
+      onSectionDrop={moveDraggedSection}
+      onSectionDragEnd={() => setDraggedSection(null)}
+      onQuestionDragStart={(sectionId, questionId) => setDraggedQuestion({ sectionId, questionId })}
+      onQuestionDrop={(sectionId, questionId) => {
+        if (draggedPart) moveDraggedPartToQuestion(sectionId, questionId);
+        else moveDraggedQuestion(sectionId, questionId);
+      }}
+      onQuestionDragEnd={() => setDraggedQuestion(null)}
+      onMoveSection={moveSectionByOffset}
+      draggedPart={draggedPart}
+      onPartDragStart={(part) => setDraggedPart(part)}
+      onPartDragEnd={() => setDraggedPart(null)}
+    />
+  );
+
+  return (
+    <div className="flex w-full items-start gap-4">
+      {outlineSlot && createPortal(outlineTree, outlineSlot)}
+      <div
+        className="flex min-w-0 flex-1 flex-col gap-8"
+        onContextMenu={(e) => {
+          // Rich-text surfaces have their own Insert Symbol panel — don't also open the question menu
+          if ((e.target as Element).closest(".rich-text-surface, .math-live-host")) return;
+          e.preventDefault();
+          const questionRow = (e.target as Element).closest<HTMLElement>(".question-row");
+          setContextMenu({ x: e.clientX, y: e.clientY, questionId: questionRow?.id?.replace("question-", "") });
+        }}
+        onClick={() => contextMenu && setContextMenu(null)}
+      >
       <div
         ref={pageContentRef}
         className={`paper-page relative mx-auto w-full max-w-[900px] border bg-white shadow-sm ${templateTone.articleClass}`}
@@ -1459,6 +1591,7 @@ export function PaperEditor({
           lineHeight: documentStyle.lineHeight,
           padding: documentStyle.margin,
           minHeight: printPageMinH,
+          zoom: pageZoom,
         }}
       >
         <div className="absolute right-6 top-4 flex items-center gap-2">
@@ -1473,9 +1606,6 @@ export function PaperEditor({
               Undo AI
             </button>
           )}
-          <span className="rounded-full bg-slate-100 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-            Page 1 / {pageCount}
-          </span>
         </div>
         {marksWarning && (
           <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 font-sans text-[11px] font-bold text-amber-800 shadow-md">
@@ -1483,24 +1613,20 @@ export function PaperEditor({
             {marksWarning}
           </div>
         )}
-        {pageBreakOffsets.map((breakY, index) => (
-          <div
-            key={`page-break-${index}`}
-            className="pointer-events-none absolute inset-x-0 z-0"
-            style={{ top: breakY }}
-          >
-            {/* Page N label at the top of the new page */}
-            <div className="mx-[-1px] flex items-center gap-2 border-t border-slate-300/70">
-              <span className="rounded-b bg-slate-100 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 shadow-sm">
-                Page {index + 2}
-              </span>
-            </div>
-            {/* Bottom-right badge for the page that just ended */}
-            <div className="absolute right-6 -top-7 rounded bg-white/85 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-400 shadow-sm">
-              {index + 1} / {pageCount}
-            </div>
+        {documentStyle.watermark?.imageUrl && (
+          <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt="Watermark"
+              src={documentStyle.watermark.imageUrl}
+              className="max-h-[60%] max-w-[60%] object-contain"
+              style={{
+                opacity: documentStyle.watermark.opacity,
+                transform: documentStyle.watermark.position === "diagonal" ? "rotate(-28deg)" : undefined,
+              }}
+            />
           </div>
-        ))}
+        )}
         {documentStyle.watermark?.text && (
           <div
             className="pointer-events-none absolute inset-x-0 top-1/2 z-0 text-center font-display text-6xl font-black italic"
@@ -1590,16 +1716,59 @@ export function PaperEditor({
           value={documentStyle.watermark?.text ?? ""}
           onChange={(event) =>
             updateDocumentStyle({
-              watermark: event.target.value.trim()
+              watermark: event.target.value.trim() || documentStyle.watermark?.imageUrl
                 ? {
                     text: event.target.value,
                     opacity: documentStyle.watermark?.opacity ?? 0.08,
                     position: documentStyle.watermark?.position ?? "diagonal",
+                    imageUrl: documentStyle.watermark?.imageUrl,
                   }
                 : undefined,
             })
           }
         />
+        <label className="editor-mini-button cursor-pointer" title="Use an image as the watermark">
+          <ImageIcon size={14} />
+          {documentStyle.watermark?.imageUrl ? "Change logo" : "Logo watermark"}
+          <input
+            className="sr-only"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                updateDocumentStyle({
+                  watermark: {
+                    text: documentStyle.watermark?.text ?? "",
+                    opacity: documentStyle.watermark?.opacity ?? 0.1,
+                    position: documentStyle.watermark?.position ?? "center",
+                    imageUrl: String(reader.result),
+                  },
+                });
+              };
+              reader.readAsDataURL(file);
+            }}
+          />
+        </label>
+        {documentStyle.watermark?.imageUrl && (
+          <button
+            className="editor-mini-button text-red-500"
+            onClick={() =>
+              updateDocumentStyle({
+                watermark: documentStyle.watermark?.text?.trim()
+                  ? { text: documentStyle.watermark.text, opacity: documentStyle.watermark.opacity, position: documentStyle.watermark.position }
+                  : undefined,
+              })
+            }
+            type="button"
+          >
+            <X size={14} />
+            Remove logo
+          </button>
+        )}
         <button className="editor-mini-button" onClick={addSection} type="button">
           <FilePlus2 size={14} />
           Add section
@@ -1617,6 +1786,7 @@ export function PaperEditor({
           return (
             <Fragment key={section.id}>
             <section
+              id={`section-${section.id}`}
               className={`paper-section relative rounded-lg border transition ${draggedSection === section.id ? "opacity-40 ring-2 ring-inset ring-blue-300" : draggedSection ? "border-dashed border-blue-200" : "border-transparent"}`}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
@@ -1757,9 +1927,10 @@ export function PaperEditor({
                       className={`question-row group relative rounded-lg border transition ${
                         isActiveQuestion ? "is-active border-amber-300 bg-amber-50/35 p-2 shadow-sm" : "border-transparent bg-transparent px-0 py-0.5"
                       } ${isReplacing ? "ai-replacing border-blue-300 bg-blue-50/70" : ""} ${draggedQuestion?.questionId === question.id ? "opacity-40 ring-2 ring-inset ring-blue-300" : ""}`}
-                      draggable
+                      // The row itself is NEVER draggable: a draggable ancestor makes
+                      // contentEditable/MathLive children untypeable in Chromium (focus is
+                      // swallowed). Drag-to-reorder is initiated only from the grip handle below.
                       onClick={() => setActiveQuestionId(question.id)}
-                      onDragStart={() => setDraggedQuestion({ sectionId: section.id, questionId: question.id })}
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={(event) => {
                         event.stopPropagation();
@@ -1769,25 +1940,39 @@ export function PaperEditor({
                       <div className="flex items-start gap-3">
                         <div className="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
                           <div className="flex items-center gap-0.5">
-                            <GripVertical className={isActiveQuestion ? "cursor-grab text-slate-400" : "cursor-grab text-slate-200 opacity-0 group-hover:opacity-100"} size={11} />
+                            <span
+                              draggable
+                              onDragStart={(event) => {
+                                event.stopPropagation();
+                                setDraggedQuestion({ sectionId: section.id, questionId: question.id });
+                              }}
+                              className="cursor-grab"
+                              title="Drag to reorder"
+                            >
+                              <GripVertical className={isActiveQuestion ? "text-slate-400" : "text-slate-200 opacity-0 group-hover:opacity-100"} size={11} />
+                            </span>
                             <span className="font-sans text-[11px] font-black text-slate-950 leading-none">{questionNumber}.</span>
                           </div>
-                          {!isActiveQuestion && (
-                            <span className="font-mono text-[9px] font-bold text-slate-400 leading-none">{question.marks}m</span>
-                          )}
                         </div>
 
                         <div className={`min-w-0 flex-1 ${isActiveQuestion ? "space-y-2" : "space-y-0.5"}`}>
-                          <RichTextEditor
-                            label={`Question ${questionNumber}`}
-                            minHeight="normal"
-                            placeholder="Write the question..."
-                            value={question.text}
-                            htmlValue={question.richText}
-                            onFocus={() => focusQuestion(question.id)}
-                            onChange={(text) => updateQuestion(section.id, question.id, { text })}
-                            onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
-                          />
+                          {isActiveQuestion ? (
+                            <RichTextEditor
+                              label={`Question ${questionNumber}`}
+                              minHeight="normal"
+                              placeholder="Write the question..."
+                              value={question.text}
+                              htmlValue={question.richText}
+                              onFocus={() => focusQuestion(question.id)}
+                              onChange={(text) => updateQuestion(section.id, question.id, { text })}
+                              onHtmlChange={(richText) => updateQuestion(section.id, question.id, { richText })}
+                            />
+                          ) : (
+                            <div
+                              className="paper-question-text text-sm"
+                              dangerouslySetInnerHTML={{ __html: richDisplayHtml(question.richText, question.text) || "<span class='text-slate-300'>Empty question — click to edit</span>" }}
+                            />
+                          )}
                           {isActiveQuestion && isEmptyRichText(question.text, question.richText, question.imageAssets) && (
                             <p className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                               ⚠ Question text is empty — add content before exporting
@@ -1796,7 +1981,7 @@ export function PaperEditor({
 
                           <ImageAssetList
                             assets={question.imageAssets}
-                            compact={!isActiveQuestion}
+                            compact={false}
                             readOnly={!isActiveQuestion}
                             onDelete={(assetId) => removeQuestionImage(section.id, question.id, assetId)}
                           />
@@ -2011,7 +2196,6 @@ export function PaperEditor({
                                       onDuplicate={() => duplicateSubpart(section.id, question.id, subpart.id)}
                                       onAddChoice={!subpart.optionalChoice ? () => addSubpartChoice(section.id, question.id, subpart.id) : undefined}
                                       onRemoveChoice={subpart.optionalChoice ? () => removeSubpartChoice(section.id, question.id, subpart.id) : undefined}
-                                      onAddDiagram={() => addSubpartDiagramPlaceholder(section.id, question.id, subpart.id)}
                                       onAddImage={onUploadImage ? (file) => void attachSubpartImage(section.id, question.id, subpart.id, file) : undefined}
                                       onDelete={() => deleteSubpart(section.id, question.id, subpart.id)}
                                     />
@@ -2452,6 +2636,12 @@ export function PaperEditor({
                           )}
                         </div>
 
+                        {!isActiveQuestion && (
+                          <div className="shrink-0 pt-0.5 text-right font-mono text-[11px] font-bold text-slate-500 leading-tight">
+                            [{countedQuestionMarks(question)}]
+                          </div>
+                        )}
+
                         {isActiveQuestion && (
                           <TextBlockActions
                             isReplacing={isReplacing}
@@ -2469,7 +2659,6 @@ export function PaperEditor({
                             onAddChoice={!question.optionalChoice ? () => addInternalChoice(section.id, question.id) : undefined}
                             onRemoveChoice={question.optionalChoice ? () => removeInternalChoice(section.id, question.id) : undefined}
                             onAddSubpart={() => addSubpart(section.id, question.id)}
-                            onAddDiagram={() => addDiagramPlaceholder(section.id, question.id)}
                             onAddImage={onUploadImage ? (file) => void attachQuestionImage(section.id, question.id, file) : undefined}
                             onAnswer={() => setExpandedAnswers((current) => ({ ...current, [question.id]: !isAnswerOpen }))}
                             onSave={() => onSaveQuestionToBank(question)}
@@ -2484,6 +2673,15 @@ export function PaperEditor({
                           </div>
                         </div>
                       )}
+                      {/* Insert a new question right after this one */}
+                      <button
+                        className="absolute -bottom-2.5 right-3 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white opacity-0 shadow transition hover:bg-blue-700 group-hover:opacity-100"
+                        title="Add a question below"
+                        onClick={(event) => { event.stopPropagation(); addBlankQuestionAfter(section.id, question.id); }}
+                        type="button"
+                      >
+                        <Plus size={12} />
+                      </button>
                     </div>
                   );
                 })}
@@ -2496,6 +2694,59 @@ export function PaperEditor({
           );
         })}
       </div>
+      </div>
+      </div>
+
+      {confirmState && (
+        <div className="fixed inset-0 z-1200 flex items-center justify-center bg-[rgba(15,23,42,0.4)] px-4 backdrop-blur-sm" onClick={() => setConfirmState(null)}>
+          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center gap-2 font-display text-lg text-slate-950">
+              <AlertTriangle className="text-amber-500" size={18} />
+              Please confirm
+            </div>
+            <p className="mt-2 text-sm text-slate-600">{confirmState.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="editor-mini-button" onClick={() => setConfirmState(null)} type="button">Cancel</button>
+              <button
+                className="editor-mini-button bg-red-600 text-white hover:bg-red-700"
+                onClick={() => { confirmState.onConfirm(); setConfirmState(null); }}
+                type="button"
+              >
+                {confirmState.confirmLabel ?? "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating zoom controls */}
+      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 px-1.5 py-1 shadow-lg backdrop-blur">
+        <button
+          className="flex h-7 w-7 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+          title="Zoom out"
+          disabled={pageZoom <= 0.5}
+          onClick={() => adjustZoom(-0.1)}
+          type="button"
+        >
+          <ZoomOut size={15} />
+        </button>
+        <button
+          className="min-w-12 rounded-full px-2 text-center font-mono text-[11px] font-bold text-slate-600 hover:bg-slate-100"
+          title="Reset zoom"
+          onClick={() => setPageZoom(1)}
+          type="button"
+        >
+          {Math.round(pageZoom * 100)}%
+        </button>
+        <button
+          className="flex h-7 w-7 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+          title="Zoom in"
+          disabled={pageZoom >= 2}
+          onClick={() => adjustZoom(0.1)}
+          type="button"
+        >
+          <ZoomIn size={15} />
+        </button>
       </div>
 
       {contextMenu && (
@@ -2514,10 +2765,6 @@ export function PaperEditor({
           onAddSubpart={contextMenu.questionId ? (() => {
             const sec = paper.sections.find(s => s.questions.some(q => q.id === contextMenu.questionId));
             if (sec && contextMenu.questionId) addSubpart(sec.id, contextMenu.questionId);
-          }) : undefined}
-          onAddDiagram={contextMenu.questionId ? (() => {
-            const sec = paper.sections.find(s => s.questions.some(q => q.id === contextMenu.questionId));
-            if (sec && contextMenu.questionId) addDiagramPlaceholder(sec.id, contextMenu.questionId);
           }) : undefined}
           onDuplicate={contextMenu.questionId ? (() => {
             const sec = paper.sections.find(s => s.questions.some(q => q.id === contextMenu.questionId));
@@ -2551,6 +2798,190 @@ export function PaperEditor({
   );
 }
 
+function PaperOutline({
+  sections,
+  questionNumberById,
+  activeQuestionId,
+  draggedSectionId,
+  draggedQuestionId,
+  onSelectSection,
+  onSelectQuestion,
+  onSectionDragStart,
+  onSectionDrop,
+  onSectionDragEnd,
+  onQuestionDragStart,
+  onQuestionDrop,
+  onQuestionDragEnd,
+  onMoveSection,
+  draggedPart,
+  onPartDragStart,
+  onPartDragEnd,
+}: {
+  sections: PaperSection[];
+  questionNumberById: Record<string, number>;
+  activeQuestionId: string | null;
+  draggedSectionId: string | null;
+  draggedQuestionId: string | null;
+  onSelectSection: (sectionId: string) => void;
+  onSelectQuestion: (questionId: string) => void;
+  onSectionDragStart: (sectionId: string) => void;
+  onSectionDrop: (sectionId: string) => void;
+  onSectionDragEnd: () => void;
+  onQuestionDragStart: (sectionId: string, questionId: string) => void;
+  onQuestionDrop: (sectionId: string, questionId: string) => void;
+  onQuestionDragEnd: () => void;
+  onMoveSection: (sectionId: string, offset: number) => void;
+  draggedPart: DraggedPart | null;
+  onPartDragStart: (part: DraggedPart) => void;
+  onPartDragEnd: () => void;
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number; sectionId: string; index: number } | null>(null);
+
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-2 text-xs">
+      <div className="mb-2 px-1 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">
+        Sections &amp; questions
+      </div>
+      <div className="space-y-0.5" onClick={() => menu && setMenu(null)}>
+        {sections.map((section, sectionIndex) => (
+          <div key={section.id}>
+            <div
+              className={`group flex items-center gap-1 rounded px-1.5 py-1 font-bold text-slate-700 transition hover:bg-slate-100 ${
+                draggedSectionId === section.id ? "opacity-40" : ""
+              }`}
+              draggable
+              title="Drag to reorder · right-click for options"
+              onDragStart={(event) => { event.stopPropagation(); onSectionDragStart(section.id); }}
+              onDragEnd={onSectionDragEnd}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => { event.preventDefault(); event.stopPropagation(); onSectionDrop(section.id); }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setMenu({ x: event.clientX, y: event.clientY, sectionId: section.id, index: sectionIndex });
+              }}
+            >
+              <GripVertical className="shrink-0 cursor-grab text-slate-300 group-hover:text-slate-500" size={12} />
+              <button className="min-w-0 flex-1 truncate text-left uppercase tracking-wide" onClick={() => onSelectSection(section.id)} type="button">
+                {section.title}
+              </button>
+              <span className="shrink-0 font-mono text-[9px] font-bold text-slate-400">{section.questions.length}</span>
+            </div>
+
+            <div className="ml-3 border-l border-slate-100 pl-1">
+              {section.questions.map((question) => {
+                const questionNumber = questionNumberById[question.id] ?? "?";
+                const isActive = activeQuestionId === question.id;
+                const preview = (question.text || question.richText?.replace(/<[^>]*>/g, "") || "").trim();
+                return (
+                  <div key={question.id}>
+                    <div
+                      className={`flex items-center gap-1 rounded px-1.5 py-0.5 transition ${
+                        isActive ? "bg-amber-100 text-amber-900" : "text-slate-500 hover:bg-slate-100"
+                      } ${draggedQuestionId === question.id ? "opacity-40" : ""}`}
+                      draggable
+                      onDragStart={(event) => { event.stopPropagation(); onQuestionDragStart(section.id, question.id); }}
+                      onDragEnd={onQuestionDragEnd}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => { event.preventDefault(); event.stopPropagation(); onQuestionDrop(section.id, question.id); }}
+                    >
+                      <span className="shrink-0 font-mono text-[9px] font-black">Q{questionNumber}</span>
+                      <button className="min-w-0 flex-1 truncate text-left font-medium" onClick={() => onSelectQuestion(question.id)} type="button">
+                        {preview || "Untitled"}
+                      </button>
+                    </div>
+                    {((question.subparts && question.subparts.length > 0) || choiceHasContent(question.optionalChoice)) && (
+                      <div className="ml-3 border-l border-slate-100 pl-1">
+                        {question.subparts?.map((subpart, partIndex) => {
+                          const partLabel = subpart.label || String.fromCharCode(97 + partIndex);
+                          const isDraggingThis = draggedPart?.kind === "subpart" && draggedPart.subpartId === subpart.id;
+                          return (
+                            <div
+                              key={subpart.id}
+                              className={`group flex items-center gap-1 rounded px-1.5 py-0.5 text-slate-400 transition hover:bg-slate-100 ${isDraggingThis ? "opacity-40" : ""}`}
+                              draggable
+                              title="Drag onto another question to move this part"
+                              onDragStart={(event) => { event.stopPropagation(); onPartDragStart({ kind: "subpart", sectionId: section.id, questionId: question.id, subpartId: subpart.id }); }}
+                              onDragEnd={onPartDragEnd}
+                            >
+                              <GripVertical className="shrink-0 cursor-grab text-slate-200 group-hover:text-slate-400" size={10} />
+                              <span className="shrink-0 font-mono text-[9px] font-bold">({partLabel})</span>
+                              <button className="min-w-0 flex-1 truncate text-left" onClick={() => onSelectQuestion(question.id)} type="button">
+                                {(subpart.text || subpart.richText?.replace(/<[^>]*>/g, "") || "Part").trim()}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {choiceHasContent(question.optionalChoice) && (
+                          <div
+                            className={`group flex items-center gap-1 rounded px-1.5 py-0.5 text-indigo-400 transition hover:bg-indigo-50 ${draggedPart?.kind === "orpart" && draggedPart.questionId === question.id ? "opacity-40" : ""}`}
+                            draggable
+                            title="OR alternative — drag onto another question to move it"
+                            onDragStart={(event) => { event.stopPropagation(); onPartDragStart({ kind: "orpart", sectionId: section.id, questionId: question.id }); }}
+                            onDragEnd={onPartDragEnd}
+                          >
+                            <GripVertical className="shrink-0 cursor-grab text-indigo-200 group-hover:text-indigo-400" size={10} />
+                            <span className="shrink-0 font-mono text-[9px] font-black">OR</span>
+                            <button className="min-w-0 flex-1 truncate text-left" onClick={() => onSelectQuestion(question.id)} type="button">
+                              {(question.optionalChoice?.text || question.optionalChoice?.richText?.replace(/<[^>]*>/g, "") || "Alternative").trim()}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {menu && (
+        <div
+          className="fixed z-1100 flex flex-col rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+          style={{ top: Math.min(menu.y, window.innerHeight - 160), left: Math.min(menu.x, window.innerWidth - 200) }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="px-3 py-1 text-[10px] font-black uppercase tracking-wide text-slate-400">Reorder section</div>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            disabled={menu.index === 0}
+            onClick={() => { onMoveSection(menu.sectionId, -1); setMenu(null); }}
+            type="button"
+          >
+            ↑ Move up
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            disabled={menu.index >= sections.length - 1}
+            onClick={() => { onMoveSection(menu.sectionId, 1); setMenu(null); }}
+            type="button"
+          >
+            ↓ Move down
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            disabled={menu.index === 0}
+            onClick={() => { onMoveSection(menu.sectionId, -menu.index); setMenu(null); }}
+            type="button"
+          >
+            ⤒ Move to top
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            disabled={menu.index >= sections.length - 1}
+            onClick={() => { onMoveSection(menu.sectionId, sections.length - 1 - menu.index); setMenu(null); }}
+            type="button"
+          >
+            ⤓ Move to bottom
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface TextBlockActionsProps {
   className?: string;
   isReplacing?: boolean;
@@ -2560,7 +2991,6 @@ interface TextBlockActionsProps {
   onAddChoice?: () => void;
   onRemoveChoice?: () => void;
   onAddSubpart?: () => void;
-  onAddDiagram?: () => void;
   onAddImage?: (file: File) => void;
   onAnswer?: () => void;
   onSave?: () => void;
@@ -2576,14 +3006,13 @@ function TextBlockActions({
   onAddChoice,
   onRemoveChoice,
   onAddSubpart,
-  onAddDiagram,
   onAddImage,
   onAnswer,
   onSave,
   onDelete,
 }: TextBlockActionsProps) {
   return (
-    <div className={`flex shrink-0 flex-col gap-1 transition ${className}`}>
+    <div className={`grid shrink-0 grid-cols-2 gap-1 transition ${className}`}>
       {onReplace && (
         <button className="editor-icon-button" disabled={isReplacing} title="Replace with AI" onClick={onReplace} type="button">
           <RefreshCcw className={isReplacing ? "animate-spin" : ""} size={15} />
@@ -2596,27 +3025,22 @@ function TextBlockActions({
       )}
       {onAddChoice && !hasChoice && (
         <button className="editor-icon-button text-blue-600" title="Add OR choice" onClick={onAddChoice} type="button">
-          <LogIn size={13} />
+          <Split size={15} />
         </button>
       )}
       {onRemoveChoice && hasChoice && (
         <button className="editor-icon-button text-blue-600" title="Remove OR choice" onClick={onRemoveChoice} type="button">
-          <LogOut size={13} />
+          <Merge size={15} />
         </button>
       )}
       {onAddSubpart && (
-        <button className="editor-icon-button" title="Add subpart" onClick={onAddSubpart} type="button">
+        <button className="editor-icon-button text-[11px] font-black" title="Add subpart" onClick={onAddSubpart} type="button">
           (a)
-        </button>
-      )}
-      {onAddDiagram && (
-        <button className="editor-icon-button" title="Insert diagram placeholder" onClick={onAddDiagram} type="button">
-          <Shapes size={15} />
         </button>
       )}
       {onAddImage && <ImageUploadButton onUpload={onAddImage} />}
       {onAnswer && (
-        <button className="editor-icon-button" title="Show answer" onClick={onAnswer} type="button">
+        <button className="editor-icon-button text-[12px] font-black" title="Show answer" onClick={onAnswer} type="button">
           A
         </button>
       )}
@@ -2793,7 +3217,7 @@ function ContextMenuPanel({
   x, y, questionId, sectionId, inMathField, latex,
   activeEditor,
   onClose,
-  onAddOR, onAddSubpart, onAddDiagram, onDelete, onDuplicate, onReplace,
+  onAddOR, onAddSubpart, onDelete, onDuplicate, onReplace,
   onBold, onItalic, onUnderline, onMath,
 }: {
   x: number; y: number;
@@ -2803,7 +3227,6 @@ function ContextMenuPanel({
   onClose: () => void;
   onAddOR?: () => void;
   onAddSubpart?: () => void;
-  onAddDiagram?: () => void;
   onDelete?: () => void;
   onDuplicate?: () => void;
   onReplace?: () => void;
@@ -2865,17 +3288,12 @@ function ContextMenuPanel({
           )}
           {onAddOR && (
             <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-blue-600 hover:bg-blue-50" onClick={() => { onAddOR(); onClose(); }} type="button">
-              <LogIn size={12} /> Add OR choice
+              <Split size={12} /> Add OR choice
             </button>
           )}
           {onAddSubpart && (
             <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onAddSubpart(); onClose(); }} type="button">
               (a) Add subpart
-            </button>
-          )}
-          {onAddDiagram && (
-            <button className="flex items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { onAddDiagram(); onClose(); }} type="button">
-              <Shapes size={12} /> Add diagram
             </button>
           )}
           {onDelete && (
@@ -2910,11 +3328,27 @@ function formatOptionLabel(label: string | undefined, index: number) {
 }
 
 function richDisplayHtml(richText: string | undefined, text: string | undefined) {
-  const source = text?.trim() ? textToDisplayHtml(text) : richText?.trim() ? stripMathSpansToText(richText) : "";
-  return stripEditorOnlyMarkup(source)
-    .replaceAll('data-type="inline-math"', 'data-type="inline-math"')
-    .replace(/<p><\/p>/g, "")
-    .replace(/<p>\s*<br\s*\/?>\s*<\/p>/g, "");
+  // The question's `text` is the single source of truth and carries `$...$` math.
+  // Render it through the KaTeX + DOMPurify LaTeX pipeline (<LatexText> engine).
+  // Transition safety: a few legacy rows were saved with the math stripped out of
+  // `text` (older serialization) while it survives as data-latex spans in the
+  // no-longer-stored `richText`. If `text` has no `$` but `richText` carries math,
+  // rebuild the `$...$` source from it so nothing renders blank.
+  const richHasMath = !!richText && /data-latex=/i.test(richText);
+  const source =
+    text?.trim() && (text.includes("$") || !richHasMath) ? text : richTextToLatexSource(richText) || text || "";
+  return renderLatex(source, "explicit");
+}
+
+// Legacy HTML (data-latex spans) → `$...$` source string, so old in-memory
+// content still renders through the same pipeline.
+function richTextToLatexSource(html: string | undefined) {
+  if (!html) return "";
+  return html
+    .replace(/<span[^>]*data-latex="([^"]*)"[^>]*>[\s\S]*?<\/span>/gi, (_m, latex: string) => `$${unescapeHtml(latex)}$`)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
 }
 
 function stripEditorOnlyMarkup(html: string) {

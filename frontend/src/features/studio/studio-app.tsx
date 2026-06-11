@@ -4,6 +4,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import katex from "katex";
 import {
+  AlertTriangle,
   Bot,
   CheckCircle2,
   Database,
@@ -98,7 +99,7 @@ const defaultDocumentStyle: DocumentStyle = {
   lineHeight: 1.35,
   fontSize: 11,
   textColor: "#111827",
-  accentColor: "#895100",
+  accentColor: "#1a4799",
   pageColor: "#ffffff",
   watermark: undefined,
 };
@@ -132,7 +133,7 @@ export function StudioApp() {
     topic: "Quadratic Equations",
     totalMarks: 50,
     durationMinutes: 120,
-    variantCount: 3,
+    variantCount: 1,
     questionTypes: ["MCQ", "Short Answer", "Long Answer"],
     sectionBlueprint: [],
     difficultyMix: difficultyPresets.Medium,
@@ -160,6 +161,7 @@ export function StudioApp() {
   const [isSavingVersion, setIsSavingVersion] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
+  const [toasts, setToasts] = useState<{ id: string; text: string; tone: "info" | "error" }[]>([]);
   // #173: stack of up to 5 pre-AI snapshots; last entry is most recent
   const [undoStack, setUndoStack] = useState<Paper[]>([]);
   // #170: synchronous in-flight guard — prevents concurrent AI requests from
@@ -560,12 +562,12 @@ export function StudioApp() {
       const refinement = await refineViaApi(selectedPaper, refinementInstruction);
       const currentQuestionCount = selectedPaper.sections.reduce((t, s) => t + s.questions.length, 0);
       const nextQuestionCount = refinement.preview.sections.reduce((t, s) => t + s.questions.length, 0);
-      if (nextQuestionCount === 0 && currentQuestionCount > 0 && !window.confirm("This will remove all questions from the paper. Continue?")) {
-        setStatus({ status: "completed", step: "cancelled", message: "Cancelled", progress: 100 });
-        return;
-      }
+      const willClearAll = nextQuestionCount === 0 && currentQuestionCount > 0;
       // #176/#173: push undo snapshot before applying AI change
       setUndoStack((stack) => [...stack.slice(-4), selectedPaper]);
+      if (willClearAll) {
+        pushToast("Heads up: this refinement removed all questions. Use Undo to restore them.", "error");
+      }
       // Empty patchOps + empty message = backend rescue (AI error) — silently abort, no UI change
       if ((!refinement.patchOps || refinement.patchOps.length === 0) && !refinement.message) {
         setStatus({ status: "completed", step: "refined", message: "No changes", progress: 100 });
@@ -816,8 +818,17 @@ export function StudioApp() {
     setChatMessages((messages) => [...messages, { id: crypto.randomUUID(), role: "user", text }]);
   }
 
+  function pushToast(text: string, tone: "info" | "error" = "info") {
+    const id = crypto.randomUUID();
+    setToasts((current) => [...current.slice(-3), { id, text, tone }]);
+    setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), tone === "error" ? 6000 : 3800);
+  }
+
   function addAssistantMessage(text: string) {
     setChatMessages((messages) => [...messages, { id: crypto.randomUUID(), role: "assistant", text }]);
+    // Surface the same message as a transient UI popup so every action gives visible feedback.
+    const tone: "info" | "error" = /\b(fail|failed|could not|couldn't|cannot|can't|unavailable|blocked|error|no )/i.test(text) ? "error" : "info";
+    pushToast(text, tone);
   }
 
   const hasPaperWorkspace = selectedPaper || openPapers.length > 0 || variantPapers.length > 0 || isGenerating || Boolean(lastError);
@@ -853,6 +864,26 @@ export function StudioApp() {
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
+        {/* Action toasts — UI popups for every action (no browser alerts) */}
+        <div className="pointer-events-none fixed bottom-5 left-1/2 z-2000 flex w-full max-w-md -translate-x-1/2 flex-col items-center gap-2 px-4">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`fade-up pointer-events-auto flex w-full items-start gap-2 rounded-[var(--radius-md)] border px-4 py-2.5 text-sm font-semibold shadow-[var(--shadow-lg)] ${
+                toast.tone === "error"
+                  ? "border-[var(--error)] bg-[var(--error-container)] text-[var(--on-error-container)]"
+                  : "border-[var(--border-2)] bg-[var(--surface)] text-[var(--ink)]"
+              }`}
+            >
+              <span className="mt-0.5 shrink-0">{toast.tone === "error" ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}</span>
+              <span className="min-w-0 flex-1">{toast.text}</span>
+              <button className="shrink-0 text-[var(--ink-3)] hover:text-[var(--ink)]" onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))} type="button">
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+
         <PaperLabTopBar
           aiOpen={isAssistantOpen}
           appView={appView}
@@ -866,7 +897,6 @@ export function StudioApp() {
           setLastError(null);
           setStatus(emptyStatus);
         }}
-        onOpenSetup={openGuidedSetup}
         onOpenView={setAppView}
         onRefresh={() => void refreshDashboard()}
         isSaving={isSavingVersion}
@@ -918,13 +948,11 @@ export function StudioApp() {
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <PaperNavigator
             isGenerating={isGenerating}
-            mode={mode}
             openPapers={openPapers}
             requestPreview={requestPreview}
             selectedPaper={selectedPaper}
             variantPapers={variantPapers}
             onAddBlank={openNewPaperChooser}
-            onGenerate={() => void runGeneration()}
             onSelectOpenPaper={(paper) => void switchOpenPaper(paper)}
             onSelectVariant={(paper) => void selectVariant(paper)}
             onStop={stopGeneration}
@@ -1005,7 +1033,6 @@ export function StudioApp() {
           onClose={closeCreateFlow}
           onGenerate={generateFromCreateFlow}
           onStepChange={setWizardStep}
-          onToggleQuestionType={toggleQuestionType}
           onUpdateRequest={updateRequest}
           questionTypeOptions={questionTypeOptions}
           retrievalPreview={retrievalPreview}
@@ -1036,7 +1063,6 @@ function PaperLabTopBar({
   isSaving,
   onExport,
   onHome,
-  onOpenSetup,
   onOpenView,
   onRefresh,
   onRestoreVersion,
@@ -1052,7 +1078,6 @@ function PaperLabTopBar({
   isSaving: boolean;
   onExport: (format: "pdf" | "docx") => void;
   onHome: () => void;
-  onOpenSetup: () => void;
   onOpenView: (view: AppView) => void;
   onRefresh: () => void;
   onRestoreVersion: (version: PaperVersion) => void;
@@ -1204,12 +1229,6 @@ function PaperLabTopBar({
                 </div>
               )}
             </div>
-            <button className={`rounded-[var(--radius-sm)] border px-3 py-1.5 text-xs font-bold ${aiOpen ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] text-[var(--ink-2)] hover:bg-[var(--surface-2)]"}`} onClick={onToggleAI} type="button">
-              Assistant
-            </button>
-            <button className="icon-button" onClick={onOpenSetup} title="Open guided setup" type="button">
-              <SlidersHorizontal size={16} />
-            </button>
           </>
         )}
         {appView !== "studio" && (
@@ -1767,7 +1786,7 @@ function MathContextMenu({ onInsert }: { onInsert: (insert: MathToolkitInsert) =
   return (
     <div
       ref={menuRef}
-      className="fixed z-[70] w-[260px] overflow-hidden rounded-xl border border-[#35355a] bg-[#16162a] shadow-2xl"
+      className="math-context-menu fixed z-[70] w-[260px] overflow-hidden rounded-xl border border-[#35355a] bg-[#16162a] shadow-2xl"
       style={{ left: position.x, top: position.y }}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
@@ -2202,7 +2221,6 @@ function GuidedSetupModal({
   onClose,
   onGenerate,
   onStepChange,
-  onToggleQuestionType,
   onUpdateRequest,
   questionTypeOptions,
   retrievalPreview,
@@ -2215,7 +2233,6 @@ function GuidedSetupModal({
   onClose: () => void;
   onGenerate: () => void;
   onStepChange: (step: number) => void;
-  onToggleQuestionType: (questionType: string) => void;
   onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
   questionTypeOptions: string[];
   retrievalPreview: RetrievalPreview | null;
@@ -2246,7 +2263,7 @@ function GuidedSetupModal({
           {step === 0 && <StepBoardClass dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 1 && <StepSubject availableChapters={availableChapters} availableSubjects={availableSubjects} dashboard={dashboard} onUpdateRequest={onUpdateRequest} request={request} />}
           {step === 2 && <StepChapters availableChapters={availableChapters} onUpdateRequest={onUpdateRequest} request={request} />}
-          {step === 3 && <StepFineTune onToggleQuestionType={onToggleQuestionType} onUpdateRequest={onUpdateRequest} questionTypeOptions={questionTypeOptions} retrievalPreview={retrievalPreview} request={request} />}
+          {step === 3 && <StepFineTune onUpdateRequest={onUpdateRequest} questionTypeOptions={questionTypeOptions} retrievalPreview={retrievalPreview} request={request} />}
         </div>
 
         <CreateFlowFooter
@@ -2534,22 +2551,16 @@ function StepChapters({ availableChapters, onUpdateRequest, request }: { availab
 }
 
 function StepFineTune({
-  onToggleQuestionType,
   onUpdateRequest,
   questionTypeOptions,
   retrievalPreview,
   request,
 }: {
-  onToggleQuestionType: (questionType: string) => void;
   onUpdateRequest: <K extends keyof PaperRequest>(key: K, value: PaperRequest[K]) => void;
   questionTypeOptions: string[];
   retrievalPreview: RetrievalPreview | null;
   request: PaperRequest;
 }) {
-  const updateDifficulty = (difficulty: PaperRequest["difficulty"]) => {
-    onUpdateRequest("difficulty", difficulty);
-    onUpdateRequest("difficultyMix", difficultyPresets[difficulty]);
-  };
   const updateSource = (source: PaperRequest["source"]) => {
     onUpdateRequest("source", source);
     onUpdateRequest("directSourceMix", sourceMixPresets[source]);
@@ -2612,67 +2623,10 @@ function StepFineTune({
 
   return (
     <div className="mx-auto max-w-[880px] space-y-6">
-      <div className="grid gap-5 md:grid-cols-[1fr_1.05fr_1fr]">
+      <div className="grid gap-5 md:grid-cols-2">
         <NumberStepper label="Total marks" value={request.totalMarks} onChange={(value) => onUpdateRequest("totalMarks", value)} />
-        <div>
-          <FlowLabel>Difficulty</FlowLabel>
-          <div className="grid h-11 grid-cols-4 rounded-[var(--radius-md)] bg-[var(--surface-2)] p-1">
-            {(["Easy", "Medium", "Hard", "Mixed"] as const).map((difficulty) => (
-              <button key={difficulty} className={tabClass(request.difficulty === difficulty)} onClick={() => updateDifficulty(difficulty)} type="button">
-                {difficulty}
-              </button>
-            ))}
-          </div>
-        </div>
         <NumberStepper label="Sets" value={request.variantCount} onChange={(value) => onUpdateRequest("variantCount", Math.max(1, Math.min(5, value)))} suffix="A / B / C..." />
       </div>
-
-      <DifficultyMixSliders
-        mix={mix}
-        onChange={(nextMix) => {
-          onUpdateRequest("difficulty", "Mixed");
-          onUpdateRequest("difficultyMix", nextMix);
-        }}
-      />
-
-      <div>
-        <FlowLabel>Source</FlowLabel>
-        <div className="flex flex-wrap gap-2">
-          {sourceOptions.map(({ value, label, count, disabled }) => (
-            <button
-              key={value}
-              className={`rounded-full border px-4 py-2 text-sm ${request.source === value ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)]"} ${disabled ? "cursor-not-allowed opacity-45" : "hover:bg-[var(--accent-soft-2)]"}`}
-              disabled={disabled}
-              onClick={() => updateSource(value)}
-              type="button"
-              title={disabled ? "No matching source rows in the dump for the selected chapter." : `${count} available source item(s)`}
-            >
-              {label}
-              {availability ? <span className="ml-2 font-mono text-[10px] opacity-70">{count}</span> : null}
-            </button>
-          ))}
-        </div>
-        {availability ? (
-          <div className="mt-2 text-xs text-[var(--ink-3)]">
-            Available now: {availability.totals.ncert} textbook item(s), {availability.totals.pyq} PYQ item(s), {availability.totals.questionBank} saved bank item(s).
-          </div>
-        ) : null}
-      </div>
-
-      <SourceMixSliders
-        disabledSources={{
-          ncertDirect: request.source === "PYQ" || !hasNcert,
-          pyqDirect: request.source === "NCERT" || !hasPyq,
-          questionBank: !hasQuestionBank,
-        }}
-        mix={sourceMix}
-        isNormalized={Boolean(request.sourceWeightsNormalized)}
-        onChange={(nextMix, normalized) => {
-          onUpdateRequest("sourceWeights", nextMix);
-          onUpdateRequest("directSourceMix", nextMix);
-          onUpdateRequest("sourceWeightsNormalized", normalized);
-        }}
-      />
 
       {multipleChapters && (
         <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
@@ -2713,6 +2667,45 @@ function StepFineTune({
       )}
 
       <div>
+        <FlowLabel>Source</FlowLabel>
+        <div className="flex flex-wrap gap-2">
+          {sourceOptions.map(({ value, label, count, disabled }) => (
+            <button
+              key={value}
+              className={`rounded-full border px-4 py-2 text-sm ${request.source === value ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-deep)]" : "border-[var(--border)] bg-[var(--paper)] text-[var(--ink-2)]"} ${disabled ? "cursor-not-allowed opacity-45" : "hover:bg-[var(--accent-soft-2)]"}`}
+              disabled={disabled}
+              onClick={() => updateSource(value)}
+              type="button"
+              title={disabled ? "No matching source rows in the dump for the selected chapter." : `${count} available source item(s)`}
+            >
+              {label}
+              {availability ? <span className="ml-2 font-mono text-[10px] opacity-70">{count}</span> : null}
+            </button>
+          ))}
+        </div>
+        {availability ? (
+          <div className="mt-2 text-xs text-[var(--ink-3)]">
+            Available now: {availability.totals.ncert} textbook item(s), {availability.totals.pyq} PYQ item(s), {availability.totals.questionBank} saved bank item(s).
+          </div>
+        ) : null}
+      </div>
+
+      <SourceMixSliders
+        disabledSources={{
+          ncertDirect: request.source === "PYQ" || !hasNcert,
+          pyqDirect: request.source === "NCERT" || !hasPyq,
+          questionBank: !hasQuestionBank,
+        }}
+        mix={sourceMix}
+        isNormalized={Boolean(request.sourceWeightsNormalized)}
+        onChange={(nextMix, normalized) => {
+          onUpdateRequest("sourceWeights", nextMix);
+          onUpdateRequest("directSourceMix", nextMix);
+          onUpdateRequest("sourceWeightsNormalized", normalized);
+        }}
+      />
+
+      <div>
         <FlowLabel>AI provider</FlowLabel>
         <div className="inline-grid grid-cols-2 rounded-[var(--radius-md)] bg-[var(--surface-2)] p-1">
           {(["gemini", "groq"] as const).map((provider) => (
@@ -2723,30 +2716,11 @@ function StepFineTune({
         </div>
       </div>
 
-      <div>
-        <FlowLabel>Question types</FlowLabel>
-        <div className="grid gap-2.5 md:grid-cols-3 lg:grid-cols-4">
-          {questionTypeOptions.map((questionType) => {
-            const selected = request.questionTypes.includes(questionType);
-            return (
-              <button key={questionType} className={`flex min-h-14 items-center gap-3 rounded-[var(--radius-md)] border px-4 text-left ${selected ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--paper)] hover:bg-[var(--accent-soft-2)]"}`} onClick={() => onToggleQuestionType(questionType)} type="button">
-                <span className={`flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] border ${selected ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--paper-tint)]" : "border-[var(--border-2)] bg-[var(--paper)]"}`}>
-                  {selected && <Check size={14} />}
-                </span>
-                <span>
-                  <span className="block text-sm text-[var(--ink)]">{questionType}</span>
-                  <span className="block text-[11px] text-[var(--ink-3)]">{questionTypeDescription(questionType)}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       <SectionBlueprintEditor
         blueprint={request.sectionBlueprint ?? []}
         onChange={(bp) => onUpdateRequest("sectionBlueprint", bp)}
         availableTypes={questionTypeOptions}
+        targetTotal={request.totalMarks}
       />
 
       <div className="flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper)] p-4">
@@ -2757,7 +2731,7 @@ function StepFineTune({
           <div className="font-bold text-[var(--ink)]">
             You will generate a {request.totalMarks}-mark, {request.difficulty.toLowerCase()} paper across {request.chapterScope === "full_syllabus" ? "the full syllabus" : `${request.chapters.length} chapter${request.chapters.length === 1 ? "" : "s"}`}.
           </div>
-          <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}. {request.questionTypes.length} question types selected. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
+          <div className="mt-1 text-xs text-[var(--ink-3)]">Drawing from {request.source}. {request.sectionBlueprint && request.sectionBlueprint.length > 0 ? `${request.sectionBlueprint.length} section${request.sectionBlueprint.length === 1 ? "" : "s"} configured` : `${request.questionTypes.length} question type${request.questionTypes.length === 1 ? "" : "s"}`}. {request.variantCount} set{request.variantCount === 1 ? "" : "s"}.</div>
           <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Difficulty mix: {mix.easy}% easy · {mix.medium}% medium · {mix.hard}% hard.</div>
           <div className="mt-1 text-xs font-bold text-[var(--accent-deep)]">Source mix target: {sourceMix.ncertDirect}% NCERT direct · {sourceMix.pyqDirect}% PYQ direct · {sourceMix.questionBank}% bank · {sourceMix.aiGenerated}% AI from dump. Provider: {(request.provider ?? "gemini").toUpperCase()}.</div>
         </div>
@@ -2923,8 +2897,13 @@ function finalizeGenerationRequest(request: PaperRequest): PaperRequest {
     pyqDirect: request.source === "NCERT",
   });
 
+  // Derive questionTypes from section blueprint so the backend always has the full type list
+  const blueprintTypes = request.sectionBlueprint?.flatMap((s) => s.questionTypes) ?? [];
+  const derivedTypes = blueprintTypes.length > 0 ? [...new Set(blueprintTypes)] : request.questionTypes;
+
   return {
     ...request,
+    questionTypes: derivedTypes,
     sourceWeights: mix,
     sourceWeightsNormalized: true,
     directSourceMix: mix,
@@ -2945,10 +2924,12 @@ function SectionBlueprintEditor({
   blueprint,
   onChange,
   availableTypes,
+  targetTotal,
 }: {
   blueprint: SectionBlueprint[];
   onChange: (blueprint: SectionBlueprint[]) => void;
   availableTypes: string[];
+  targetTotal?: number;
 }) {
   const isActive = blueprint.length > 0;
 
@@ -3107,6 +3088,36 @@ function SectionBlueprintEditor({
             {blueprint.map((s) => `${s.title}: ${s.questionCount * s.marksEach}m`).join(" · ")}{" "}
             — <span className="font-bold text-[var(--ink)]">{totalMarks} total marks</span>
           </div>
+
+          {typeof targetTotal === "number" && totalMarks !== targetTotal && (
+            <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
+              <span className="flex items-center gap-1">
+                <AlertTriangle size={12} />
+                Section marks ({totalMarks}) don&apos;t match the paper total ({targetTotal}).
+              </span>
+              <button
+                className="shrink-0 rounded-full border border-amber-400 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-amber-800 hover:bg-amber-100"
+                title="Scale the last section's question count to balance the total"
+                onClick={() => {
+                  const diff = targetTotal - totalMarks;
+                  const last = blueprint[blueprint.length - 1];
+                  if (!last) return;
+                  const addQs = Math.round(diff / Math.max(1, last.marksEach));
+                  const nextCount = Math.max(1, last.questionCount + addQs);
+                  updateSection(last.id, { questionCount: nextCount });
+                }}
+                type="button"
+              >
+                Auto-balance
+              </button>
+            </div>
+          )}
+          {typeof targetTotal === "number" && totalMarks === targetTotal && (
+            <div className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800">
+              <Check size={12} />
+              Section marks match the {targetTotal}-mark paper total.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -3179,6 +3190,13 @@ function FreePromptModal({
   // Difficulty mix derived from extracted difficulty string
   const diffMix = request.difficultyMix ?? difficultyPresets[extracted.difficulty as keyof typeof difficultyPresets] ?? difficultyPresets.Medium;
   const diffTotal = diffMix.easy + diffMix.medium + diffMix.hard || 100;
+
+  // Required-info guardrail: if the prompt skips essentials, ask for them conversationally.
+  const missingInfo: string[] = [];
+  if (!extracted.subject && !request.subject) missingInfo.push("Which subject is this paper for? (e.g. Maths, Science)");
+  if (!extracted.totalMarks && !request.totalMarks) missingInfo.push("How many total marks should the paper carry?");
+  if (detectedChapters.length === 0 && request.chapterScope !== "full_syllabus") missingInfo.push("Which chapter(s) or topic should I pull questions from — or say \"full syllabus\"?");
+  // question types are now configured per-section in the blueprint; no global check needed
 
   // Segment colors for chapter ratio bar
   const CHAPTER_COLORS = ["bg-blue-400", "bg-violet-400", "bg-pink-400", "bg-teal-400", "bg-orange-400", "bg-cyan-400"];
@@ -3392,16 +3410,40 @@ function FreePromptModal({
               </div>
             </div>
 
+            {/* Required-info chat prompts */}
+            {prompt.trim() && missingInfo.length > 0 && (
+              <div className="space-y-2 rounded-[var(--radius-md)] border border-amber-300 bg-amber-50 p-4">
+                <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-amber-700">
+                  <Bot size={14} />
+                  A few things before I generate
+                </div>
+                {missingInfo.map((message) => (
+                  <div key={message} className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-200 text-amber-800">
+                      <Bot size={11} />
+                    </span>
+                    <p className="rounded-[var(--radius-sm)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--ink-2)] shadow-sm">
+                      {message}
+                    </p>
+                  </div>
+                ))}
+                <p className="text-[11px] text-amber-700">
+                  Add these to your prompt above, or set them in the fields on the right.
+                </p>
+              </div>
+            )}
+
             {/* Section question types */}
             <SectionBlueprintEditor
               blueprint={request.sectionBlueprint ?? []}
               onChange={(bp) => onUpdateRequest("sectionBlueprint", bp)}
               availableTypes={questionTypeOptions}
+              targetTotal={extracted.totalMarks || request.totalMarks}
             />
           </div>
         </div>
 
-        <CreateFlowFooter leftText={prompt.trim() ? "Ready to generate from prompt" : "Start typing — suggestions appear live"} onBack={onClose} onNext={onGenerate} primaryLabel="Generate paper" showBack={false} sparkles />
+        <CreateFlowFooter leftText={!prompt.trim() ? "Start typing — suggestions appear live" : missingInfo.length > 0 ? `${missingInfo.length} detail${missingInfo.length === 1 ? "" : "s"} still needed — see the questions above` : "Ready to generate from prompt"} onBack={onClose} onNext={onGenerate} primaryLabel="Generate paper" showBack={false} sparkles />
       </div>
     </div>
   );
@@ -3447,19 +3489,6 @@ function NumberStepper({ label, onChange, suffix, value }: { label: string; onCh
       </div>
     </div>
   );
-}
-
-function questionTypeDescription(questionType: string) {
-  const descriptions: Record<string, string> = {
-    MCQ: "Multiple choice",
-    "Fill in the Blanks": "Short fills",
-    "True/False": "Binary",
-    "Very Short Answer": "1-2 lines",
-    "Short Answer": "3 marks each",
-    "Long Answer": "5 marks each",
-    "Case Study": "Source-based",
-  };
-  return descriptions[questionType] ?? "Question type";
 }
 
 function LandingScreen({
@@ -3600,9 +3629,7 @@ function LandingPanel({ children, eyebrow, title }: { children: React.ReactNode;
 
 function PaperNavigator({
   isGenerating,
-  mode,
   onAddBlank,
-  onGenerate,
   onSelectOpenPaper,
   onSelectVariant,
   onStop,
@@ -3612,9 +3639,7 @@ function PaperNavigator({
   variantPapers,
 }: {
   isGenerating: boolean;
-  mode: Mode;
   onAddBlank: () => void;
-  onGenerate: () => void;
   onSelectOpenPaper: (paper: Paper) => void;
   onSelectVariant: (paper: Paper) => void;
   onStop: () => void;
@@ -3623,7 +3648,6 @@ function PaperNavigator({
   selectedPaper: Paper | null;
   variantPapers: Paper[];
 }) {
-  const sections = selectedPaper?.sections ?? [];
   const totalMarks = selectedPaper?.summary.totalMarks ?? requestPreview.totalMarks;
 
   return (
@@ -3674,40 +3698,15 @@ function PaperNavigator({
           </div>
         )}
 
-        <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--paper-tint)] p-3 text-xs text-[var(--ink-2)]">
-          <div className="font-bold text-[var(--ink)]">Request</div>
-          <div className="mt-1">{requestPreview.board} · Class {requestPreview.classLevel}</div>
-          <div className="mt-1">{requestPreview.subject} · {requestPreview.totalMarks} marks</div>
-          <div className="mt-1 line-clamp-2">{requestPreview.chapterScope === "full_syllabus" ? "Whole syllabus" : requestPreview.chapters.join(", ")}</div>
-          <div className="mt-1 line-clamp-2">Types: {requestPreview.questionTypes.join(", ")}</div>
-          <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">{mode === "prompt" ? "Free prompt" : "Parameters"}</div>
-        </div>
+        {isGenerating && (
+          <button className="secondary-button mb-4" onClick={onStop} type="button">
+            <Square size={15} />
+            Stop generation
+          </button>
+        )}
 
-        <div>
-          <div className="px-2 pb-2 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ink-3)]">Jump to question</div>
-          {sections.length === 0 ? (
-            <div className="rounded border border-dashed border-[var(--border)] p-3 text-xs text-[var(--ink-3)]">Questions appear here after generation or import.</div>
-          ) : (
-            <div className="space-y-2">
-              {sections.map((section) => (
-                <div key={section.id}>
-                  <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold text-[var(--ink-2)]">
-                    <span>{section.title}</span>
-                    <span>{section.questions.reduce((total, question) => total + Number(question.marks || 0), 0)}m</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-0.5">
-                  {section.questions.map((question, index) => (
-                    <button key={question.id} className="flex items-center gap-1 rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ink-2)] hover:bg-[var(--surface-2)]" onClick={() => document.getElementById(`question-${question.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} type="button">
-                      <span className="shrink-0 font-mono font-black text-[var(--accent)]">Q{index + 1}</span>
-                      <span className="truncate">{question.text || "…"}</span>
-                    </button>
-                  ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* The editor's section/question outline is portaled into this slot. */}
+        <div id="paper-outline-slot" />
       </div>
 
       <div className="border-t border-[var(--border)] bg-[var(--surface-2)] p-4">
@@ -3715,16 +3714,6 @@ function PaperNavigator({
           <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--ink-3)]">Total marks</span>
           <span className="font-display text-2xl italic text-[var(--ink)]">{totalMarks}</span>
         </div>
-        <button className="primary-button mt-3" disabled={isGenerating} onClick={onGenerate} type="button">
-          {isGenerating ? <LoaderCircle className="animate-spin" size={16} /> : <Sparkles size={16} />}
-          {isGenerating ? "Generating" : "Generate paper"}
-        </button>
-        {isGenerating && (
-          <button className="secondary-button mt-2" onClick={onStop} type="button">
-            <Square size={15} />
-            Stop
-          </button>
-        )}
       </div>
     </aside>
   );

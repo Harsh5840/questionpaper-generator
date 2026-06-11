@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev",
+    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=2048 next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -20,8 +20,10 @@
     "@tiptap/extension-underline": "^3.23.6",
     "@tiptap/react": "^3.23.6",
     "@tiptap/starter-kit": "^3.23.6",
+    "@types/dompurify": "^3.0.5",
     "cross-env": "^10.1.0",
     "docx": "^9.7.1",
+    "dompurify": "^3.4.9",
     "katex": "^0.16.47",
     "lucide-react": "^1.16.0",
     "mathlive": "^0.105.3",

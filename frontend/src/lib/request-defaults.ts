@@ -20,7 +20,7 @@ export const defaultRequest: PaperRequest = {
   provider: "gemini",
   totalMarks: 80,
   durationMinutes: 180,
-  variantCount: 3,
+  variantCount: 1,
 };
 
 export function requestFromPrompt(prompt: string): PaperRequest {

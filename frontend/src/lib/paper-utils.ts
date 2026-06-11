@@ -3,6 +3,9 @@ import { Paper, PaperQuestion, PaperSection } from "./types";
 export function isEmptyRichText(text?: string, richText?: string, imageAssets?: { id: string }[]): boolean {
   if (imageAssets && imageAssets.length > 0) return false;
   if (text?.trim()) return false;
+  // Inline math is serialized as an attribute-only <span data-latex="…">, so a
+  // math-only question has no stripped text — count it as non-empty content.
+  if (richText && /data-latex=/.test(richText)) return false;
   const stripped = richText?.replace(/<[^>]*>/g, "").trim() ?? "";
   return stripped.length === 0;
 }
@@ -88,9 +91,14 @@ export function unescapeHtml(value: string): string {
 
 export function hasCorruptMathMarkup(value: string): boolean {
   const decoded = unescapeHtml(value);
+  // Only flag genuine corruption: a <span>/data-type that leaked INSIDE the
+  // data-latex attribute value (i.e. before its closing quote). The previous
+  // patterns used [\s\S]*? which crossed the closing quote and matched the
+  // perfectly valid serialization `data-latex="…" data-type="inline-math"`,
+  // causing every inserted formula to be discarded by normalizeQuestionStructure.
   return (
-    /data-latex=["'][\s\S]*?<\s*span/i.test(decoded) ||
-    /data-latex=["'][\s\S]*?data-type\s*=\s*["']?inline-math/i.test(decoded) ||
+    /data-latex=(["'])(?:(?!\1)[\s\S])*?<\s*span/i.test(decoded) ||
+    /data-latex=(["'])(?:(?!\1)[\s\S])*?data-type\s*=\s*["']?inline-math/i.test(decoded) ||
     /&lt;\s*span[^&]*(data-type|data-latex)/i.test(value) ||
     /\bspandata\s*[–-]?\s*type\s*=/i.test(value)
   );

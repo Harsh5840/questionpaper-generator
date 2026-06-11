@@ -1,27 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f7efe1;
-  --bg-deep: #efe4cf;
-  --surface: #fdf7ea;
-  --surface-2: #f3e8d2;
-  --surface-3: #ead9b9;
+  --bg: #eef2f9;
+  --bg-deep: #e1e9f5;
+  --surface: #f4f7fd;
+  --surface-2: #e8eef8;
+  --surface-3: #d5e0f0;
   --paper: #ffffff;
-  --paper-tint: #fffbf3;
-  --ink: #221710;
-  --ink-2: #5b4630;
-  --ink-3: #8a7559;
-  --accent: #8b5a2b;
-  --accent-deep: #6b3d18;
-  --accent-soft: #f4d5a8;
-  --accent-soft-2: #f9e5c3;
-  --highlight: #e89a3c;
-  --border: rgba(110, 70, 30, 0.16);
-  --border-2: rgba(110, 70, 30, 0.28);
-  --shadow-sm: 0 1px 2px rgba(60, 40, 20, 0.04), 0 1px 1px rgba(60, 40, 20, 0.03);
-  --shadow-md: 0 4px 14px rgba(60, 40, 20, 0.07), 0 1px 2px rgba(60, 40, 20, 0.04);
-  --shadow-lg: 0 18px 40px rgba(60, 40, 20, 0.12), 0 4px 10px rgba(60, 40, 20, 0.06);
-  --shadow-xl: 0 30px 70px rgba(60, 40, 20, 0.18), 0 10px 20px rgba(60, 40, 20, 0.08);
+  --paper-tint: #f8faff;
+  --ink: #0d1b36;
+  --ink-2: #2a4275;
+  --ink-3: #5272a0;
+  --accent: #1a4799;
+  --accent-deep: #0e2f6e;
+  --accent-soft: #c5d8f5;
+  --accent-soft-2: #dae7fb;
+  --highlight: #2563eb;
+  --border: rgba(26, 71, 153, 0.13);
+  --border-2: rgba(26, 71, 153, 0.22);
+  --shadow-sm: 0 1px 2px rgba(15, 30, 80, 0.04), 0 1px 1px rgba(15, 30, 80, 0.03);
+  --shadow-md: 0 4px 14px rgba(15, 30, 80, 0.07), 0 1px 2px rgba(15, 30, 80, 0.04);
+  --shadow-lg: 0 18px 40px rgba(15, 30, 80, 0.12), 0 4px 10px rgba(15, 30, 80, 0.06);
+  --shadow-xl: 0 30px 70px rgba(15, 30, 80, 0.18), 0 10px 20px rgba(15, 30, 80, 0.08);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -114,13 +114,13 @@ button:disabled {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(110, 70, 30, 0.18);
+  background: rgba(26, 71, 153, 0.18);
   border: 2px solid var(--bg);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(110, 70, 30, 0.32);
+  background: rgba(26, 71, 153, 0.32);
 }
 
 @keyframes fadeUp {
@@ -171,7 +171,7 @@ button:disabled {
 }
 
 .focus-ring:focus-visible {
-  box-shadow: 0 0 0 3px rgba(217, 139, 44, 0.24), 0 0 0 1px var(--focus);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.24), 0 0 0 1px var(--focus);
 }
 
 .nav-link {
@@ -255,7 +255,7 @@ button:disabled {
 .input:focus {
   border-color: var(--on-surface);
   background: #ffffff;
-  box-shadow: 0 0 0 2px rgba(217, 139, 44, 0.16);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 
 .primary-button,

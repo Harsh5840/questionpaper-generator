@@ -87,7 +87,7 @@ export function commandActiveRichTextEditor(fn: (editor: Editor) => void) {
 }
 
 export function openMathLiveEditorForActiveRichTextEditor(initialLatex = "") {
-  return insertIntoActiveRichTextEditor({ type: "math", value: initialLatex || "x^2" });
+  return insertIntoActiveRichTextEditor({ type: "math", value: initialLatex });
 }
 
 type MathLiveFieldElement = HTMLElement & {
@@ -97,6 +97,7 @@ type MathLiveFieldElement = HTMLElement & {
   smartMode?: boolean;
   inlineShortcutTimeout?: number;
   mathModeSpace?: string;
+  menuItems?: unknown[];
   executeCommand?: (command: string | [string, ...unknown[]]) => boolean;
 };
 
@@ -105,7 +106,7 @@ const LiveInlineMath = InlineMath.extend({
     return ({ node, getPos, editor }) => {
       const wrapper = document.createElement("span");
       let mathField: MathLiveFieldElement | null = null;
-      let currentLatex = String(node.attrs.latex || "x^2");
+      let currentLatex = String(node.attrs.latex || "");
       let isDestroyed = false;
       let hasPlacedInitialCaret = false;
 
@@ -182,6 +183,16 @@ const LiveInlineMath = InlineMath.extend({
         mathField.addEventListener("contextmenu", handleMathContextMenu);
         mathFieldEventsToOwn.forEach((eventName) => mathField?.addEventListener(eventName, stopProseMirrorEvent));
         wrapper.appendChild(mathField);
+
+        // Disable MathLive's built-in (dark) context menu so only our single
+        // light menu shows on right-click — and drop its cut/copy/paste items.
+        // This MUST run after the field is connected to the DOM, otherwise the
+        // setter throws "Mathfield not mounted".
+        try {
+          mathField.menuItems = [];
+        } catch {
+          // older/newer MathLive without a menuItems setter — safe to ignore
+        }
       };
 
       // Only focus math-field when clicking directly on the math-field itself.
@@ -462,7 +473,7 @@ export function RichTextEditor({
 
   const openLocalMathLive = () => {
     activateEditor();
-    insertIntoActiveRichTextEditor({ type: "math", value: selectedLatex(editor) || "x^2" });
+    insertIntoActiveRichTextEditor({ type: "math", value: selectedLatex(editor) });
   };
 
   const activateEditorFromClick = () => {
@@ -605,38 +616,40 @@ export function RichTextEditor({
         )}
         {!activeFormula && toolbarMode !== "focus" && (
           <>
-            {false && (
-              <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-transparent px-1 text-xs font-bold text-[var(--on-surface-variant)] hover:border-[var(--outline-variant)] hover:bg-white">
-                <Sigma size={14} />
-                <span>Math</span>
-                <select
-                  aria-label="Insert math or science notation"
-                  className="max-w-28 bg-transparent text-xs font-bold outline-none"
-                  defaultValue=""
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (value) {
-                      setActiveFormulaId(value);
-                      const formula = formulaSnippets.flatMap((group) => group.items).find((item) => item.id === value);
-                      setFormulaValues(formula ? Object.fromEntries(formula.fields.map((field) => [field.key, field.defaultValue])) : {});
-                    }
-                    event.currentTarget.value = "";
-                  }}
-                >
-                  <option value="">Insert...</option>
-                  {formulaSnippets.map((group) => (
-                    <optgroup key={group.label} label={group.label}>
-                      {group.items.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                <ChevronDown size={13} />
-              </label>
-            )}
+            <span className="mx-1 h-6 w-px bg-[var(--outline-variant)]" aria-hidden="true" />
+            <label className="math-snippet-select inline-flex min-h-8 items-center gap-1 rounded border border-[var(--outline-variant)] px-1.5 text-xs font-bold text-[var(--on-surface-variant)] hover:bg-white">
+              <Sigma size={14} />
+              <span>Math &amp; Science</span>
+              <select
+                aria-label="Insert math or science notation"
+                className="max-w-32 bg-transparent text-xs font-bold outline-none"
+                defaultValue=""
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value) {
+                    setActiveFormulaId(value);
+                    const formula = formulaSnippets.flatMap((group) => group.items).find((item) => item.id === value);
+                    setFormulaValues(formula ? Object.fromEntries(formula.fields.map((field) => [field.key, field.defaultValue])) : {});
+                  }
+                  event.currentTarget.value = "";
+                }}
+              >
+                <option value="">Insert formula…</option>
+                {formulaSnippets.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.items.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <ChevronDown size={13} />
+            </label>
+            <ToolbarButton label="Insert quick symbol ±" onClick={() => editor.chain().focus().insertContent("±").run()}>
+              <span className="px-0.5 text-sm font-black">±</span>
+            </ToolbarButton>
           </>
         )}
       </div>
@@ -1010,6 +1023,63 @@ const formulaSnippets: { label: string; items: FormulaSnippet[] }[] = [
         build: (values) => `${getValue(values, "m", "m")} = \\frac{${getValue(values, "hi", "h'")}}{${getValue(values, "ho", "h")}} = \\frac{${getValue(values, "v", "v")}}{${getValue(values, "u", "u")}}`,
       },
       {
+        id: "newton-second",
+        label: "Newton 2nd law",
+        fields: [
+          { key: "f", label: "F", defaultValue: "F" },
+          { key: "m", label: "m", defaultValue: "m" },
+          { key: "a", label: "a", defaultValue: "a" },
+        ],
+        build: (values) => `${getValue(values, "f", "F")} = ${getValue(values, "m", "m")}${getValue(values, "a", "a")}`,
+      },
+      {
+        id: "kinetic-energy",
+        label: "Kinetic energy",
+        fields: [
+          { key: "m", label: "m", defaultValue: "m" },
+          { key: "v", label: "v", defaultValue: "v" },
+        ],
+        build: (values) => `E_k = \\frac{1}{2}${getValue(values, "m", "m")}${getValue(values, "v", "v")}^2`,
+      },
+      {
+        id: "gravitation",
+        label: "Gravitation",
+        fields: [
+          { key: "m1", label: "m1", defaultValue: "m_1" },
+          { key: "m2", label: "m2", defaultValue: "m_2" },
+          { key: "r", label: "r", defaultValue: "r" },
+        ],
+        build: (values) => `F = G\\frac{${getValue(values, "m1", "m_1")}${getValue(values, "m2", "m_2")}}{${getValue(values, "r", "r")}^2}`,
+      },
+      {
+        id: "density",
+        label: "Density",
+        fields: [
+          { key: "m", label: "mass", defaultValue: "m" },
+          { key: "v", label: "vol", defaultValue: "V" },
+        ],
+        build: (values) => `\\rho = \\frac{${getValue(values, "m", "m")}}{${getValue(values, "v", "V")}}`,
+      },
+      {
+        id: "speed",
+        label: "Speed",
+        fields: [
+          { key: "s", label: "dist", defaultValue: "s" },
+          { key: "t", label: "time", defaultValue: "t" },
+        ],
+        build: (values) => `v = \\frac{${getValue(values, "s", "s")}}{${getValue(values, "t", "t")}}`,
+      },
+      {
+        id: "mole-concept",
+        label: "Mole concept",
+        fields: [
+          { key: "n", label: "n", defaultValue: "n" },
+          { key: "m", label: "mass", defaultValue: "m" },
+          { key: "mm", label: "molar", defaultValue: "M" },
+        ],
+        build: (values) => `${getValue(values, "n", "n")} = \\frac{${getValue(values, "m", "m")}}{${getValue(values, "mm", "M")}}`,
+      },
+      {
         id: "photosynthesis",
         label: "Photosynthesis",
         fields: [
@@ -1185,7 +1255,16 @@ function documentToPlainText(node: RichTextJsonNode | null | undefined): string 
   if (!node) return "";
   if (node.type === "text") return node.text ?? "";
   if (node.type === "hardBreak") return "\n";
-  if (node.type === "inlineMath" || node.type === "blockMath") return String(node.attrs?.latex ?? "");
+  // Serialize math back into `$...$` / `$$...$$` so the plain `text` IS the
+  // single source of truth (rendered later by the KaTeX LaTeX pipeline).
+  if (node.type === "inlineMath") {
+    const latex = String(node.attrs?.latex ?? "").trim();
+    return latex ? `$${latex}$` : "";
+  }
+  if (node.type === "blockMath") {
+    const latex = String(node.attrs?.latex ?? "").trim();
+    return latex ? `$$${latex}$$` : "";
+  }
 
   const children = node.content?.map(documentToPlainText).join("") ?? "";
   if (["paragraph", "heading", "listItem"].includes(node.type ?? "")) return `${children}\n`;
